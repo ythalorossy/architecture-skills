@@ -60,10 +60,4 @@ Every project or module and every reference between them, tests included. The au
 
 {{artifacts}}
 
----
-
-## Report Metadata
-
-Generated On: {{generated_date}}
-
-Generator Version: {{generator_version}}
+{{report_metadata}}

@@ -95,7 +95,13 @@ This is the complete model of Bookshop, a small synthetic sample system: a React
 
 ## Re-running
 
-`analyze_repository.py` never overwrites `c4-model.json`. When the code changes, the facts are refreshed, and if the model no longer covers them the analyzer draws facts-only diagrams and prints `C4 MODEL ERROR` lines. Update the model, then run:
+`analyze_repository.py` never overwrites `c4-model.json`. When the code changes, the facts are refreshed:
+
+- **`drift`** (model valid but new facts not covered): the script renders the existing model *with* the new facts, and surfaces the unreviewed facts in `summary.json` (`c4.model_status == "drift"`). The report includes an `### Unreviewed facts` section listing what to add to the model. Update the model to cover the new facts, then re-run `render_c4.py`.
+
+- **`invalid`** (model has unknown relationship ids or missing elements): the script falls back to facts-only diagrams and lists the errors in `summary.json` (`c4.model_status == "invalid"`, `c4.model_errors[]`). Fix the errors in `c4-model.json`, then re-run `render_c4.py`.
+
+In both cases `c4-model.json` is left unchanged.
 
 ```bash
 python3 scripts/render_c4.py <output folder>

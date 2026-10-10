@@ -22,11 +22,12 @@ DEPENDENCY_FIELDS = (
 LOCAL_SPEC = re.compile(r"^(workspace:|file:|link:|portal:)")
 
 
-def _parse_json(path):
+def _parse_json(path, collector=None):
     try:
         return json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, ValueError) as ex:
-        print(f"WARNING: cannot parse {path}: {ex}", file=sys.stderr)
+        if collector:
+            collector.parse_error("node_projects", str(path), f"invalid JSON: {ex}")
         return None
 
 
@@ -77,7 +78,7 @@ def _matches_workspace(relative_dir, root_dir, globs):
     return included
 
 
-def discover_projects(repo_path, index=None):
+def discover_projects(repo_path, index=None, collector=None):
     """
     Find every package.json and link packages that depend on each other by name.
 
@@ -101,7 +102,7 @@ def discover_projects(repo_path, index=None):
         package_json_files = list(walk_files(repo, lambda name: name == "package.json"))
 
     for file in package_json_files:
-        data = _parse_json(file) if index is None else index.read_json(file)
+        data = _parse_json(file, collector) if index is None else index.read_json(file)
         if data is None:
             continue
 

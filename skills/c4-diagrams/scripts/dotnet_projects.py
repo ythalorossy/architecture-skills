@@ -74,7 +74,7 @@ def find_solutions(repo_path):
     ))
 
 
-def solution_project_paths(solution_file):
+def solution_project_paths(solution_file, collector=None):
     """Return the absolute project paths listed in a .sln or .slnx file."""
     paths = set()
 
@@ -82,7 +82,8 @@ def solution_project_paths(solution_file):
         try:
             root = ET.parse(solution_file).getroot()
         except ET.ParseError as ex:
-            print(f"WARNING: cannot parse {solution_file}: {ex}", file=sys.stderr)
+            if collector:
+                collector.parse_error("dotnet_projects", str(solution_file), f"invalid XML: {ex}")
             return paths
 
         for element in root.iter():
@@ -97,12 +98,13 @@ def solution_project_paths(solution_file):
     return paths
 
 
-def project_references(project_file):
+def project_references(project_file, collector=None):
     """Return the resolved paths of <ProjectReference> items in a project file."""
     try:
         root = ET.parse(project_file).getroot()
     except ET.ParseError as ex:
-        print(f"WARNING: cannot parse {project_file}: {ex}", file=sys.stderr)
+        if collector:
+            collector.parse_error("dotnet_projects", str(project_file), f"invalid XML: {ex}")
         return []
 
     references = []
@@ -115,7 +117,7 @@ def project_references(project_file):
     return references
 
 
-def discover_projects(repo_path, index=None):
+def discover_projects(repo_path, index=None, collector=None):
     """
     Find every .NET project and work out a unique display name for each.
 
@@ -124,6 +126,7 @@ def discover_projects(repo_path, index=None):
 
     The `index` parameter is accepted for API compatibility but not yet used
     (the .NET module has minimal I/O compared to other ecosystems).
+    Pass a DiagnosticsCollector to route warnings through the diagnostics channel.
     """
     repo = Path(repo_path).resolve()
 
@@ -137,7 +140,7 @@ def discover_projects(repo_path, index=None):
     solutions = solution_files
     solution_paths = set()
     for solution in solutions:
-        solution_paths |= solution_project_paths(solution)
+        solution_paths |= solution_project_paths(solution, collector)
 
     projects = []
     for project_file in project_files:

@@ -36,11 +36,12 @@ def _text(element, tag):
     return found[0].text.strip() if found and found[0].text else None
 
 
-def _parse_pom(file):
+def _parse_pom(file, collector=None):
     try:
         root = ET.parse(file).getroot()
     except ET.ParseError as ex:
-        print(f"WARNING: cannot parse {file}: {ex}", file=sys.stderr)
+        if collector:
+            collector.parse_error("java_projects", str(file), f"invalid XML: {ex}")
         return None
 
     modules = []
@@ -64,14 +65,14 @@ def _parse_pom(file):
     }
 
 
-def _maven(repo, index=None):
+def _maven(repo, index=None, collector=None):
     poms = {}
     if index is not None:
         candidates = index.walk(lambda name: name == "pom.xml")
     else:
         candidates = walk_files(repo, lambda name: name == "pom.xml")
     for file in candidates:
-        pom = _parse_pom(file)
+        pom = _parse_pom(file, collector)
         if pom:
             poms[file.resolve()] = pom
 
@@ -119,7 +120,7 @@ def _build_file(directory):
     return None
 
 
-def _gradle_build(repo, settings):
+def _gradle_build(repo, settings, collector=None):
     text = settings.read_text(encoding="utf-8", errors="replace")
     base = settings.parent
 
@@ -179,18 +180,18 @@ def _gradle_build(repo, settings):
     return projects
 
 
-def _gradle(repo, index=None):
+def _gradle(repo, index=None, collector=None):
     if index is not None:
         settings_files = list(index.walk(lambda name: name in GRADLE_SETTINGS))
     else:
         settings_files = list(walk_files(repo, lambda name: name in GRADLE_SETTINGS))
     projects = []
     for settings in settings_files:
-        projects += _gradle_build(repo, settings)
+        projects += _gradle_build(repo, settings, collector)
     return [s.relative_to(repo).as_posix() for s in settings_files], projects
 
 
-def discover_projects(repo_path, index=None):
+def discover_projects(repo_path, index=None, collector=None):
     """
     Maven modules (artifactId) and Gradle subprojects (settings includes).
 
@@ -199,11 +200,12 @@ def discover_projects(repo_path, index=None):
     Gradle edges are project(':x') and projects.x references in build files.
 
     The `index` parameter is accepted for API compatibility but not yet used.
+    Pass a DiagnosticsCollector to route warnings through the diagnostics channel.
     """
     repo = Path(repo_path).resolve()
 
-    maven_roots, maven_projects = _maven(repo, index)
-    gradle_roots, gradle_projects = _gradle(repo, index)
+    maven_roots, maven_projects = _maven(repo, index, collector)
+    gradle_roots, gradle_projects = _gradle(repo, index, collector)
 
     return {
         "solutions": maven_roots + gradle_roots,

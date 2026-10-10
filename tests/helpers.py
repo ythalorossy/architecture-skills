@@ -105,7 +105,7 @@ def mask_volatile(obj):
     return _mask_value(copy.deepcopy(obj))
 
 
-def run_analyzer(fixture, tmp, *, no_svg=True):
+def run_analyzer(fixture, tmp, *, no_svg=True, timestamp=False, strict=False):
     """Run the analyzer in ``fixture``; write outputs under ``tmp``.
 
     Uses the public ``RepositoryAnalyzer.run()`` entry point. ``no_svg`` is on
@@ -116,7 +116,7 @@ def run_analyzer(fixture, tmp, *, no_svg=True):
     """
     from scripts.analyze_repository import RepositoryAnalyzer
 
-    analyzer = RepositoryAnalyzer(str(fixture), str(tmp), no_svg=no_svg)
+    analyzer = RepositoryAnalyzer(str(fixture), str(tmp), no_svg=no_svg, timestamp=timestamp, strict=strict)
     analyzer.run()
 
     output = Path(tmp)

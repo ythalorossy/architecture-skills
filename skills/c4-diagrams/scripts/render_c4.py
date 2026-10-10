@@ -187,6 +187,24 @@ def all_component_ids(model, facts):
     return result
 
 
+def _unreviewed_facts_warnings(model, facts):
+    """
+    Return model-tier warning messages for every fact not covered by the model.
+    Used when rendering on drift to surface new facts for the agent to review.
+    """
+    covered = {fact for section in ("containers", "external_systems") for e in model.get(section) or [] for fact in _covers(e)}
+    covered |= {item["id"] for item in model.get("excluded") or []}
+    warnings = []
+    for kind in ("containers", "data_stores", "external_systems"):
+        for fact in facts[kind]:
+            if fact["id"] not in covered:
+                warnings.append(
+                    f"{fact['id']} ({fact['name']}) was found in the code but is not in the model; "
+                    "add it (or list it in `facts` of an element) or put it in `excluded` with a reason"
+                )
+    return warnings
+
+
 # ---------- mermaid ----------
 
 def _clean(text):
@@ -753,7 +771,7 @@ def _inventory_section(facts, model):
             "| Container | Declared |", "|---|---|"] + rows + [""]
 
 
-def render(output_dir, facts_only=False, svg=True):
+def render(output_dir, facts_only=False, svg=True, repo_override=None, collector=None, show_drift=False):
     output = Path(output_dir).resolve()
     facts_file = output / "c4-facts.json"
     if not facts_file.is_file():
@@ -773,11 +791,24 @@ def render(output_dir, facts_only=False, svg=True):
             model.setdefault(key, [])
         errors, warnings = validate(model, facts)
         if errors:
+            for err in errors:
+                if collector:
+                    collector.model_warning("render_c4", err)
             return {"errors": errors, "warnings": warnings}
-        errors, code_warnings, code_entries = code_diagrams.prepare(model, facts, output)
+        errors, code_warnings, code_entries = code_diagrams.prepare(
+            model, facts, output, collector, repo_override=repo_override
+        )
         warnings += code_warnings
         if errors:
-            return {"errors": errors, "warnings": warnings}
+            return {"errors": errors, "warnings": warnings, "facts_only": True}
+
+    # show_drift: surface unreviewed facts as model-tier warnings
+    if show_drift and not facts_only and model_file.is_file():
+        drift_warnings = _unreviewed_facts_warnings(model, facts)
+        warnings += drift_warnings
+        for w in drift_warnings:
+            if collector:
+                collector.model_warning("render_c4", w)
 
     for old in list(output.glob("c4-*.mmd")) + list(output.glob("c4-*.svg")):
         old.unlink()
@@ -887,10 +918,12 @@ def main():
     parser.add_argument("output", help="Output folder written by analyze_repository.py")
     parser.add_argument("--facts-only", action="store_true", help="Ignore c4-model.json and draw from the facts alone")
     parser.add_argument("--no-svg", action="store_true", help="Skip SVG rendering")
+    parser.add_argument("--repo", dest="repo", default=None,
+                        help="Override the repository path stored in c4-facts.json (for relocatable output)")
     parser.add_argument("--debug", action="store_true", help="Print the full traceback when an unexpected error occurs")
     args = parser.parse_args()
 
-    result = render(args.output, facts_only=args.facts_only, svg=not args.no_svg)
+    result = render(args.output, facts_only=args.facts_only, svg=not args.no_svg, repo_override=args.repo)
 
     for warning in result["warnings"]:
         print(f"WARNING: {warning}")

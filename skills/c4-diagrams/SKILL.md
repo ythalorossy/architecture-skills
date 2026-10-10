@@ -48,6 +48,22 @@ python3 scripts/analyze_repository.py <repository_path>
 - Requires Python 3.11+ (checked at startup) to read `pyproject.toml`.
 - SVGs are rendered with `mmdc` or `npx @mermaid-js/mermaid-cli` and embedded in the report as images, so they show in any Markdown viewer. Without Node.js the report keeps only the Mermaid blocks. Tell the user if that happened.
 
+### Check for degraded runs
+
+After running, read `summary.json` and check:
+
+- **`status`**: `"degraded"` means at least one warning or skipped file occurred. `"ok"` means clean.
+- **`warnings`**: a list of diagnostics from parsers, renderers and the model. Each entry has `source`, `message`, `kind` and optionally `path`.
+- **`c4.model_status`**: `"drift"` means the model is valid but some new facts are unreviewed; `"invalid"` means the model has unknown relationship ids and fell back to facts-only; `"ok"` means the model and facts are in sync.
+- **`skipped_files`**: files that could not be read (permission errors, broken symlinks).
+
+**Actions based on status:**
+- **`drift`**: update `c4-model.json` to cover the new facts. Re-run `render_c4.py`.
+- **`invalid`**: fix the reported errors in `c4-model.json` (unknown ids, missing elements). Re-run `render_c4.py`.
+- **`parse` warnings**: tell the user which files could not be parsed and what the error was.
+- **`skipped_files`**: tell the user which files were skipped and why.
+- **`degraded` with `--strict`**: the script exits with code 2; without `--strict` it exits 0.
+
 ## Step 2 — Read the facts and the code
 
 Read `summary.json` and `c4-facts.json`. Then read enough code to answer what the facts can't:
