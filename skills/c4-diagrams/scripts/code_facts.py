@@ -17,9 +17,9 @@ import re
 from pathlib import Path
 
 try:
-    from scripts.dotnet_projects import walk_files, local_tag
+    from scripts.repo_index import walk_files, local_tag
 except ImportError:
-    from dotnet_projects import walk_files, local_tag
+    from repo_index import walk_files, local_tag
 import xml.etree.ElementTree as ET
 
 
@@ -27,7 +27,7 @@ TEST_DIRS = {"test", "tests", "__tests__", "spec", "specs", "e2e", "testdata"}
 CODE_EXTENSIONS = {".java": "jvm", ".kt": "jvm", ".cs": "cs", ".go": "go"}
 
 
-def _read(path):
+def _file_text(path):
     try:
         return Path(path).read_text(encoding="utf-8-sig", errors="replace")
     except OSError:
@@ -73,19 +73,24 @@ def _go_module_path(directory):
     for folder in [directory, *directory.parents]:
         go_mod = folder / "go.mod"
         if go_mod.is_file():
-            match = re.search(r"^module\s+(\S+)", _read(go_mod), re.MULTILINE)
+            match = re.search(r"^module\s+(\S+)", _file_text(go_mod), re.MULTILINE)
             return (match.group(1), folder) if match else (None, folder)
     return None, None
 
 
-def _module_packages(module_dir):
+def _module_packages(module_dir, index=None):
     """{file: (language, package, [imports])} for the JVM/C#/Go code of one module, tests excluded."""
     files = {}
-    for file in walk_files(module_dir, lambda name: Path(name).suffix in CODE_EXTENSIONS):
+    if index is not None:
+        candidates = [f for f in index.walk(lambda name: Path(name).suffix in CODE_EXTENSIONS)
+                     if f.parent.resolve().is_relative_to(module_dir.resolve())]
+    else:
+        candidates = walk_files(module_dir, lambda name: Path(name).suffix in CODE_EXTENSIONS)
+    for file in candidates:
         if _is_test(file, module_dir):
             continue
         language = CODE_EXTENSIONS[file.suffix]
-        text = _read(file)
+        text = _file_text(file)
         if language == "jvm":
             match = JVM_PACKAGE.search(text)
             package = match.group(1) if match else ""
@@ -130,7 +135,7 @@ def _majority_root(split_packages, weights):
         root = root + [segment]
 
 
-def code_components(module_dirs):
+def code_components(module_dirs, index=None):
     """
     Package-level graph across the given modules: {"nodes": {id: {...}}, "edges": {id: [ids]}}.
 
@@ -147,7 +152,7 @@ def code_components(module_dirs):
     namespace_votes = {}
 
     for module, directory in module_dirs.items():
-        files = _module_packages(directory)
+        files = _module_packages(directory, index)
         if not files:
             continue
         languages = [language for language, _, _ in files.values()]
@@ -348,7 +353,7 @@ def endpoints(repo, files, owner_of):
     for file in files:
         if file.suffix not in (".java", ".kt", ".cs", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".py", ".go"):
             continue
-        text = _read(file)
+        text = _file_text(file)
         for method, path, index in _endpoints_in(text, file.suffix):
             key = (method, path, file)
             if key in seen:
@@ -375,11 +380,12 @@ def _yaml_block(lines, start, indent):
     return block
 
 
-def compose_services(repo):
+def compose_services(index):
     """Every docker-compose service with image, build, ports, depends_on and environment keys."""
     services = []
-    for file in walk_files(repo, lambda name: re.match(r"(docker-)?compose(\.[\w-]+)?\.ya?ml$", name)):
-        lines = _read(file).splitlines()
+    repo = index.root
+    for file in index.walk(lambda name: re.match(r"(docker-)?compose(\.[\w-]+)?\.ya?ml$", name)):
+        lines = _file_text(file).splitlines()
         in_services, service_indent, current, key_indent = False, None, None, None
         section = None
         for number, line in enumerate(lines, 1):
@@ -437,10 +443,11 @@ def compose_services(repo):
     return services
 
 
-def _dockerfiles(repo):
+def _dockerfiles(index):
     result = []
-    for file in walk_files(repo, lambda name: name == "Dockerfile" or name.endswith(".Dockerfile") or name.startswith("Dockerfile.")):
-        text = _read(file)
+    repo = index.root
+    for file in index.walk(lambda name: name == "Dockerfile" or name.endswith(".Dockerfile") or name.startswith("Dockerfile.")):
+        text = _file_text(file)
         stages = re.findall(r"^\s*FROM\s+(\S+)", text, re.MULTILINE | re.IGNORECASE)
         exposed = re.findall(r"^\s*EXPOSE\s+(.+)$", text, re.MULTILINE | re.IGNORECASE)
         entry = re.findall(r"^\s*(?:ENTRYPOINT|CMD)\s+(.+)$", text, re.MULTILINE | re.IGNORECASE)
@@ -454,10 +461,11 @@ def _dockerfiles(repo):
     return result
 
 
-def _kubernetes(repo):
+def _kubernetes(index):
     result = []
-    for file in walk_files(repo, lambda name: name.endswith((".yaml", ".yml"))):
-        text = _read(file)
+    repo = index.root
+    for file in index.walk(lambda name: name.endswith((".yaml", ".yml"))):
+        text = _file_text(file)
         if "apiVersion:" not in text or "kind:" not in text:
             continue
         for document in re.split(r"^---\s*$", text, flags=re.MULTILINE):
@@ -486,9 +494,10 @@ PLATFORM_FILES = [
 ]
 
 
-def deployment(repo):
+def deployment(index):
     ci, platforms = [], []
-    for path in sorted(repo.rglob("*")):
+    repo = index.root
+    for path in sorted(index.walk(lambda n: True)):
         if any(part in ("node_modules", ".git", "bin", "obj", "target", "dist") for part in path.parts):
             continue
         relative = path.relative_to(repo).as_posix()
@@ -500,10 +509,10 @@ def deployment(repo):
                 platforms.append({"tool": name, "file": relative})
     return {
         "compose": [
-            {k: v for k, v in s.items() if k != "dir"} for s in compose_services(repo)
+            {k: v for k, v in s.items() if k != "dir"} for s in compose_services(index)
         ],
-        "dockerfiles": _dockerfiles(repo),
-        "kubernetes": _kubernetes(repo),
+        "dockerfiles": _dockerfiles(index),
+        "kubernetes": _kubernetes(index),
         "ci": ci,
         "platforms": platforms,
     }
@@ -536,7 +545,7 @@ PLACEHOLDER = re.compile(r"\$\{([A-Z][A-Z0-9_]+)(?::-?([^}]*))?\}")
 CONFIG_FILE = re.compile(r"^(application|bootstrap)[\w-]*\.(ya?ml|properties)$|^appsettings[\w.]*\.json$|^\.env(\.[\w-]+)?$|^config\.(ya?ml|json|toml)$|^settings\.(ya?ml|toml)$")
 
 
-def configuration(repo, files, owner_of, services):
+def configuration(repo, files, owner_of, services, index=None):
     """{variables: [{name, default, sources: [file:line], containers}], files: [config files]}"""
     variables = {}
 
@@ -552,18 +561,22 @@ def configuration(repo, files, owner_of, services):
             entry["containers"].add(container)
 
     for file in files:
-        text = _read(file)
+        text = _file_text(file)
         for pattern in ENV_PATTERNS:
             for m in pattern.finditer(text):
                 add(m.group(1), _rel(repo, file), _line_of(text, m.start()), container=owner_of(file))
 
     config_files = []
-    for file in walk_files(repo, lambda name: CONFIG_FILE.match(name) is not None):
+    if index is not None:
+        config_candidates = index.walk(lambda name: CONFIG_FILE.match(name) is not None)
+    else:
+        config_candidates = walk_files(repo, lambda name: CONFIG_FILE.match(name) is not None)
+    for file in config_candidates:
         if _is_test(file, repo):
             continue
         relative = _rel(repo, file)
         config_files.append(relative)
-        text = _read(file)
+        text = _file_text(file)
         container = owner_of(file.resolve())
         if file.name.startswith(".env"):
             for m in re.finditer(r"^\s*([A-Z][A-Z0-9_]+)\s*=\s*(.*)$", text, re.MULTILINE):
@@ -615,7 +628,7 @@ def _maven_inventory(pom_text):
     return items
 
 
-def inventory(repo, container, module_paths):
+def inventory(repo, container, module_paths, index=None):
     """Runtime, frameworks and key libraries (with versions when declared) for one container."""
     items = []
     base = (repo / container["path"]).resolve() if container.get("path") else None
@@ -632,13 +645,14 @@ def inventory(repo, container, module_paths):
             manifests.append(base.parent / "pom.xml")
 
     for manifest in dict.fromkeys(manifests):
-        text = _read(manifest)
         name = manifest.name
         if name == "package.json":
-            try:
-                data = json.loads(text)
-            except ValueError:
-                continue
+            data = index.read_json(manifest) if index is not None else None
+            if data is None:
+                try:
+                    data = json.loads(_file_text(manifest))
+                except ValueError:
+                    continue
             for field in ("dependencies", "devDependencies"):
                 for dep, version in (data.get(field) or {}).items():
                     if field == "dependencies" or dep in ("typescript", "vite", "webpack", "jest", "vitest", "eslint", "tailwindcss", "@playwright/test"):
@@ -647,14 +661,17 @@ def inventory(repo, container, module_paths):
             if engines:
                 items.insert(0, f"Node.js {engines}")
         elif name == "pom.xml":
+            text = _file_text(manifest)
             items += _maven_inventory(text)
         elif name.startswith("build.gradle"):
+            text = _file_text(manifest)
             for m in re.finditer(r"""(?:implementation|api|runtimeOnly)\s*\(?\s*['"]([\w.-]+):([\w.-]+)(?::([\w.-]+))?['"]""", text):
                 items.append(m.group(2) + (f" {m.group(3)}" if m.group(3) else ""))
             plugin = re.search(r"""org\.springframework\.boot['"]\)?\s*version\s*['"]([^'"]+)""", text)
             if plugin:
                 items.insert(0, f"Spring Boot {plugin.group(1)}")
         elif name.endswith("proj"):
+            text = _file_text(manifest)
             try:
                 root = ET.fromstring(text.encode("utf-8"))
             except ET.ParseError:
@@ -666,6 +683,7 @@ def inventory(repo, container, module_paths):
                 elif tag == "PackageReference" and e.attrib.get("Include"):
                     items.append(e.attrib["Include"] + (f" {e.attrib['Version']}" if e.attrib.get("Version") else ""))
         elif name == "pyproject.toml":
+            text = _file_text(manifest)
             python = re.search(r"requires-python\s*=\s*['\"]([^'\"]+)", text)
             if python:
                 items.insert(0, f"Python {python.group(1)}")
@@ -673,8 +691,10 @@ def inventory(repo, container, module_paths):
             if block:
                 items += [d.strip() for d in re.findall(r"['\"]([^'\"]+)['\"]", block.group(1))]
         elif name == "requirements.txt":
+            text = _file_text(manifest)
             items += [l.strip() for l in text.splitlines() if l.strip() and not l.startswith(("#", "-"))]
         elif name == "go.mod":
+            text = _file_text(manifest)
             go = re.search(r"^go\s+(\S+)", text, re.MULTILINE)
             if go:
                 items.insert(0, f"Go {go.group(1)}")
@@ -694,19 +714,29 @@ DEV_PROXY = [
 ]
 
 
-def dev_proxies(repo):
+def dev_proxies(repo, index=None):
     """[(prefix, target url, file, line)] from front-end dev-server configs and package.json "proxy"."""
     found = []
-    for file in walk_files(repo, lambda n: re.match(r"(vite|webpack|next|vue|angular)\.config\.\w+$|^proxy\.conf\.json$|^setupProxy\.js$", n)):
-        text = _read(file)
+    if index is not None:
+        config_candidates = index.walk(lambda n: re.match(r"(vite|webpack|next|vue|angular)\.config\.\w+$|^proxy\.conf\.json$|^setupProxy\.js$", n))
+        pkg_candidates = index.walk(lambda n: n == "package.json")
+    else:
+        config_candidates = walk_files(repo, lambda n: re.match(r"(vite|webpack|next|vue|angular)\.config\.\w+$|^proxy\.conf\.json$|^setupProxy\.js$", n))
+        pkg_candidates = walk_files(repo, lambda n: n == "package.json")
+    for file in config_candidates:
+        text = _file_text(file)
         if "proxy" not in text and "rewrites" not in text:
             continue
         for pattern in DEV_PROXY:
             for m in pattern.finditer(text):
                 if "localhost" in m.group(2) or "127.0.0.1" in m.group(2) or re.search(r"://[\w-]+:\d+", m.group(2)):
                     found.append((m.group(1), m.group(2), file.resolve(), _line_of(text, m.start())))
-    for file in walk_files(repo, lambda n: n == "package.json"):
-        text = _read(file)
+    for file in pkg_candidates:
+        if index is not None:
+            data = index.read_json(file)
+            text = json.dumps(data) if data else ""
+        else:
+            text = _file_text(file)
         m = re.search(r'"proxy"\s*:\s*"(https?://[^"]+)"', text)
         if m:
             found.append(("/", m.group(1), file.resolve(), _line_of(text, m.start())))
@@ -719,7 +749,7 @@ def declared_ports(repo, container_dir):
     for file in walk_files(container_dir, lambda n: re.match(r"application[\w-]*\.(ya?ml|properties)$|launchSettings\.json$|^\.env|\.(js|ts|py|go)$", n) is not None):
         if _is_test(file, container_dir):
             continue
-        text = _read(file)
+        text = _file_text(file)
         for m in re.finditer(r"port\s*[:=]\s*\$\{[A-Z_]+:(\d{2,5})\}|server\.port\s*[:=]\s*(\d{2,5})|^\s*port\s*:\s*(\d{2,5})\s*$|PORT\s*(?:=|\|\||\?\?|or)\s*['\"]?(\d{2,5})|localhost:(\d{2,5})|listen\(\s*(\d{2,5})|:(\d{2,5})\"\s*\)", text, re.MULTILINE):
             ports.add(next(g for g in m.groups() if g))
     return ports

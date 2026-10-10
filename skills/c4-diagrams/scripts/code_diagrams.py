@@ -11,11 +11,11 @@ import re
 try:
     from scripts import code_facts, code_types
     from scripts.c4_facts import slug, _is_vendored
-    from scripts.dotnet_projects import walk_files
+    from scripts.repo_index import walk_files
 except ImportError:
     import code_facts, code_types
     from c4_facts import slug, _is_vendored
-    from dotnet_projects import walk_files
+    from repo_index import walk_files
 
 MAX_TYPES = 12
 MAX_MEMBERS = 8

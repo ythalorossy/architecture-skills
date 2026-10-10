@@ -5,9 +5,11 @@ import re
 from pathlib import Path
 
 try:
-    from scripts.dotnet_projects import is_ignored_dir, walk_files, project_group
+    from scripts.repo_index import is_ignored_dir, walk_files
+    from scripts.paths import project_group
 except ImportError:
-    from dotnet_projects import is_ignored_dir, walk_files, project_group
+    from repo_index import is_ignored_dir, walk_files
+    from paths import project_group
 
 
 SOURCE_EXTENSIONS = (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts", ".vue", ".svelte")

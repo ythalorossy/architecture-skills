@@ -4,9 +4,11 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 try:
-    from scripts.dotnet_projects import local_tag, walk_files, project_group
+    from scripts.repo_index import walk_files
+    from scripts.paths import local_tag, project_group
 except ImportError:
-    from dotnet_projects import local_tag, walk_files, project_group
+    from repo_index import walk_files
+    from paths import local_tag, project_group
 
 
 GRADLE_SETTINGS = ("settings.gradle", "settings.gradle.kts")
@@ -34,7 +36,7 @@ def _text(element, tag):
     return found[0].text.strip() if found and found[0].text else None
 
 
-def _read_pom(file):
+def _parse_pom(file):
     try:
         root = ET.parse(file).getroot()
     except ET.ParseError as ex:
@@ -62,10 +64,14 @@ def _read_pom(file):
     }
 
 
-def _maven(repo):
+def _maven(repo, index=None):
     poms = {}
-    for file in walk_files(repo, lambda name: name == "pom.xml"):
-        pom = _read_pom(file)
+    if index is not None:
+        candidates = index.walk(lambda name: name == "pom.xml")
+    else:
+        candidates = walk_files(repo, lambda name: name == "pom.xml")
+    for file in candidates:
+        pom = _parse_pom(file)
         if pom:
             poms[file.resolve()] = pom
 
@@ -173,26 +179,31 @@ def _gradle_build(repo, settings):
     return projects
 
 
-def _gradle(repo):
-    settings_files = list(walk_files(repo, lambda name: name in GRADLE_SETTINGS))
+def _gradle(repo, index=None):
+    if index is not None:
+        settings_files = list(index.walk(lambda name: name in GRADLE_SETTINGS))
+    else:
+        settings_files = list(walk_files(repo, lambda name: name in GRADLE_SETTINGS))
     projects = []
     for settings in settings_files:
         projects += _gradle_build(repo, settings)
     return [s.relative_to(repo).as_posix() for s in settings_files], projects
 
 
-def discover_projects(repo_path):
+def discover_projects(repo_path, index=None):
     """
     Maven modules (artifactId) and Gradle subprojects (settings includes).
 
     Maven edges are <dependency> artifactIds naming another module; when an
     aggregator POM exists, modules it does not list get in_solution=False.
     Gradle edges are project(':x') and projects.x references in build files.
+
+    The `index` parameter is accepted for API compatibility but not yet used.
     """
     repo = Path(repo_path).resolve()
 
-    maven_roots, maven_projects = _maven(repo)
-    gradle_roots, gradle_projects = _gradle(repo)
+    maven_roots, maven_projects = _maven(repo, index)
+    gradle_roots, gradle_projects = _gradle(repo, index)
 
     return {
         "solutions": maven_roots + gradle_roots,

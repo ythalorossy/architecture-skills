@@ -2,27 +2,20 @@ from pathlib import Path
 import json
 
 try:
-    from scripts.dotnet_projects import walk_files
+    from scripts.repo_index import walk_files
 except ImportError:
-    from dotnet_projects import walk_files
+    from repo_index import walk_files
 
 
-def _uses_react(package_json):
-    try:
-        data = json.loads(package_json.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return False
-
-    dependencies = {
-        **data.get("dependencies", {}),
-        **data.get("devDependencies", {}),
-        **data.get("peerDependencies", {})
+def _uses_react(package_json_data):
+    return "react" in {
+        **package_json_data.get("dependencies", {}),
+        **package_json_data.get("devDependencies", {}),
+        **package_json_data.get("peerDependencies", {})
     }
 
-    return "react" in dependencies
 
-
-def detect_stack(repo_path):
+def detect_stack(repo_path, index=None):
     repo = Path(repo_path)
 
     indicators = {
@@ -33,24 +26,43 @@ def detect_stack(repo_path):
         "Go": ("go.mod",)
     }
 
-    # One pass over the tree (build and dependency folders are skipped).
-    files = list(walk_files(
-        repo,
-        lambda name: name.endswith(sum(indicators.values(), ()))
-    ))
-
-    found = [
-        stack
-        for stack, suffixes in indicators.items()
-        if any(file.name.endswith(suffixes) for file in files)
-    ]
-
-    # package.json alone does not mean React; check the dependencies.
-    if any(
-        file.name == "package.json" and _uses_react(file)
-        for file in files
-    ):
-        found.append("React")
+    if index is not None:
+        # Use index views for I/O efficiency
+        files = index.files("all")
+        suffix_indicators = {k: tuple(v) for k, v in indicators.items()}
+        found = [
+            stack
+            for stack, suffixes in suffix_indicators.items()
+            if any(f.suffix == s or f.name.endswith(suffixes) for f in files for s in suffixes)
+        ]
+        # React check
+        for rel in index.by_suffix(".json"):
+            if rel.name == "package.json":
+                data = index.read_json(rel)
+                if data and _uses_react(data):
+                    found.append("React")
+                    break
+    else:
+        # Fallback: use walk_files (legacy standalone mode)
+        files = list(walk_files(
+            repo,
+            lambda name: name.endswith(sum(indicators.values(), ()))
+        ))
+        found = [
+            stack
+            for stack, suffixes in indicators.items()
+            if any(file.name.endswith(suffixes) for file in files)
+        ]
+        if any(file.name == "package.json" for file in files):
+            for file in files:
+                if file.name == "package.json":
+                    try:
+                        data = json.loads(file.read_text(encoding="utf-8"))
+                        if _uses_react(data):
+                            found.append("React")
+                            break
+                    except (OSError, ValueError):
+                        pass
 
     return found
 

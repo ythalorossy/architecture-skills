@@ -1,20 +1,7 @@
 from pathlib import Path, PurePosixPath
 
-try:
-    from scripts.projects import discover_all
-except ImportError:
-    from projects import discover_all
 
-
-def _graph_projects(repo_path, include_orphans):
-    return [
-        project
-        for project in discover_all(repo_path)["projects"]
-        if include_orphans or project["in_solution"] is not False
-    ]
-
-
-def build_dependency_graph(repo_path, include_orphans=False):
+def build_dependency_graph(repo_path, include_orphans=False, index=None, discovery=None):
     """
     Map each project name to the names of the projects it references.
 
@@ -24,7 +11,14 @@ def build_dependency_graph(repo_path, include_orphans=False):
     its name (or file stem), so it shows up as a target that is not itself a
     key in the graph.
     """
-    projects = _graph_projects(Path(repo_path).resolve(), include_orphans)
+    if discovery is None:
+        from scripts.projects import discover_all
+        discovery = discover_all(repo_path, index)
+    projects = [
+        project
+        for project in discovery["projects"]
+        if include_orphans or project["in_solution"] is not False
+    ]
 
     ids_by_path = {
         project["path"]: project["id"]
@@ -50,11 +44,15 @@ def build_dependency_graph(repo_path, include_orphans=False):
     return dict(sorted(graph.items()))
 
 
-def build_groups(repo_path, include_orphans=False):
+def build_groups(repo_path, include_orphans=False, index=None, discovery=None):
     """Map each project name to its folder group (e.g. src/Domain), used for diagram subgraphs."""
+    if discovery is None:
+        from scripts.projects import discover_all
+        discovery = discover_all(repo_path, index)
     return {
         project["id"]: project["group"]
-        for project in _graph_projects(Path(repo_path).resolve(), include_orphans)
+        for project in discovery["projects"]
+        if include_orphans or project["in_solution"] is not False
     }
 
 

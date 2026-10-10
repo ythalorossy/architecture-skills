@@ -36,6 +36,47 @@ IGNORED_DIRS = {
 DOT_ALLOWLIST = {".github", ".circleci", ".azure", ".azuredevops", ".gitlab", ".buildkite"}
 
 
+# ----------------------------------------------------------------------
+# Module-level helpers (for discovery consumers migrating from dotnet_projects)
+# ----------------------------------------------------------------------
+
+
+def is_ignored_dir(name):
+    """
+    Return True for directories that are always skipped:
+    - Base IGNORED_DIRS entries
+    - Dot-folders not in DOT_ALLOWLIST
+    """
+    if name in IGNORED_DIRS:
+        return True
+    if name.startswith(".") and name not in DOT_ALLOWLIST:
+        return True
+    return False
+
+
+def walk_files(repo_path, predicate):
+    """
+    Yield files under repo_path matching predicate, skipping build/tooling folders.
+
+    DEPRECATED: This performs its own walk. Use RepoIndex.build() once per run
+    and then index.files('all') with filtering. This wrapper exists for
+    out-of-tree callers during the transition.
+    """
+    for root, dirs, files in os.walk(repo_path):
+        dirs[:] = sorted(
+            d for d in dirs
+            if not is_ignored_dir(d) and not (Path(root) / d / "pyvenv.cfg").exists()
+        )
+        for file_name in sorted(files):
+            if predicate(file_name):
+                yield Path(root) / file_name
+
+
+def local_tag(element):
+    """Strip namespace from XML element tag (e.g. '{http://...}Project' -> 'Project')."""
+    return element.tag.rsplit("}", 1)[-1]
+
+
 class RepoIndex:
     """
     Single-walk repository index with tolerant reader.
@@ -109,6 +150,17 @@ class RepoIndex:
         """List of Paths with the given suffix."""
         return list(self._by_suffix.get(suffix, []))
 
+    def walk(self, predicate):
+        """
+        Iterate absolute Paths in the repo matching the predicate.
+
+        This replaces the old walk_files(repo, predicate) function.
+        Predicate takes a filename string (not a Path).
+        """
+        for rel in self._files:
+            if predicate(rel.name):
+                yield self.root / rel
+
     def in_dir(self, dirname):
         """List of Paths that are inside a directory with the given name."""
         return list(self._in_dir.get(dirname, []))
@@ -118,9 +170,11 @@ class RepoIndex:
         path = self._resolve(path)
         if path is None:
             return None
+        # Use absolute path string as cache key for deduplication
+        cache_key = str(path.resolve())
         # Check cache
-        if path in self._text_cache:
-            return self._text_cache[path]
+        if cache_key in self._text_cache:
+            return self._text_cache[cache_key]
         # Check size cap
         try:
             size = path.stat().st_size
@@ -138,7 +192,7 @@ class RepoIndex:
         # Warn if replacement chars were added (Latin-1 or other non-UTF-8)
         if "�" in text:
             self._collector.warn("parse", file=str(path), detail="decode replacement characters used")
-        self._text_cache[path] = text
+        self._text_cache[cache_key] = text
         return text
 
     def read_json(self, path):
@@ -293,10 +347,12 @@ class RepoIndex:
     def _resolve(self, path):
         """Resolve path to absolute, or None if outside repo."""
         path = Path(path)
-        try:
+        # Already absolute? resolve normally.
+        if path.is_absolute():
             resolved = path.resolve()
-        except (OSError, RuntimeError):
-            return None
+        else:
+            # Relative path: resolve from index root (not CWD)
+            resolved = (self.root / path).resolve()
         if not resolved.is_relative_to(self.root):
             return None
         return resolved
@@ -333,8 +389,15 @@ class RepoIndex:
         """True for CI/CD and hosting marker files."""
         rel = path.as_posix()
         for marker in self._CI_HOSTING_MARKERS:
-            if rel == marker or rel.startswith(marker + "/"):
-                return True
+            if "/" in marker:
+                # Directory marker (prefix match): `.github/workflows`, `.circleci/config.yml`
+                if rel == marker or rel.startswith(marker + "/"):
+                    return True
+            else:
+                # Root file marker: exact filename at repo root
+                # e.g. `.gitlab-ci.yml`, `Jenkinsfile`, `bitbucket-pipelines.yml`
+                if rel == marker:
+                    return True
         return False
 
 

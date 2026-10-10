@@ -23,6 +23,27 @@ from scripts.generate_docs import analyze_graph, generate_report
 from scripts.c4_facts import collect_facts
 from scripts.render_c4 import render as render_c4
 from scripts.code_diagrams import repository_root
+from scripts.repo_index import RepoIndex
+from scripts.projects import discover_all
+
+
+class _DegradedCollector:
+    """Minimal SPEC-08 collector that accumulates diagnostics for degraded runs."""
+
+    def __init__(self):
+        self.warnings = []
+        self.skipped = []
+        self.degraded = False
+
+    def warn(self, kind, *, file=None, detail=None):
+        self.warnings.append({"kind": kind, "file": file, "detail": detail})
+        if kind == "parse":
+            self.degraded = True
+
+    def skipped(self, path, reason):
+        self.skipped.append({"path": str(path), "reason": reason})
+        if reason in ("permission", "outside_symlink", "broken_symlink", "too_large"):
+            self.degraded = True
 
 
 class RepositoryAnalyzer:
@@ -37,10 +58,17 @@ class RepositoryAnalyzer:
 
         print(f"Analyzing repository: {self.repo_path}")
 
-        stacks = self._detect_stack()
-        scan_results = self._scan_repository()
-        dependency_graph = self._build_graph()
-        groups = build_groups(self.repo_path)
+        # Build the RepoIndex once for the entire run (SPEC-03: one walk per run)
+        collector = _DegradedCollector()
+        index = RepoIndex.build(self.repo_path, collector)
+
+        # Discover projects once and reuse (SPEC-03: I/O efficiency)
+        discovery = discover_all(self.repo_path, index)
+
+        stacks = self._detect_stack(index)
+        scan_results = self._scan_repository(index, discovery)
+        dependency_graph = self._build_graph(index=index, discovery=discovery)
+        groups = build_groups(self.repo_path, index=index, discovery=discovery)
 
         self._save_json(
             scan_results,
@@ -65,7 +93,7 @@ class RepositoryAnalyzer:
             mermaid
         )
 
-        c4 = self._generate_c4(dependency_graph)
+        c4 = self._generate_c4(dependency_graph, index=index, discovery=discovery)
 
         summary = self._generate_summary(
             stacks,
@@ -101,17 +129,18 @@ class RepositoryAnalyzer:
             exist_ok=True
         )
 
-    def _detect_stack(self):
+    def _detect_stack(self, index):
         print("Detecting technology stack...")
-        return detect_stack(self.repo_path)
+        return detect_stack(self.repo_path, index)
 
-    def _scan_repository(self):
+    def _scan_repository(self, index, discovery):
         print("Scanning repository...")
-        return scan_repo(self.repo_path)
+        scan_results, _ = scan_repo(self.repo_path, index, discovery)
+        return scan_results
 
-    def _build_graph(self):
+    def _build_graph(self, index=None, discovery=None):
         print("Building dependency graph...")
-        return build_dependency_graph(self.repo_path)
+        return build_dependency_graph(self.repo_path, index=index, discovery=discovery)
 
     def _generate_mermaid(self, dependency_graph, groups):
         print("Generating Mermaid diagram...")
@@ -177,10 +206,10 @@ class RepositoryAnalyzer:
             encoding="utf-8"
         )
 
-    def _generate_c4(self, dependency_graph):
+    def _generate_c4(self, dependency_graph, index=None, discovery=None):
         print("Collecting C4 facts...")
 
-        facts = collect_facts(self.repo_path, dependency_graph)
+        facts = collect_facts(self.repo_path, dependency_graph, index=index, discovery=discovery)
         facts["repository_root"] = repository_root(self.repo_path, self.output_path)
 
         self._save_json(

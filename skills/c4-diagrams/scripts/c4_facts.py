@@ -25,17 +25,21 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 try:
-    from scripts.dotnet_projects import walk_files, local_tag, is_ignored_dir
+    from scripts.repo_index import walk_files, is_ignored_dir
+    from scripts.paths import local_tag
     from scripts.projects import discover_all
     from scripts.python_projects import _distributions, normalize, _python_files
     from scripts.generate_docs import is_test_project
     from scripts import code_facts, go_projects
+    from scripts.repo_index import RepoIndex
 except ImportError:
     import code_facts, go_projects
-    from dotnet_projects import walk_files, local_tag, is_ignored_dir
+    from repo_index import walk_files, is_ignored_dir
+    from paths import local_tag
     from projects import discover_all
     from python_projects import _distributions, normalize, _python_files
     from generate_docs import is_test_project
+    from repo_index import RepoIndex
 
 
 SOURCE_EXTENSIONS = (".cs", ".fs", ".vb", ".py", ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".java", ".kt", ".go")
@@ -195,7 +199,7 @@ def _line_of(text, index):
     return text.count("\n", 0, index) + 1
 
 
-def _read(path):
+def _file_text(path):
     try:
         return Path(path).read_text(encoding="utf-8-sig", errors="replace")
     except OSError:
@@ -212,9 +216,13 @@ def _is_vendored(rel_parts):
     )
 
 
-def _source_files(repo, test_dirs):
+def _source_files(repo, test_dirs, index=None):
     files = []
-    for file in walk_files(repo, lambda name: name.endswith(SOURCE_EXTENSIONS)):
+    if index is not None:
+        candidates = index.walk(lambda name: name.endswith(SOURCE_EXTENSIONS))
+    else:
+        candidates = walk_files(repo, lambda name: name.endswith(SOURCE_EXTENSIONS))
+    for file in candidates:
         rel_parts = file.resolve().relative_to(repo).parts
         if any(part.lower() in TEST_DIRS for part in rel_parts[:-1]):
             continue
@@ -291,7 +299,7 @@ def _dotnet_containers(repo, projects):
     for project in projects:
         if project["ecosystem"] != ".NET" or project["in_solution"] is False or is_test_project(project["id"]):
             continue
-        text = _read(project["path"])
+        text = _file_text(project["path"])
         try:
             root = ET.fromstring(text.encode("utf-8"))
         except ET.ParseError:
@@ -338,7 +346,7 @@ def _signal_match(names, signals):
 def _python_imports(files):
     names = set()
     for file in files:
-        for match in PY_IMPORT.finditer(_read(file)):
+        for match in PY_IMPORT.finditer(_file_text(file)):
             module = match.group(1) or match.group(2)
             parts = module.split(".")
             names.add(parts[0])
@@ -347,10 +355,10 @@ def _python_imports(files):
     return names
 
 
-def _python_containers(repo):
-    distributions = _distributions(repo)
+def _python_containers(repo, index):
+    distributions = _distributions(repo, index)
     if not distributions:
-        if not any(walk_files(repo, lambda name: re.match(r"requirements.*\.txt$", name))):
+        if not any(index.walk(lambda name: re.match(r"requirements.*\.txt$", name)) if index else walk_files(repo, lambda name: re.match(r"requirements.*\.txt$", name))):
             return []
         distributions = [{"name": repo.name, "directory": repo, "file": None, "requirements": []}]
 
@@ -359,18 +367,18 @@ def _python_containers(repo):
         directory = dist["directory"]
         requirements = set(dist["requirements"])
         for req_file in directory.glob("requirements*.txt"):
-            for line in _read(req_file).splitlines():
+            for line in _file_text(req_file).splitlines():
                 match = re.match(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)", line)
                 if match:
                     requirements.add(normalize(match.group(1)))
 
-        code = [f for f in _python_files(directory) if not any(p in TEST_DIRS for p in f.relative_to(directory).parts[:-1])]
+        code = [f for f in _python_files(directory, index) if not any(p in TEST_DIRS for p in f.relative_to(directory).parts[:-1])]
         imports = _python_imports(code)
         names = {normalize(n) for n in requirements} | {normalize(n) for n in imports}
         kinds = _signal_match(names, [(normalize(n), k, t) for n, k, t in PYTHON_CONTAINER_SIGNALS])
 
         manifest = dist["file"]
-        if manifest is not None and manifest.name == "pyproject.toml" and "[project.scripts]" in _read(manifest):
+        if manifest is not None and manifest.name == "pyproject.toml" and "[project.scripts]" in _file_text(manifest):
             kinds.setdefault("cli", "CLI")
         if not kinds:
             continue
@@ -387,13 +395,22 @@ def _python_containers(repo):
     return containers
 
 
-def _node_containers(repo):
+def _node_containers(repo, index):
     containers = []
-    for file in walk_files(repo, lambda name: name == "package.json"):
-        try:
-            data = json.loads(_read(file))
-        except ValueError:
-            continue
+    if index is not None:
+        candidates = index.walk(lambda name: name == "package.json")
+    else:
+        candidates = walk_files(repo, lambda name: name == "package.json")
+    for file in candidates:
+        if index is not None:
+            data = index.read_json(file)
+            if data is None:
+                continue
+        else:
+            try:
+                data = json.loads(_file_text(file))
+            except ValueError:
+                continue
         if data.get("workspaces"):
             continue
         dependencies = {**(data.get("dependencies") or {}), **(data.get("devDependencies") or {})}
@@ -418,13 +435,13 @@ def _node_containers(repo):
     return containers
 
 
-def _java_containers(repo, projects):
+def _java_containers(repo, projects, index):
     containers = []
     for project in projects:
         if not project["ecosystem"].startswith("Java") or is_test_project(project["id"]):
             continue
         path = project["path"]
-        text = _read(path) if path.is_file() else ""
+        text = _file_text(path) if path.is_file() else ""
         kinds = _signal_match({s for s, _, _ in JAVA_CONTAINER_SIGNALS if s in text}, JAVA_CONTAINER_SIGNALS)
         if "web-api" in kinds:
             kinds.pop("app", None)
@@ -439,7 +456,7 @@ def _java_containers(repo, projects):
         module_dir = path.parent if path.is_file() else path
         if not (
             re.search(r"spring-boot-maven-plugin|quarkus-maven-plugin|micronaut-maven-plugin|<packaging>\s*war|org\.springframework\.boot['\"]?\)?\s*version|id\s*\(?\s*['\"]application", text)
-            or _has_jvm_main(module_dir)
+            or _has_jvm_main(module_dir, index)
         ):
             continue
         containers.append({
@@ -453,19 +470,23 @@ def _java_containers(repo, projects):
     return containers
 
 
-def _has_jvm_main(module_dir):
-    for file in walk_files(module_dir, lambda n: n.endswith((".java", ".kt"))):
+def _has_jvm_main(module_dir, index):
+    if index is not None:
+        candidates = index.walk(lambda n: n.endswith((".java", ".kt")))
+    else:
+        candidates = walk_files(module_dir, lambda n: n.endswith((".java", ".kt")))
+    for file in candidates:
         if any(part in TEST_DIRS for part in file.relative_to(module_dir).parts[:-1]):
             continue
-        text = _read(file)
+        text = _file_text(file)
         if "@SpringBootApplication" in text or "@QuarkusMain" in text or re.search(r"\bstatic\s+void\s+main\s*\(|^fun\s+main\s*\(", text, re.MULTILINE):
             return True
     return False
 
 
-def _go_containers(repo):
+def _go_containers(repo, index):
     containers = []
-    for directory, module, kind, technology in go_projects.main_packages(repo):
+    for directory, module, kind, technology in go_projects.main_packages(repo, index):
         relative = _rel(repo, directory)
         name = directory.name if directory != module["dir"] else module["path"].rsplit("/", 1)[-1]
         containers.append({
@@ -504,11 +525,15 @@ def _yaml_urls(text):
     return found
 
 
-def _compose_services(repo):
+def _compose_services(repo, index=None):
     """(service, image, build context, file, line) from docker-compose files, without a YAML parser."""
     services = []
-    for file in walk_files(repo, lambda name: re.match(r"(docker-)?compose(\.[\w-]+)?\.ya?ml$", name)):
-        lines = _read(file).splitlines()
+    if index is not None:
+        candidates = index.walk(lambda name: re.match(r"(docker-)?compose(\.[\w-]+)?\.ya?ml$", name))
+    else:
+        candidates = walk_files(repo, lambda name: re.match(r"(docker-)?compose(\.[\w-]+)?\.ya?ml$", name))
+    for file in candidates:
+        lines = _file_text(file).splitlines()
         in_services, service_indent, current = False, None, None
         for number, line in enumerate(lines, 1):
             if not line.strip() or line.lstrip().startswith("#"):
@@ -616,24 +641,27 @@ def _owner_component(file, components, by_id):
     return best
 
 
-def collect_facts(repo_path, graph):
+def collect_facts(repo_path, graph, index=None, discovery=None):
     repo = Path(repo_path).resolve()
-    discovery = discover_all(repo)
+    if index is None:
+        index = RepoIndex.build(repo)
+    if discovery is None:
+        discovery = discover_all(repo, index)
     projects = [p for p in discovery["projects"] if p["in_solution"] is not False]
 
     containers = (
         _dotnet_containers(repo, projects)
-        + _python_containers(repo)
-        + _node_containers(repo)
-        + _java_containers(repo, projects)
-        + _go_containers(repo)
+        + _python_containers(repo, index)
+        + _node_containers(repo, index)
+        + _java_containers(repo, projects, index)
+        + _go_containers(repo, index)
     )
 
     stores, externals = {}, {}
     compose_stores, compose_map = [], {}
 
     # docker-compose: build services are (or confirm) containers; known images are data stores.
-    for service in _compose_services(repo):
+    for service in _compose_services(repo, index):
         evidence = f"{_rel(repo, service['file'])}:{service['line']}"
         image = (service["image"] or "").lower()
         store = next((tech for key, tech in COMPOSE_STORES if key in image.split(":")[0]), None)
@@ -647,7 +675,7 @@ def collect_facts(repo_path, graph):
                 # Build context is a parent folder (a Maven/Gradle/.NET multi-module root):
                 # pick the runnable container below it, preferring a web API.
                 inside = [c for c in containers if c["path"] and (repo / c["path"]).resolve().is_relative_to(context)]
-                dockerfile = _read(context / "Dockerfile")
+                dockerfile = _file_text(context / "Dockerfile")
                 mentioned = [c for c in inside if Path(c["path"]).name in dockerfile] or inside
                 web = [c for c in mentioned if "web-api" in c["kind"]]
                 match = (web or mentioned or [None])[0]
@@ -737,9 +765,9 @@ def collect_facts(repo_path, graph):
     for technology, service in compose_stores:
         record(stores, technology, new_entry(technology), service["file"].resolve(), service["line"])
 
-    source_files = _source_files(repo, test_dirs)
+    source_files = _source_files(repo, test_dirs, index)
     for file in source_files:
-        text = _read(file)
+        text = _file_text(file)
 
         for pattern, kind, technology in CODE_SIGNALS:
             match = next((m for m in re.finditer(pattern, text) if not _in_string(text, m.start())), None)
@@ -754,7 +782,7 @@ def collect_facts(repo_path, graph):
             imports = [(name, max(text.find(f'"{name}"'), 0)) for name in code_facts.go_imports(text)]
         else:
             imports = []
-        for module, index in imports:
+        for module, _match_pos in imports:
             if file.suffix == ".go":
                 hit = next((v for k, v in IMPORT_SIGNALS.items() if "/" in k and "." in k.split("/")[0] and (module == k or module.startswith(k + "/"))), None)
             else:
@@ -763,7 +791,7 @@ def collect_facts(repo_path, graph):
                 hit = next((IMPORT_SIGNALS[c] for c in candidates if c in IMPORT_SIGNALS), None)
             if hit:
                 kind, technology = hit
-                record(stores if kind == "store" else externals, technology, new_entry(technology), file, _line_of(text, index))
+                record(stores if kind == "store" else externals, technology, new_entry(technology), file, _line_of(text, _match_pos))
 
         soap = SOAP_CLIENT.search(text)
         if soap or HTTP_CLIENT.search(text):
@@ -777,7 +805,7 @@ def collect_facts(repo_path, graph):
     for project in projects:
         if is_test_project(project["id"]) or not project["path"].is_file():
             continue
-        text = _read(project["path"])
+        text = index.read_text(project["path"]) if index is not None else _file_text(project["path"])
         for prefix, kind, technology in PACKAGE_SIGNALS:
             match = re.search(r"""(Include="|<artifactId>|['":])""" + re.escape(prefix), text)
             if match:
@@ -787,17 +815,25 @@ def collect_facts(repo_path, graph):
     # setting that maps to several hosts (per state, per year) stays one box
     # named after the setting.
     config_urls = {}
-    for file in walk_files(repo, lambda name: re.match(r"appsettings.*\.json$", name)):
-        text = _read(file)
+    if index is not None:
+        appsettings = index.walk(lambda name: re.match(r"appsettings.*\.json$", name))
+    else:
+        appsettings = walk_files(repo, lambda name: re.match(r"appsettings.*\.json$", name))
+    for file in appsettings:
+        text = _file_text(file)
         for setting, host in _config_urls(text):
             if host in KNOWN_HOSTS:
                 record(externals, KNOWN_HOSTS[host], new_entry(KNOWN_HOSTS[host]), file.resolve(), _line_of(text, max(text.find(host), 0)))
                 continue
             config_urls.setdefault(setting, []).append((host, file, _line_of(text, max(text.find(host), 0))))
-    for file in walk_files(repo, lambda name: re.match(r"(application|bootstrap)[\w-]*\.(ya?ml|properties)$|^config\.ya?ml$|^settings\.ya?ml$", name)):
+    if index is not None:
+        config_ymls = index.walk(lambda name: re.match(r"(application|bootstrap)[\w-]*\.(ya?ml|properties)$|^config\.ya?ml$|^settings\.ya?ml$", name))
+    else:
+        config_ymls = walk_files(repo, lambda name: re.match(r"(application|bootstrap)[\w-]*\.(ya?ml|properties)$|^config\.ya?ml$|^settings\.ya?ml$", name))
+    for file in config_ymls:
         if any(part in TEST_DIRS for part in file.relative_to(repo).parts[:-1]):
             continue
-        for setting, host, line in _yaml_urls(_read(file)):
+        for setting, host, line in _yaml_urls(_file_text(file)):
             if host in KNOWN_HOSTS:
                 record(externals, KNOWN_HOSTS[host], new_entry(KNOWN_HOSTS[host]), file.resolve(), line)
                 continue
@@ -848,7 +884,7 @@ def collect_facts(repo_path, graph):
                 module_dirs[node] = (path.parent if path.is_file() else path).resolve()
         if not module_dirs and container.get("path"):
             module_dirs[container["name"]] = (repo / container["path"]).resolve()
-        container["code_components"] = code_facts.code_components(module_dirs)
+        container["code_components"] = code_facts.code_components(module_dirs, index)
 
     data_stores = finish(stores, "db")
     external_systems = finish(externals, "ext")
@@ -863,7 +899,7 @@ def collect_facts(repo_path, graph):
             return store_ids.get(value)
         return value["id"] if kind == "container" else None
 
-    services = code_facts.compose_services(repo)
+    services = code_facts.compose_services(index)
     for service in services:
         source = element_of(service["name"])
         for dependency in service["depends_on"]:
@@ -881,7 +917,7 @@ def collect_facts(repo_path, graph):
         if isinstance(value, dict):
             for port in service["ports"]:
                 host_ports.setdefault(port.split(":")[0].strip("'\""), value["id"])
-    for prefix, target, file, line in code_facts.dev_proxies(repo):
+    for prefix, target, file, line in code_facts.dev_proxies(repo, index):
         source = owner_container(file)
         port = re.search(r":(\d{2,5})", target)
         backend = host_ports.get(port.group(1)) if port else None
@@ -904,9 +940,9 @@ def collect_facts(repo_path, graph):
             unique[key] = r
     relationships = list(unique.values())
 
-    deployment = code_facts.deployment(repo)
+    deployment = code_facts.deployment(index)  # deployment uses index for indexed traversal
     endpoints = code_facts.endpoints(repo, source_files, owner_container)
-    configuration = code_facts.configuration(repo, source_files, owner_container, services)
+    configuration = code_facts.configuration(repo, source_files, owner_container, services, index)
 
     for container in runnable:
         if container.get("code_components"):
@@ -914,7 +950,7 @@ def collect_facts(repo_path, graph):
 
     for container in containers:
         modules = [by_id[n]["path"] for n in (container.get("components") or {}).get("nodes", {}) if n in by_id]
-        container["inventory"] = code_facts.inventory(repo, container, modules) if container.get("path") else (
+        container["inventory"] = code_facts.inventory(repo, container, modules, index) if container.get("path") else (
             [container["technology"]] if container.get("technology") else []
         )
 

@@ -4,7 +4,8 @@ import re
 import sys
 from pathlib import Path
 
-SKILL = Path(__file__).resolve().parent.parent / "skills" / "c4-diagrams"
+REPO_ROOT = Path(__file__).resolve().parent.parent
+SKILL = REPO_ROOT / "skills" / "c4-diagrams"
 if str(SKILL) not in sys.path:
     sys.path.insert(0, str(SKILL))
 

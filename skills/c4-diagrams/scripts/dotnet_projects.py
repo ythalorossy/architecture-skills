@@ -5,15 +5,19 @@ import xml.etree.ElementTree as ET
 from pathlib import Path, PurePosixPath
 
 
-IGNORED_DIRS = {
-    "bin", "obj", "node_modules", "TestResults", "__pycache__", "venv",
-    "dist", "build", "target", "coverage", "out", "site-packages",
-}
+# Re-exported from repo_index.py for backward compatibility.
+# is_ignored_dir and walk_files are defined in repo_index.py.
+try:
+    from scripts.repo_index import is_ignored_dir, walk_files as _wf, IGNORED_DIRS
+except ImportError:
+    from repo_index import is_ignored_dir, walk_files as _wf, IGNORED_DIRS
 
+# Re-exported from paths.py for backward compatibility.
+try:
+    from scripts.paths import normalize_include, resolve_include, local_tag, project_group
+except ImportError:
+    from paths import normalize_include, resolve_include, local_tag, project_group
 
-def is_ignored_dir(name):
-    """Build output, dependencies, and every dot-folder (.git, .angular, .gradle, caches...)."""
-    return name in IGNORED_DIRS or name.startswith(".")
 
 PROJECT_EXTENSIONS = (".csproj", ".fsproj", ".vbproj")
 
@@ -23,19 +27,7 @@ SLN_PROJECT_LINE = re.compile(
 )
 
 
-def walk_files(repo_path, predicate):
-    """Yield files under repo_path matching predicate, skipping build/tooling folders."""
-    for root, dirs, files in os.walk(repo_path):
-        # A folder with pyvenv.cfg is a Python virtualenv, whatever its name.
-        dirs[:] = sorted(
-            d for d in dirs
-            if not is_ignored_dir(d) and not (Path(root) / d / "pyvenv.cfg").exists()
-        )
-        for file_name in sorted(files):
-            if predicate(file_name):
-                yield Path(root) / file_name
-
-
+# Path helpers (also in paths.py; local defs remain here for self-contained operation).
 def normalize_include(include):
     """MSBuild paths use backslashes; make them usable on any OS."""
     return include.strip().replace("\\", "/")
@@ -47,6 +39,32 @@ def resolve_include(base_dir, include):
 
 def local_tag(element):
     return element.tag.rsplit("}", 1)[-1]
+
+
+def project_group(relative_path):
+    """Folder that holds the project folder, e.g. src/Domain for src/Domain/X/X.csproj."""
+    parts = PurePosixPath(relative_path).parts
+    return "/".join(parts[:-2]) if len(parts) > 2 else ""
+
+
+# Deprecated compatibility wrapper: use RepoIndex.files() in production code.
+def walk_files(repo_path, predicate):
+    """
+    Yield files under repo_path matching predicate, skipping build/tooling folders.
+
+    DEPRECATED: Performs its own walk. Use RepoIndex.files('all') with filtering
+    from a single index built once per run. This wrapper exists for out-of-tree
+    callers during the transition period.
+    """
+    for root, dirs, files in os.walk(repo_path):
+        # A folder with pyvenv.cfg is a Python virtualenv, whatever its name.
+        dirs[:] = sorted(
+            d for d in dirs
+            if not is_ignored_dir(d) and not (Path(root) / d / "pyvenv.cfg").exists()
+        )
+        for file_name in sorted(files):
+            if predicate(file_name):
+                yield Path(root) / file_name
 
 
 def find_solutions(repo_path):
@@ -97,28 +115,32 @@ def project_references(project_file):
     return references
 
 
-def project_group(relative_path):
-    """Folder that holds the project folder, e.g. src/Domain for src/Domain/X/X.csproj."""
-    parts = PurePosixPath(relative_path).parts
-    return "/".join(parts[:-2]) if len(parts) > 2 else ""
-
-
-def discover_projects(repo_path):
+def discover_projects(repo_path, index=None):
     """
     Find every .NET project and work out a unique display name for each.
 
     When the repository has solution files, projects not listed in any of them
     are flagged with in_solution=False (stray or abandoned project files).
+
+    The `index` parameter is accepted for API compatibility but not yet used
+    (the .NET module has minimal I/O compared to other ecosystems).
     """
     repo = Path(repo_path).resolve()
 
-    solutions = find_solutions(repo)
+    if index is not None:
+        solution_files = list(index.walk(lambda name: name.endswith((".sln", ".slnx"))))
+        project_files = list(index.walk(lambda name: name.endswith(PROJECT_EXTENSIONS)))
+    else:
+        solution_files = find_solutions(repo)
+        project_files = list(walk_files(repo, lambda name: name.endswith(PROJECT_EXTENSIONS)))
+
+    solutions = solution_files
     solution_paths = set()
     for solution in solutions:
         solution_paths |= solution_project_paths(solution)
 
     projects = []
-    for project_file in walk_files(repo, lambda name: name.endswith(PROJECT_EXTENSIONS)):
+    for project_file in project_files:
         project_file = project_file.resolve()
         relative = project_file.relative_to(repo).as_posix()
         projects.append({

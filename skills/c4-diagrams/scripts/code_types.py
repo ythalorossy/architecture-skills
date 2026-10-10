@@ -32,7 +32,7 @@ def is_generated(name):
     return GENERATED.search(name) is not None
 
 
-def _read(path):
+def _load_source(path):
     try:
         return Path(path).read_text(encoding="utf-8-sig", errors="replace").replace("\r\n", "\n")
     except OSError:
@@ -561,7 +561,7 @@ def extract(files):
         parser = PARSERS.get(LANGUAGES.get(file.suffix.lower()))
         if parser is None or is_generated(file.name):
             continue
-        found, methods = parser(_read(file), file)
+        found, methods = parser(_load_source(file), file)
         receiver_methods += methods
         for t in found:
             _merge(types, t)

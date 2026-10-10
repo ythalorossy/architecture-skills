@@ -5,10 +5,12 @@ from fnmatch import fnmatch
 from pathlib import Path, PurePosixPath
 
 try:
-    from scripts.dotnet_projects import walk_files, project_group
+    from scripts.repo_index import walk_files
+    from scripts.paths import project_group
     from scripts.js_modules import module_projects
 except ImportError:
-    from dotnet_projects import walk_files, project_group
+    from repo_index import walk_files
+    from paths import project_group
     from js_modules import module_projects
 
 
@@ -20,7 +22,7 @@ DEPENDENCY_FIELDS = (
 LOCAL_SPEC = re.compile(r"^(workspace:|file:|link:|portal:)")
 
 
-def _read_json(path):
+def _parse_json(path):
     try:
         return json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, ValueError) as ex:
@@ -75,7 +77,7 @@ def _matches_workspace(relative_dir, root_dir, globs):
     return included
 
 
-def discover_projects(repo_path):
+def discover_projects(repo_path, index=None):
     """
     Find every package.json and link packages that depend on each other by name.
 
@@ -83,14 +85,23 @@ def discover_projects(repo_path):
     pnpm-workspace.yaml), the root itself is not drawn and packages outside
     every workspace pattern are flagged with in_solution=False. A repository
     with a single package is drawn as a folder-level import graph instead.
+
+    When `index` is provided (RepoIndex), uses it for file discovery and reads;
+    otherwise falls back to walk_files for backward compatibility.
     """
     repo = Path(repo_path).resolve()
 
     packages = []
     roots = []
 
-    for file in walk_files(repo, lambda name: name == "package.json"):
-        data = _read_json(file)
+    # Find package.json files via index or walk_files fallback.
+    if index is not None:
+        package_json_files = [repo / rel for rel in index.by_suffix(".json") if rel.name == "package.json"]
+    else:
+        package_json_files = list(walk_files(repo, lambda name: name == "package.json"))
+
+    for file in package_json_files:
+        data = _parse_json(file) if index is None else index.read_json(file)
         if data is None:
             continue
 

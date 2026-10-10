@@ -2,17 +2,18 @@ from pathlib import Path
 import json
 
 try:
-    from scripts.dotnet_projects import is_ignored_dir
+    from scripts.repo_index import is_ignored_dir
     from scripts.projects import discover_all
 except ImportError:
-    from dotnet_projects import is_ignored_dir
+    from repo_index import is_ignored_dir
     from projects import discover_all
 
 
-def scan_repo(repo_path):
+def scan_repo(repo_path, index=None, discovery=None):
     repo = Path(repo_path).resolve()
 
-    discovery = discover_all(repo)
+    if discovery is None:
+        discovery = discover_all(repo, index)
 
     projects = [
         {
@@ -32,7 +33,7 @@ def scan_repo(repo_path):
         if folder.is_dir() and not is_ignored_dir(folder.name)
     )
 
-    return {
+    scan_results = {
         "solutions": discovery["solutions"],
         "projects": projects,
         "orphan_projects": [
@@ -47,6 +48,7 @@ def scan_repo(repo_path):
         }),
         "folders": folders
     }
+    return scan_results, discovery
 
 
 if __name__ == "__main__":
