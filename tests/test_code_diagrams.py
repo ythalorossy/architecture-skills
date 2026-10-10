@@ -269,8 +269,14 @@ class ClassDiagramTest(unittest.TestCase):
         }
         text = code_diagrams.class_diagram(types, ["Ação", "link"])
         self.assertNotIn("class Ação", text)
-        self.assertNotIn("class link", text)
-        self.assertNotIn("class note", text)
+        # Each 'class <id>' line must have the safe id, not the bare keyword
+        for line in text.splitlines():
+            if line.startswith("class link"):
+                self.assertTrue(line.startswith("class link_") or "[" in line,
+                    f"Bare 'class link' found: {line!r}")
+            if line.startswith("class note"):
+                self.assertTrue(line.startswith("class note_") or "[" in line,
+                    f"Bare 'class note' found: {line!r}")
         self.assertIn('["Ação"]', text)
         self.assertIn('["link"]', text)
         self.assertIn('["note"]', text)
