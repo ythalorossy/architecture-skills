@@ -30,6 +30,7 @@ require_python()
 
 from scripts.generate_mermaid import _node_ids, render_svg
 from scripts import code_diagrams
+from scripts import mermaid_syntax as _ms
 
 
 MAX_COMPONENTS = 20
@@ -40,14 +41,8 @@ BLOCK_START = "[//]: # (c4:start)"
 BLOCK_END = "[//]: # (c4:end)"
 OLD_MARKERS = ("<!-- c4:start -->", "<!-- c4:end -->")
 
-STYLES = [
-    "classDef person fill:#08427b,stroke:#052e56,color:#ffffff",
-    "classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff",
-    "classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff",
-    "classDef component fill:#85bbf0,stroke:#5d82a8,color:#000000",
-    "classDef external fill:#999999,stroke:#6b6b6b,color:#ffffff",
-    "classDef shared fill:#dbe9f6,stroke:#5d82a8,color:#000000,stroke-dasharray:4 3",
-]
+# C4 palette driven by mermaid_syntax (SPEC-04 AC9)
+STYLES = _ms.flowchart_classdef_lines()
 
 
 # ---------- model ----------
@@ -208,7 +203,8 @@ def _unreviewed_facts_warnings(model, facts):
 # ---------- mermaid ----------
 
 def _clean(text):
-    return str(text).replace("`", "'").replace('"', "'").replace("<", "‹").replace(">", "›")
+    """Escape text for plain (non-markdown) flowchart labels using entity codes."""
+    return _ms.label_text("flowchart_plain", str(text))
 
 
 def _wrap(text, width=34):
@@ -216,7 +212,11 @@ def _wrap(text, width=34):
 
 
 def _label(name, kind, description=""):
-    lines = [f"**{_clean(name)}**", f"[{_clean(kind)}]"]
+    """Build a markdown label for a C4 element node."""
+    # Use mermaid_syntax escaper for the name/kind (markdown string context)
+    name_escaped = _ms.label_text("flowchart_md", str(name))
+    kind_escaped = _ms.label_text("flowchart_md", str(kind))
+    lines = [f"**{name_escaped}**", f"[{kind_escaped}]"]
     if description:
         lines.append(_wrap(description))
     return '"`' + "\n".join(lines) + '`"'
@@ -289,13 +289,14 @@ def context_diagram(model):
 
     for person in model["people"]:
         _element_node(d, person, "people")
-    d.node("__system__", _label(system["name"], "Software System", system.get("description")), "system")
+    system_id = _ms.internal_id("system")
+    d.node(system_id, _label(system["name"], "Software System", system.get("description")), "system")
     for external in model["external_systems"]:
         _element_node(d, external, "external_systems")
     for container in outside.values():
         d.node(container["id"], _label(container["name"], "Software System", container.get("description")), "external")
 
-    lift = lambda node: "__system__" if node in inside else node
+    lift = lambda node: system_id if node in inside else node
     edges = _merge_relationships([
         {**r, "from": lift(r["from"]), "to": lift(r["to"])} for r in model["relationships"]
     ])
@@ -309,7 +310,7 @@ def container_diagram(model):
     for person in model["people"]:
         _element_node(d, person, "people")
 
-    boundary = d.id("__boundary__")
+    boundary = _ms.internal_id("boundary")
     d.lines.append(f'    subgraph {boundary}["`**{_clean(model["system"]["name"])}** [Software System]`"]')
     for container in model["containers"]:
         if not container.get("external"):
@@ -462,7 +463,7 @@ def _graph_diagram(model, facts, container, container_fact, title, nodes, edges,
     relationship_text = {(r["from"], r["to"]): r for r in model["relationships"]}
     d = Diagram()
     short = _short_names(list(nodes))
-    boundary = d.id("__boundary__")
+    boundary = _ms.internal_id("boundary")
     d.lines.append(f'    subgraph {boundary}["`**{_clean(title)}** [Container]`"]')
     regular = [n for n, info in nodes.items() if not info.get("shared")]
     shared = [n for n, info in nodes.items() if info.get("shared")]
@@ -476,7 +477,7 @@ def _graph_diagram(model, facts, container, container_fact, title, nodes, edges,
     boxes = []
     if usage_key == "used_by_code" and len(modules) > 1:
         for module, members in sorted(modules.items(), key=lambda m: str(m[0])):
-            box = d.id(f"__module__{module}")
+            box = _ms.internal_id(f"module_{module}")
             boxes.append(box)
             d.lines.append(f'        subgraph {box}["`{_clean(module)}`"]')
             for node in members:
@@ -486,7 +487,7 @@ def _graph_diagram(model, facts, container, container_fact, title, nodes, edges,
         for node in regular:
             d.node(node, _label(label_of(node), "Component", texts.get(node, "")), "component", indent="        ")
     if shared:
-        d.lines.append(f'        subgraph {d.id("__shared__")}["Shared"]')
+        d.lines.append(f'        subgraph {_ms.internal_id("shared")}["Shared"]')
         for node in shared:
             d.node(node, _label(label_of(node), "Component", texts.get(node, "")), "shared", indent="            ")
         d.lines.append("        end")
@@ -580,8 +581,8 @@ def _participants(model, facts):
 
 
 def _seq_text(text):
-    """Message text for a sequence diagram: ';' and '#' end or start statements/entities in Mermaid."""
-    return _clean(text).replace("#", "#35;").replace(";", "#59;").replace("\n", " ")
+    """Message text for a sequence diagram: single-pass escape of # and ;."""
+    return _ms.label_text("sequence_msg", str(text)).replace("\n", " ")
 
 
 def flow_diagrams(model, facts):
@@ -620,7 +621,7 @@ def deployment_diagram(facts, model):
         return None
     by_fact = _container_lookup(model)
     d = Diagram()
-    host = d.id("__host__")
+    host = _ms.internal_id("host")
     d.lines.append(f'    subgraph {host}["`**Docker host** [docker compose]`"]')
     containers_by_service = {}
     for c in facts["containers"]:

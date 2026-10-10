@@ -11,11 +11,13 @@ import re
 try:
     from scripts import code_facts, code_types
     from scripts.c4_facts import slug, _is_vendored
-    from scripts.repo_index import walk_files
+    from scripts.dotnet_projects import walk_files
+    from scripts import mermaid_syntax as _ms
 except ImportError:
     import code_facts, code_types
     from c4_facts import slug, _is_vendored
-    from repo_index import walk_files
+    from dotnet_projects import walk_files
+    import mermaid_syntax as _ms
 
 MAX_TYPES = 12
 MAX_MEMBERS = 8
@@ -105,12 +107,9 @@ def select_types(types, wanted=(), limit=MAX_TYPES):
 
 
 # One `style` line per box: mermaid-cli accepts classDef/cssClass in class diagrams but emits no CSS for them.
-COMPONENT_STYLE = "fill:#85bbf0,stroke:#5d82a8,color:#000000"
-SHARED_STYLE = "fill:#dbe9f6,stroke:#5d82a8,color:#000000,stroke-dasharray:4 3"
-SAFE_ID = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
-# Words the classDiagram grammar reads as statements (checked case-insensitively).
-MERMAID_WORDS = {"class", "classdef", "cssclass", "classdiagram", "note", "link", "click", "callback", "call",
-                 "style", "namespace", "direction", "href", "end", "graph"}
+# Palette driven by mermaid_syntax (SPEC-04 AC9)
+COMPONENT_STYLE = _ms.component_style()
+SHARED_STYLE = _ms.shared_style()
 STEREOTYPES = {"interface", "abstract", "enum", "record", "struct"}
 
 
@@ -118,23 +117,16 @@ def _member(method):
     """"Load(id) Task<List<Job>>" -> "+Load(id) Task#lt;List#lt;Job#gt;#gt;" (entity codes: Mermaid's ~T~ generics
     garble nested types with commas; no parens or braces in the type)."""
     head, _, ret = method.partition(")")
-    ret = re.sub(r"[(){}]", "", ret).strip().replace("<", "#lt;").replace(">", "#gt;").rstrip("*$")
+    ret = re.sub(r"[(){}]", "", ret).strip()
+    # Use mermaid_syntax escaper for < and >
+    ret = _ms.label_text("class_member", ret).rstrip("*$")
     return f"+{head})" + (f" {ret}" if ret else "")
 
 
 def _ids(names):
-    """Mermaid id per name: the name itself when safe, else a generated id drawn with the name as its label."""
-    ids, used = {}, set(names)
-    for name in names:
-        if SAFE_ID.fullmatch(name) and name.lower() not in MERMAID_WORDS:
-            ids[name] = name
-            continue
-        number = len(ids)
-        while f"T{number}" in used:
-            number += 1
-        ids[name] = f"T{number}"
-        used.add(ids[name])
-    return ids
+    """Mermaid id per name using mermaid_syntax (SPEC-04)."""
+    alloc = _ms.IdAllocator("class")
+    return {name: alloc.id(name) for name in names}
 
 
 def _box(t, ref):

@@ -1,33 +1,18 @@
 from pathlib import Path
 import re
 
+from scripts import mermaid_syntax as _ms
+
 
 def _node_ids(names):
-    """Mermaid IDs must be plain identifiers; the real names go in the labels."""
-    ids = {}
-    used = set()
-
-    for name in names:
-        base = re.sub(r"[^A-Za-z0-9_]", "_", name).strip("_") or "node"
-
-        if base[0].isdigit():
-            base = f"n_{base}"
-
-        candidate = base
-        suffix = 2
-
-        while candidate in used:
-            candidate = f"{base}_{suffix}"
-            suffix += 1
-
-        used.add(candidate)
-        ids[name] = candidate
-
-    return ids
+    """Mermaid IDs must be plain identifiers; delegates to mermaid_syntax (SPEC-04)."""
+    alloc = _ms.IdAllocator("flowchart")
+    return {name: alloc.id(name) for name in names}
 
 
 def _label(text):
-    return text.replace('"', "#quot;")
+    """Escape text for a flowchart label string (``["label"]``); delegates to mermaid_syntax (SPEC-04)."""
+    return _ms.label_text("flowchart_md", text)
 
 
 def generate_mermaid(graph, groups=None):
