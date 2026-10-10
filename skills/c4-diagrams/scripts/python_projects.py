@@ -37,15 +37,17 @@ def _requirement_names(requirements):
     return names
 
 
-def _parse_pyproject(file):
+def _parse_pyproject(file, collector=None):
     if tomllib is None:
-        print(f"WARNING: Python 3.11+ is needed to read {file}", file=sys.stderr)
+        if collector:
+            collector.parse_error("python_projects", str(file), "Python 3.11+ is required to read pyproject.toml")
         return None, []
 
     try:
         data = tomllib.loads(file.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError) as ex:
-        print(f"WARNING: cannot parse {file}: {ex}", file=sys.stderr)
+        if collector:
+            collector.parse_error("python_projects", str(file), f"invalid TOML: {ex}")
         return None, []
 
     project = data.get("project", {})
@@ -65,7 +67,7 @@ def _parse_pyproject(file):
     return project.get("name") or poetry.get("name"), names
 
 
-def _parse_setup_cfg(file):
+def _parse_setup_cfg(file, collector=None):
     parser = configparser.ConfigParser()
     try:
         parser.read(file, encoding="utf-8")
@@ -75,7 +77,7 @@ def _parse_setup_cfg(file):
     return parser.get("metadata", "name", fallback=None), _requirement_names(requirements)
 
 
-def _parse_setup_py(file):
+def _parse_setup_py(file, collector=None):
     match = SETUP_PY_NAME.search(file.read_text(encoding="utf-8", errors="replace"))
     return (match.group(1) if match else None), []
 
@@ -87,7 +89,7 @@ READERS = {
 }
 
 
-def _distributions(repo, index=None):
+def _distributions(repo, index=None, collector=None):
     """One entry per directory holding a Python package manifest."""
     by_dir = {}
 
@@ -96,7 +98,7 @@ def _distributions(repo, index=None):
     else:
         candidates = walk_files(repo, lambda name: name in MANIFESTS)
     for file in candidates:
-        name, requirements = READERS[file.name](file)
+        name, requirements = READERS[file.name](file, collector)
         # A pyproject.toml without a name only holds tool config (ruff, a uv
         # workspace root, ...); it does not make its folder a package.
         if file.name == "pyproject.toml" and not name:
@@ -148,12 +150,13 @@ def _module_name(file, import_root):
     return ".".join(parts)
 
 
-def _imported_modules(file, import_root):
+def _imported_modules(file, import_root, collector=None):
     """Absolute dotted names imported by a file, with relative imports resolved."""
     try:
         tree = ast.parse(file.read_text(encoding="utf-8", errors="replace"), filename=str(file))
     except (SyntaxError, ValueError) as ex:
-        print(f"WARNING: cannot parse {file}: {ex}", file=sys.stderr)
+        if collector:
+            collector.parse_error("python_projects", str(file), f"syntax error: {ex}")
         return []
 
     package = _module_name(file, import_root).split(".")
@@ -219,7 +222,7 @@ def _module_nodes(base):
     return nodes
 
 
-def _module_projects(repo, base):
+def _module_projects(repo, base, collector=None):
     nodes = _module_nodes(base)
     if not nodes:
         return []
@@ -237,7 +240,7 @@ def _module_projects(repo, base):
     for name, (path, import_root) in nodes.items():
         targets = set()
         for file in _python_files(path):
-            for module in _imported_modules(file, import_root):
+            for module in _imported_modules(file, import_root, collector):
                 target = owner(module)
                 if target and target != name:
                     targets.add(nodes[target][0].resolve())
@@ -256,7 +259,7 @@ def _module_projects(repo, base):
     return projects
 
 
-def discover_projects(repo_path, index=None):
+def discover_projects(repo_path, index=None, collector=None):
     """
     Python projects for the dependency graph.
 
@@ -266,6 +269,7 @@ def discover_projects(repo_path, index=None):
     Nothing is returned unless the repository has a Python manifest.
 
     The `index` parameter is accepted for API compatibility but not yet used.
+    Pass a DiagnosticsCollector to route warnings through the diagnostics channel.
     """
     repo = Path(repo_path).resolve()
 
@@ -279,11 +283,11 @@ def discover_projects(repo_path, index=None):
     if not has_manifest:
         return {"solutions": [], "projects": []}
 
-    distributions = _distributions(repo, index)
+    distributions = _distributions(repo, index, collector)
     if len(distributions) > 1:
         projects = _distribution_projects(repo, distributions)
     else:
         base = distributions[0]["directory"] if distributions else repo
-        projects = _module_projects(repo, base)
+        projects = _module_projects(repo, base, collector)
 
     return {"solutions": [], "projects": projects}

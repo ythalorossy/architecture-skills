@@ -54,7 +54,7 @@ def _modules(repo, index=None):
     return modules
 
 
-def discover_projects(repo_path, index=None):
+def discover_projects(repo_path, index=None, collector=None):
     """
     Go projects for the dependency graph.
 
@@ -63,6 +63,7 @@ def discover_projects(repo_path, index=None):
     (cmd/<x>, internal/<x>, pkg/<x>, or top-level folders), edges from imports.
 
     The `index` parameter is accepted for API compatibility but not yet used.
+    Pass a DiagnosticsCollector to route warnings through the diagnostics channel.
     """
     repo = Path(repo_path).resolve()
     modules = _modules(repo, index)

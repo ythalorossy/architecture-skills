@@ -216,7 +216,7 @@ def notes(entry):
     return lines
 
 
-def prepare(model, facts, output):
+def prepare(model, facts, output, collector=None, repo_override=None):
     """(errors, warnings, entries) for model["code"]; every entry is ready to draw."""
     code = model.get("code") or []
     if not isinstance(code, list):
@@ -228,9 +228,23 @@ def prepare(model, facts, output):
         warnings.append(
             f"code: {len(code)} components; Level 4 is meant for the {KEY_COMPONENTS} or fewer that matter most"
         )
-    if "repository_root" not in facts:
+    if "repository_root" not in facts and repo_override is None:
         return ["code: c4-facts.json has no repository_root; re-run analyze_repository.py"], warnings, []
-    repo = (Path(output) / facts["repository_root"]).resolve()
+    repo_rel = repo_override if repo_override else facts.get("repository_root", "")
+    repo = (Path(output) / repo_rel).resolve() if repo_override else (Path(output) / facts["repository_root"]).resolve()
+    # Relocatable output (ARC-06): verify the resolved path points to a directory
+    # whose name matches the last segment of the relative path.  If not, skip
+    # Level 4 with a model-tier warning.
+    if not repo.is_dir() or (not repo_override and repo.name != Path(repo_rel).name):
+        msg = (
+            f"repository not found at {repo_rel}; re-run analyze_repository.py "
+            f"or pass --repo <path> to render_c4.py"
+        )
+        if collector is not None:
+            collector.model_warning("code_diagrams", msg)
+        else:
+            warnings.append(msg)
+        return [], warnings, []
     elements = {c["id"]: c for c in model.get("containers") or []}
 
     for number, item in enumerate(code, 1):

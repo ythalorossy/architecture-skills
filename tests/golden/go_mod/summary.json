@@ -14,7 +14,9 @@
   "cycles": [],
   "untested_projects": [],
   "dependency_graph_available": true,
-  "output_folder": "<abs-path>",
+  "status": "ok",
+  "warnings": [],
+  "skipped_files": [],
   "c4": {
     "containers": 1,
     "data_stores": 0,
@@ -25,6 +27,8 @@
       "c4-structure-api"
     ],
     "model": "facts-only",
-    "model_errors": []
+    "model_errors": [],
+    "model_status": "ok",
+    "drift": []
   }
 }

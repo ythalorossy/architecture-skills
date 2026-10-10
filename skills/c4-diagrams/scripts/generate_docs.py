@@ -1,9 +1,23 @@
 from pathlib import Path
-from datetime import datetime, timezone
 import re
 
 
 GENERATOR_VERSION = "3.2"
+
+
+def _generated_date():
+    """Wall-clock timestamp; only called when --timestamp is passed."""
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _report_metadata(generated_on):
+    """Report metadata block: version always, Generated On only when timestamped."""
+    parts = [f"Generator Version: {GENERATOR_VERSION}"]
+    if generated_on:
+        parts.insert(0, f"Generated On: {generated_on}")
+    lines = "\n".join(parts)
+    return "---\n\n## Report Metadata\n\n" + lines + "\n"
 
 ASSETS_DIR = (
     Path(__file__).parent.parent / "assets"
@@ -234,8 +248,10 @@ def generate_report(
     scan=None,
     groups=None,
     mermaid=None,
-    diagram_image=None
+    diagram_image=None,
+    timestamp=False,
 ):
+    generated_on = _generated_date() if timestamp else ""
     template = load_template(
         "architecture-report-template.md"
     )
@@ -336,7 +352,7 @@ def generate_report(
             )
         )
         .replace("{{artifacts}}", "\n".join(artifacts))
-        .replace("{{generated_date}}", datetime.now(timezone.utc).isoformat())
+        .replace("{{report_metadata}}", _report_metadata(generated_on))
         .replace("{{generator_version}}", GENERATOR_VERSION)
     )
 

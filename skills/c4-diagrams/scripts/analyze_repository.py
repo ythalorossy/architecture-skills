@@ -25,32 +25,17 @@ from scripts.render_c4 import render as render_c4
 from scripts.code_diagrams import repository_root
 from scripts.repo_index import RepoIndex
 from scripts.projects import discover_all
-
-
-class _DegradedCollector:
-    """Minimal SPEC-08 collector that accumulates diagnostics for degraded runs."""
-
-    def __init__(self):
-        self.warnings = []
-        self.skipped = []
-        self.degraded = False
-
-    def warn(self, kind, *, file=None, detail=None):
-        self.warnings.append({"kind": kind, "file": file, "detail": detail})
-        if kind == "parse":
-            self.degraded = True
-
-    def skipped(self, path, reason):
-        self.skipped.append({"path": str(path), "reason": reason})
-        if reason in ("permission", "outside_symlink", "broken_symlink", "too_large"):
-            self.degraded = True
+from scripts.diagnostics import DiagnosticsCollector
 
 
 class RepositoryAnalyzer:
-    def __init__(self, repo_path: str, output_path: str, no_svg: bool = False):
+    def __init__(self, repo_path: str, output_path: str, no_svg: bool = False, strict: bool = False, timestamp: bool = False):
         self.repo_path = Path(repo_path).resolve()
         self.output_path = Path(output_path).resolve()
         self.no_svg = no_svg
+        self.strict = strict
+        self.timestamp = timestamp
+        self._collector: DiagnosticsCollector | None = None
 
     def run(self):
         self._validate_repository()
@@ -59,11 +44,11 @@ class RepositoryAnalyzer:
         print(f"Analyzing repository: {self.repo_path}")
 
         # Build the RepoIndex once for the entire run (SPEC-03: one walk per run)
-        collector = _DegradedCollector()
-        index = RepoIndex.build(self.repo_path, collector)
+        self._collector = DiagnosticsCollector()
+        index = RepoIndex.build(self.repo_path, self._collector)
 
         # Discover projects once and reuse (SPEC-03: I/O efficiency)
-        discovery = discover_all(self.repo_path, index)
+        discovery = discover_all(self.repo_path, index, self._collector)
 
         stacks = self._detect_stack(index)
         scan_results = self._scan_repository(index, discovery)
@@ -94,6 +79,9 @@ class RepositoryAnalyzer:
         )
 
         c4 = self._generate_c4(dependency_graph, index=index, discovery=discovery)
+
+        # Merge diagnostics from the collector into the c4 section
+        c4.update(self._collector.summary_dict())
 
         summary = self._generate_summary(
             stacks,
@@ -193,7 +181,8 @@ class RepositoryAnalyzer:
                 "dependency-graph.svg"
                 if (self.output_path / "dependency-graph.svg").is_file()
                 else None
-            )
+            ),
+            timestamp=self.timestamp,
         )
 
         report_file = (
@@ -220,12 +209,27 @@ class RepositoryAnalyzer:
         print("Drawing C4 diagrams...")
 
         # An existing c4-model.json (written by the agent or edited by the user)
-        # is kept and used; if it no longer matches the facts, fall back to
-        # facts-only diagrams and report what to fix.
-        result = render_c4(self.output_path, svg=not self.no_svg)
+        # is kept. On drift (new facts not covered) it is rendered and the
+        # unreviewed facts are listed; on invalid (unknown ids, missing
+        # elements) it falls back to facts-only.  c4-model.json is never
+        # modified.
+        result = render_c4(self.output_path, svg=not self.no_svg, collector=self._collector)
         model_errors = result["errors"]
+        model_warnings = result.get("warnings") or []
+        model_status = "ok"
+        drift = []
         if model_errors:
-            result = render_c4(self.output_path, facts_only=True, svg=not self.no_svg)
+            # Invalid: at least one element or relationship id is unknown.
+            result = render_c4(self.output_path, facts_only=True, svg=not self.no_svg, collector=self._collector)
+            model_status = "invalid"
+        elif model_warnings:
+            # Drift: the model is valid but some facts are not yet covered.
+            # Re-render with the model and surface the unreviewed facts.
+            result = render_c4(self.output_path, svg=not self.no_svg, collector=self._collector, show_drift=True)
+            model_status = "drift"
+            for w in model_warnings:
+                if "not in the model" in w.lower() or "was found in the code" in w.lower():
+                    drift.append({"message": w})
 
         if result["svg_failed"]:
             print(
@@ -240,6 +244,8 @@ class RepositoryAnalyzer:
             "diagrams": result["diagrams"],
             "model": "facts-only" if result["facts_only"] else "c4-model.json",
             "model_errors": model_errors,
+            "model_status": model_status,
+            "drift": drift,
         }
 
     def _generate_summary(
@@ -257,6 +263,9 @@ class RepositoryAnalyzer:
             dependency_graph,
             scan_results
         )
+
+        collector = self._collector
+        status = "degraded" if (collector and collector.degraded) else "ok"
 
         return {
             "repository": self.repo_path.name,
@@ -287,9 +296,9 @@ class RepositoryAnalyzer:
             "cycles": facts["cycles"],
             "untested_projects": facts["untested"],
             "dependency_graph_available": bool(dependency_graph),
-            "output_folder": str(
-                self.output_path
-            )
+            "status": status,
+            "warnings": collector.warnings() if collector else [],
+            "skipped_files": collector.skipped_files() if collector else [],
         }
 
     def _save_json(
@@ -362,13 +371,23 @@ class RepositoryAnalyzer:
             f"from {c4['model']}"
         )
 
-        for error in c4["model_errors"]:
+        for error in c4.get("model_errors") or []:
             print(f"C4 MODEL ERROR: {error}")
 
         print(
             f"Output Folder: "
-            f"{summary['output_folder']}"
+            f"{self.output_path}"
         )
+
+        # DEGRADED line (SPEC-08: diagnostics channel)
+        if summary["status"] == "degraded":
+            n_warnings = len(summary.get("warnings") or [])
+            n_skipped = len(summary.get("skipped_files") or [])
+            model_status = c4.get("model_status", "ok")
+            print(
+                f"DEGRADED: {n_warnings} warning(s), {n_skipped} skipped file(s), "
+                f"model {model_status} — see summary.json"
+            )
 
 
 def default_output_path(repo_path):
@@ -418,6 +437,24 @@ def parse_arguments():
         help="Print the full traceback when an unexpected error occurs",
     )
 
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help=(
+            "Exit with code 2 when the run is degraded (parse errors, skipped files, "
+            "or model drift/invalid).  By default a degraded run exits 0."
+        ),
+    )
+
+    parser.add_argument(
+        "--timestamp",
+        action="store_true",
+        help=(
+            "Include a wall-clock 'Generated On' timestamp in the report. "
+            "By default the report has no timestamp so re-runs produce byte-identical output."
+        ),
+    )
+
     return parser.parse_args()
 
 
@@ -428,10 +465,17 @@ def main():
         repo_path=args.repository,
         output_path=args.output or default_output_path(args.repository),
         no_svg=args.no_svg,
+        strict=args.strict,
+        timestamp=args.timestamp,
     )
 
-    analyzer.run()
+    summary = analyzer.run()
 
+    # Exit codes: 0=ok, 1=failure (no artifacts), 2=strict+degraded
+    status = summary.get("status", "ok")
+    if status == "degraded" and args.strict:
+        sys.exit(2)
+    # 0 for ok, 0 for degraded (non-strict)
     sys.exit(0)
 
 
