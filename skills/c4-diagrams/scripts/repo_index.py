@@ -278,10 +278,21 @@ class RepoIndex:
         # onerror must be a module-level function (can't use a bound method)
         for dirpath, dirnames, filenames in os.walk(root, onerror=_walk_onerror(self)):
             dirpath = Path(dirpath)
-            # In-place pruning: remove ignored dirs and previously-failed dirs
+            # In-place pruning: remove ignored dirs, unreadable dirs, and outside-symlink dirs
             pruned = []
             for d in dirnames:
-                if self._should_skip_dir(d, dirpath / d):
+                dpath = dirpath / d
+                # Check for directory symlinks pointing outside the repo
+                if dpath.is_symlink():
+                    try:
+                        resolved = dpath.resolve()
+                    except (OSError, RuntimeError):
+                        self._record_skip(dpath, "broken_symlink")
+                        continue
+                    if not resolved.is_relative_to(root):
+                        self._record_skip(dpath, "outside_symlink")
+                        continue
+                if self._should_skip_dir(d, dpath):
                     continue
                 pruned.append(d)
             dirnames[:] = sorted(pruned)

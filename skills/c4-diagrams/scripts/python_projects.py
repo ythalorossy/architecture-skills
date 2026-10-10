@@ -37,7 +37,7 @@ def _requirement_names(requirements):
     return names
 
 
-def _parse_pyproject(file, collector=None):
+def _parse_pyproject(file, collector=None, index=None):
     if tomllib is None:
         if collector:
             collector.parse_error("python_projects", str(file), "Python 3.11+ is required to read pyproject.toml")
@@ -67,18 +67,40 @@ def _parse_pyproject(file, collector=None):
     return project.get("name") or poetry.get("name"), names
 
 
-def _parse_setup_cfg(file, collector=None):
+def _parse_setup_cfg(file, collector=None, index=None):
+    """Parse setup.cfg. Uses index.read_ini() for tolerant I/O when index is available."""
+    if index is not None:
+        data = index.read_ini(file)
+        if data is not None:
+            req_raw = data.get("options", {}).get("install_requires", "")
+            return data.get("metadata", {}).get("name"), _requirement_names(req_raw.splitlines())
+        return None, []
+    # Fallback: direct read (bypasses index — only for legacy callers without index)
+    try:
+        text = file.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        text = file.read_text(encoding="utf-8", errors="replace")
+        if collector is not None:
+            collector.parse_error("python_projects", str(file), f"non-UTF-8 bytes in {file.name}")
+    except OSError:
+        return None, []
     parser = configparser.ConfigParser()
     try:
-        parser.read(file, encoding="utf-8")
+        parser.read_string(text)
     except configparser.Error:
         return None, []
     requirements = parser.get("options", "install_requires", fallback="").splitlines()
     return parser.get("metadata", "name", fallback=None), _requirement_names(requirements)
 
 
-def _parse_setup_py(file, collector=None):
-    match = SETUP_PY_NAME.search(file.read_text(encoding="utf-8", errors="replace"))
+def _parse_setup_py(file, collector=None, index=None):
+    """Parse setup.py for the package name. Uses index.read_text() when available."""
+    text = None
+    if index is not None:
+        text = index.read_text(file)
+    if text is None:
+        text = file.read_text(encoding="utf-8", errors="replace")
+    match = SETUP_PY_NAME.search(text)
     return (match.group(1) if match else None), []
 
 
@@ -98,7 +120,7 @@ def _distributions(repo, index=None, collector=None):
     else:
         candidates = walk_files(repo, lambda name: name in MANIFESTS)
     for file in candidates:
-        name, requirements = READERS[file.name](file, collector)
+        name, requirements = READERS[file.name](file, collector, index)
         # A pyproject.toml without a name only holds tool config (ruff, a uv
         # workspace root, ...); it does not make its folder a package.
         if file.name == "pyproject.toml" and not name:

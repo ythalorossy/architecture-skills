@@ -388,6 +388,12 @@ class RepositoryAnalyzer:
                 f"DEGRADED: {n_warnings} warning(s), {n_skipped} skipped file(s), "
                 f"model {model_status} — see summary.json"
             )
+            for w in (summary.get("warnings") or [])[:3]:
+                msg = w.get("message") or ""
+                path = w.get("path") or ""
+                print(f"  warning: {msg} ({path})")
+            for sf in (summary.get("skipped_files") or [])[:3]:
+                print(f"  skipped: {sf['path']} ({sf.get('reason', '')})")
 
 
 def default_output_path(repo_path):

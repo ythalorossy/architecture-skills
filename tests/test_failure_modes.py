@@ -1,18 +1,15 @@
 """
-REL-01 and REL-02 failure-mode pins (Task 5).
+REL-01 and REL-02 failure-mode tests (SPEC-03 AC2/AC3).
 
-These tests pin behaviour that SPEC-03 will fix: today the analyzer either
-exits non-zero or silently follows paths it should warn about. After SPEC-03
-the analyzer will exit 0 and emit a warning that includes the path of the
-offending file or directory. Until then, all three tests are marked
-@unittest.expectedFailure so they show up as `xfail` in the test output
-(honest bookkeeping — see the directive in the team-lead's brief).
+These tests verify that the analyzer degrades gracefully: it exits 0 with a
+warning naming the offending path, instead of crashing or silently ignoring the
+problem.
 
 The mode-000 directory and the outside-pointing symlink are built at runtime
 inside `tempfile.TemporaryDirectory()` — they are NEVER committed to the
 repository. Committing a mode-000 directory or an outside-symlink would break
 the Windows-latest checkouts required by AC5 (git stores only the executable
-bit, and an outside-pointing symlink fails on Windows outright). See A-9 in
+bit, and an outside-symlink fails on Windows outright). See A-9 in
 `.serena/SPEC-02-traceability.md` for the full reasoning.
 """
 import os
@@ -38,14 +35,12 @@ def _run_analyzer(repo, out):
 
 class FailureModesTest(unittest.TestCase):
     """REL-01 (non-UTF-8 setup.cfg), REL-02 (mode-000 / outside symlink).
-    All three are pinned as `expectedFailure` until SPEC-03 flips them."""
+    These are now plain tests — SPEC-03 makes them pass."""
 
-    @unittest.expectedFailure
     def test_non_utf8_setup_cfg_does_not_abort(self):
         """REL-01: a non-UTF-8 setup.cfg must be skipped with a warning,
-        not abort the whole run. Today this crashes inside
-        scripts.python_projects._read_setup_cfg with UnicodeDecodeError, which
-        `run_cli` reports as an internal-error line and exits 1."""
+        not abort the whole run. The analyzer exits 0 with status: degraded
+        and a warning naming setup.cfg."""
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp) / "repo"
             repo.mkdir()
@@ -70,14 +65,11 @@ class FailureModesTest(unittest.TestCase):
             )
 
     @unittest.skipUnless(os.name == "posix", "POSIX-only: chmod 000 directory")
-    @unittest.expectedFailure
     def test_unreadable_dir_is_skipped(self):
         """REL-02: a mode-000 subdirectory must be skipped with a warning,
-        not raise through the analyzer. Today this raises PermissionError
-        inside scan_repo / dotnet_projects and exits 1.
+        not raise through the analyzer. The analyzer exits 0 with status: degraded
+        and a warning naming the directory."""
 
-        The mode is restored in `finally` so `TemporaryDirectory.cleanup`
-        can remove the parent dir."""
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp) / "repo"
             repo.mkdir()
@@ -104,12 +96,10 @@ class FailureModesTest(unittest.TestCase):
                 os.chmod(unreadable, 0o755)
 
     @unittest.skipUnless(os.name == "posix", "POSIX-only: symlinks")
-    @unittest.expectedFailure
     def test_outside_symlink_is_skipped(self):
         """REL-02: a symlink pointing outside the repo must be skipped with
-        a warning, not silently scanned. Today the analyzer follows the
-        symlink (or skips it silently); SPEC-03 makes it emit a warning
-        naming the symlink path."""
+        a warning naming the symlink path. The analyzer exits 0 with
+        status: degraded."""
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp) / "repo"
             repo.mkdir()

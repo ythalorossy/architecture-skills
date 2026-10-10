@@ -44,10 +44,11 @@ class TestDiagnosticKinds(unittest.TestCase):
         c.parse_error("python_projects", "pyproject.toml", "invalid TOML")
         self.assertTrue(c.degraded)
 
-    def test_file_skipped_not_degraded(self):
+    def test_file_skipped_marks_degraded(self):
+        # D2: skipped paths make the run degraded, exit 0 (SPEC-03)
         c = DiagnosticsCollector()
         c.file_skipped("repo_index", "path/to/file", "permission denied")
-        self.assertFalse(c.degraded)
+        self.assertTrue(c.degraded)
 
     def test_render_warning_not_degraded(self):
         c = DiagnosticsCollector()
@@ -164,9 +165,10 @@ class TestRepoIndexCompatibility(unittest.TestCase):
     """RepoIndex calls skipped(path, reason) and warn(...) directly."""
 
     def test_skipped_two_arg_form_works(self):
+        # D2: skipped paths make the run degraded, exit 0 (SPEC-03)
         c = DiagnosticsCollector()
         c.skipped("/some/path", "permission denied")
-        self.assertTrue(c.degraded is False)
+        self.assertTrue(c.degraded)
         self.assertEqual(len(c.warnings()), 1)
         self.assertEqual(c.warnings()[0]["kind"], "skipped")
 

@@ -113,7 +113,7 @@ class DiagnosticsCollector:
         if diagnostic not in self._seen:
             self._seen.add(diagnostic)
             self._list.append(diagnostic)
-            if diagnostic.kind == "parse":
+            if diagnostic.kind in ("parse", "skipped"):
                 self._degraded = True
 
     # ------------------------------------------------------------------
