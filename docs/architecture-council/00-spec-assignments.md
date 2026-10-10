@@ -18,7 +18,7 @@ Lead decisions that every spec follows:
 | SPEC-05 | Bounded, diagnosable SVG rendering pipeline | DIA-02, DIA-03, DIA-04, REL-07, REL-08, PE-09 (`--no-svg`), DOC-09 (flags), D3 | architecture-diagram-engineer | pending |
 | SPEC-06 | Validator robustness and tiered results | REL-04, PE-01, D5 (tiers), REL-13 (render CLI part) | reliability-engineer | pending |
 | SPEC-07 | Model contract enforcement (anti-hallucination) | PE-02, REL-05, PE-05, PE-03 | prompt-engineering-specialist | pending |
-| SPEC-08 | Re-run semantics, degraded channel and relocatable output | ARC-07, REL-09, PE-12, ARC-06, REL-12, D2 | reliability-engineer | pending |
+| SPEC-08 | Re-run semantics, degraded channel and relocatable output | ARC-07, REL-09, PE-12, ARC-06, REL-12, D2 | reliability-engineer | shipped (14ffcbc) |
 | SPEC-09 | Versioned facts, model and summary contracts | ARC-05, CQ-09, CQ-10 | prompt-engineering-specialist (reassigned) | pending |
 | SPEC-10 | Atomic output writes and report ownership | REL-03, ARC-08, D4 | reliability-engineer | pending |
 | SPEC-11 | Fact-collection performance and `collect_facts` decomposition | ARC-01, CQ-08, REL-10, CQ-03 | code-quality-engineer | pending |
