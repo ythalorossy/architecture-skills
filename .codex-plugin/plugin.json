@@ -1,6 +1,6 @@
 {
   "name": "architecture-skills",
-  "version": "3.2.0",
+  "version": "3.3.2",
   "description": "Agent skills for software architecture. c4-diagrams analyzes a local repository (.NET, Java/Kotlin, Go, Node.js/TypeScript, Python) and generates C4 model diagrams (context, container, component, code), key-flow, deployment, API and configuration views, and evidence-based recommendations.",
   "author": {
     "name": "Ythalo Saldanha",
