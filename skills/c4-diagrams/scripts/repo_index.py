@@ -167,12 +167,21 @@ class RepoIndex:
             resolved = Path(under).resolve()
             if not resolved.is_relative_to(self.root):
                 return
-            prefix = resolved.relative_to(self.root)
-        for rel in self._files:
-            if prefix is not None and not rel.is_relative_to(prefix):
+            # String prefixes: Path.is_relative_to per file was the cost of
+            # module-by-module walks in large monorepos.
+            relative = resolved.relative_to(self.root).as_posix()
+            prefix = "" if relative == "." else relative + "/"
+        for rel, posix in zip(self._files, self._posix()):
+            if prefix and not posix.startswith(prefix):
                 continue
             if predicate(rel.name):
                 yield self.root / rel
+
+    def _posix(self):
+        """Forward-slash strings of the file paths, built once."""
+        if getattr(self, "_posix_files", None) is None or len(self._posix_files) != len(self._files):
+            self._posix_files = [rel.as_posix() for rel in self._files]
+        return self._posix_files
 
     def in_dir(self, dirname):
         """List of Paths that are inside a directory with the given name."""
