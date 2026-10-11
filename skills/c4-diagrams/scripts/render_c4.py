@@ -97,7 +97,38 @@ def _covers(element):
     return element.get("facts") or [element["id"]]
 
 
-def validate(model, facts, result=None):
+ELEMENT_KEYS = ("id", "name", "description", "technology", "type", "evidence", "assumption", "external", "facts")
+ELEMENT_TYPES = ("container", "database", "queue")
+
+
+def _did_you_mean(value, candidates):
+    """' (did you mean 'x'?)' for the closest candidate, or ''."""
+    import difflib
+    match = difflib.get_close_matches(str(value), [str(c) for c in candidates], n=1, cutoff=0.75)
+    return f" (did you mean {match[0]!r}?)" if match else ""
+
+
+def _evidence_problem(entry, repo):
+    """Why an evidence entry ("path", "path:12", "path:3-9 (note)") points at nothing, or None."""
+    reference = str(entry).split(" (")[0].strip()
+    path, line = reference, None
+    found = re.fullmatch(r"(.+?):(\d+)(?:-\d+)?", reference)
+    if found:
+        path, line = found.group(1), int(found.group(2))
+    file = repo / path
+    if not file.exists():
+        return "does not exist in the repository"
+    if line is not None and file.is_file():
+        try:
+            count = len(file.read_text(encoding="utf-8", errors="replace").splitlines())
+        except OSError:
+            return None
+        if line > count:
+            return f"is past the end of the file ({count} lines)"
+    return None
+
+
+def validate(model, facts, result=None, repo=None):
     """Tiered semantic checks. Returns a ValidationResult.
 
     `result` (optional) is a ValidationResult from `check_structure`; we
@@ -107,6 +138,9 @@ def validate(model, facts, result=None):
       - unknown relationship/flow ids and duplicate ids -> errors (invalid)
       - facts not covered by the model and not in `excluded` -> drift
       - evidence / assumption missing -> warnings
+
+    `repo` (optional) is the analysed repository; when given, each evidence
+    entry is checked to point at an existing file and line.
     """
     if result is None:
         result = ValidationResult(model=model)
@@ -120,7 +154,7 @@ def validate(model, facts, result=None):
     elements = {}
     for section in ("people", "containers", "external_systems"):
         for index, element in enumerate(model.get(section) or []):
-            if "id" not in element or "name" not in element:
+            if not str(element.get("id") or "").strip() or not str(element.get("name") or "").strip():
                 invalid(
                     f"{section}[{index}]: every element needs an id and a name "
                     f"({element!r})"
@@ -133,11 +167,48 @@ def validate(model, facts, result=None):
             elements[element["id"]] = section
             if not element.get("evidence") and not element.get("assumption"):
                 warnings.append(f"{element['id']}: no evidence and not marked as an assumption")
+            for key in element:
+                if key not in ELEMENT_KEYS:
+                    warnings.append(f"{element['id']}: unknown key {key!r}{_did_you_mean(key, ELEMENT_KEYS)}; it is ignored")
+            if "type" in element and element["type"] not in ELEMENT_TYPES:
+                warnings.append(f"{element['id']}: unknown type {element['type']!r}"
+                                f"{_did_you_mean(element['type'], ELEMENT_TYPES)}; use container, database or queue")
+            if repo is not None:
+                for entry in element.get("evidence") or []:
+                    problem = _evidence_problem(entry, Path(repo))
+                    if problem:
+                        warnings.append(f"{element['id']}: evidence {entry!r} {problem}")
 
     system_name = (model.get("system") or {}).get("name")
     if system_name is None or system_name == "":
         invalid("system.name is missing")
 
+    fact_ids = [f["id"] for kind in ("containers", "data_stores", "external_systems") for f in facts[kind]]
+    covered_by = {}
+    for section in ("containers", "external_systems"):
+        for element in model.get(section) or []:
+            if "id" not in element:
+                continue
+            for fact in element.get("facts") or []:
+                if fact not in fact_ids:
+                    warnings.append(f"{element['id']}: facts lists {fact!r}, which is not in c4-facts.json"
+                                    f"{_did_you_mean(fact, fact_ids)}")
+            for fact in _covers(element):
+                if fact in fact_ids:
+                    covered_by.setdefault(fact, []).append(element["id"])
+    for fact, owners in covered_by.items():
+        if len(owners) > 1:
+            names = sorted(owners)
+            listed = f"both {names[0]} and {names[1]}" if len(names) == 2 else ", ".join(names)
+            # _container_lookup keeps the last element that lists the fact.
+            warnings.append(f"{fact} is covered by {listed}; it is drawn once, as {owners[-1]}")
+    for item in model.get("excluded") or []:
+        if not item.get("id"):
+            continue
+        if not str(item.get("reason") or "").strip():
+            warnings.append(f"excluded {item['id']}: give a reason, so readers know why it is left out")
+        if item["id"] not in fact_ids:
+            warnings.append(f"excluded {item['id']} is not in c4-facts.json{_did_you_mean(item['id'], fact_ids)}")
     covered = {fact for section in ("containers", "external_systems") for e in model.get(section) or [] for fact in _covers(e)}
     covered |= {item["id"] for item in model.get("excluded") or []}
     for kind in ("containers", "data_stores", "external_systems"):
@@ -154,6 +225,7 @@ def validate(model, facts, result=None):
                 invalid(
                     f"relationships[{index}]: {relationship.get('from')!r} -> "
                     f"{relationship.get('to')!r}: unknown {end} id {relationship.get(end)!r}"
+                    f"{_did_you_mean(relationship.get(end), elements)}"
                 )
 
     component_ids = all_component_ids(model, facts)
@@ -161,6 +233,7 @@ def validate(model, facts, result=None):
         if elements.get(container_id) != "containers":
             invalid(
                 f"components[{container_id!r}]: {container_id!r} is not a container id"
+                f"{_did_you_mean(container_id, [e for e, s in elements.items() if s == 'containers'])}"
             )
             continue
         for component in descriptions:
@@ -180,7 +253,7 @@ def validate(model, facts, result=None):
                 if step.get(end) not in known:
                     invalid(
                         f"flows[{flow_index}].steps[{number-1}]: flow {flow['name']!r} step "
-                        f"{number}: unknown {end} {step.get(end)!r} "
+                        f"{number}: unknown {end} {step.get(end)!r}{_did_you_mean(step.get(end), known)} "
                         "(use a person, container or external system id, or a component id from c4-facts.json)"
                     )
 
@@ -866,6 +939,21 @@ def _unreviewed_facts_section(facts, drift):
             ""] + rows + [""]
 
 
+def _repository(facts, output, repo_override=None):
+    """
+    The analysed repository, or None when it can't be found from here (the
+    output folder moved and no --repo was given): evidence isn't checked then.
+    """
+    relative = repo_override or facts.get("repository_root")
+    if not relative:
+        return None
+    repo = (Path(output) / relative).resolve()
+    expected = facts.get("repository")
+    if not repo.is_dir() or (not repo_override and expected and repo.name != expected):
+        return None
+    return repo
+
+
 def render(output_dir, facts_only=False, svg=True, repo_override=None, collector=None):
     """Render C4 diagrams tiered by status.
 
@@ -911,7 +999,7 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
                         collector.model_error("render_c4", err)
             else:
                 # Semantic checks: append to the existing ValidationResult.
-                result = validate(model, facts, result)
+                result = validate(model, facts, result, repo=_repository(facts, output, repo_override))
                 if result.errors:
                     use_model = facts_only_model(facts)
                     for err in result.errors:
