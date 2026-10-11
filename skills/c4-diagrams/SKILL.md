@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires python3 (3.11+, checked at startup). Node.js with @mermaid-js/mermaid-cli is optional, for SVG rendering.
 metadata:
   author: ythalorossy
-  version: "3.3.2"
+  version: "3.3.3"
 ---
 
 # Architecture Diagram Generator
@@ -48,7 +48,7 @@ python3 "<skill>/scripts/analyze_repository.py" "<repository_path>"
 
 - Quote paths: repository and folder names may contain spaces.
 - Run it from the user's current working directory. By default the files go to `./architecture-docs/<repository name>/` there, so the user can keep, commit or delete them. Pass `--output <directory>` only if the user named another location. Never write into the skill folder.
-- It writes `c4-facts.json`, facts-only C4 diagrams (`c4-container.*`, `c4-component-*.*`), `ArchitectureReport.md`, `dependency-graph.*`, `repository-scan.json` and `summary.json`.
+- It writes `c4-facts.json`, facts-only C4 diagrams (`c4-container.*`, `c4-component-*.*`, `c4-structure-*.*`, `c4-deployment.*`, each as `.mmd` and `.svg`), `ArchitectureReport.md`, `dependency-graph.*`, `repository-scan.json` and `summary.json`.
 - Requires Python 3.11+ (checked at startup) to read `pyproject.toml`.
 - SVGs are rendered with `mmdc` or `npx @mermaid-js/mermaid-cli@12.0.0` (pinned) and embedded in the report as images, so they show in any Markdown viewer. Each render returns a status: `ok` (SVG written), `syntax-error` (a bug in the diagram — report it), `timeout` (diagram too complex), `tool-error` (other failure), `missing-tool` (neither mmdc nor npx found), or `skipped` (rendering turned off, or the renderer failed on the first diagram). A degraded run exits 0 but sets `status: degraded` in `summary.json`. Use `--no-svg` or set `C4_SVG=0` in the environment to skip all SVG rendering (useful in CI or when Node.js is absent).
 

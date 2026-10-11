@@ -163,11 +163,19 @@ The model format is described in [`assets/c4-model-reference.md`](skills/c4-diag
 
 ## Running the tests
 
-The repo ships with a `unittest` suite that exercises the analyzer, the orchestrator and the CLIs with no network and no Node.js required. From the repository root:
+The repo ships with a `unittest` suite that exercises the analyzer, the orchestrator and the CLIs with no network and no Node.js required (it runs in a few seconds). From the repository root:
 
 ```bash
 python3 -m unittest discover -s tests
 ```
+
+`tests/golden/` holds the expected diagrams (`.mmd`) and `ArchitectureReport.md` for every fixture. When you change the output on purpose, regenerate them and review the diff:
+
+```bash
+C4_UPDATE_GOLDEN=1 python3 -m unittest discover -s tests -p test_output_golden.py
+```
+
+`C4_REAL_RENDER=1` also runs one test against the real, pinned mermaid-cli (needs Node.js).
 
 ## Layout
 
@@ -190,7 +198,7 @@ gemini-extension.json      Gemini CLI extension
 package.json, index.js     OpenCode plugin (registers skills/) and pi package
 ```
 
-**Releasing:** the version is repeated in `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `plugin.json`, `.cursor-plugin/plugin.json`, `.codex-plugin/plugin.json`, `gemini-extension.json`, `package.json`, the `SKILL.md` metadata and `scripts/generate_docs.py`. Bump them together.
+**Releasing:** the version is repeated in `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `plugin.json`, `.cursor-plugin/plugin.json`, `.codex-plugin/plugin.json`, `gemini-extension.json`, `package.json`, the `SKILL.md` metadata and `scripts/generate_docs.py`. Bump them together (`tests/test_versions.py` fails if they differ), add a `CHANGELOG.md` entry, and publish a GitHub release for the tag.
 
 ## License
 

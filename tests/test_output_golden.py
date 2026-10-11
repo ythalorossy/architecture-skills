@@ -14,6 +14,7 @@ To accept an intended output change, regenerate and review the diff:
 """
 import json
 import os
+import re
 import shutil
 import tempfile
 import unittest
@@ -44,9 +45,16 @@ FIXTURES = [
 
 
 def _outputs(folder):
-    """{file name: text} for the diagrams and the report, with LF line endings."""
+    """
+    {file name: text} for the diagrams and the report, with LF line endings
+    and the generator version masked (it changes with every release).
+    """
     files = sorted(Path(folder).glob("*.mmd")) + [Path(folder) / "ArchitectureReport.md"]
-    return {f.name: f.read_text(encoding="utf-8").replace("\r\n", "\n") for f in files}
+    return {
+        f.name: re.sub(r"Generator Version: \S+", "Generator Version: <version>",
+                       f.read_text(encoding="utf-8").replace("\r\n", "\n"))
+        for f in files
+    }
 
 
 class OutputGoldenTest(unittest.TestCase):
