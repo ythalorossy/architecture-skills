@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Python services with only a `requirements.txt` are found.** A repository with `api/` and `worker/` and no `pyproject.toml` or `setup.py` became one container named after the repository with every framework merged, plus a phantom duplicate when docker-compose built them. Each folder with its own `requirements*.txt` is now a candidate service.
+- **Large monorepos analyze in seconds.** An npm workspace of 50 chained packages took 300 s; it now takes about 2 s (20 packages: 18 s to 0.7 s), with identical results. Source files over 2 MB are no longer scanned.
+
+### Added
+
+- When nothing runnable is found and the repository is drawn as one box, `summary.json` gets a `detection` warning instead of reporting a clean run.
+
 ## 3.3.5 — 2026-10-11
 
 ### Added
