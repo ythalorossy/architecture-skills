@@ -236,22 +236,11 @@ class RepositoryAnalyzer:
         # elements) it falls back to facts-only.  c4-model.json is never
         # modified.
         result = render_c4(self.output_path, svg=render_c4_svg, collector=self._collector)
+        model_status = result["status"]
         model_errors = result["errors"]
-        model_warnings = result.get("warnings") or []
-        model_status = "ok"
-        drift = []
-        if model_errors:
-            # Invalid: at least one element or relationship id is unknown.
-            result = render_c4(self.output_path, facts_only=True, svg=render_c4_svg, collector=self._collector)
-            model_status = "invalid"
-        elif model_warnings:
-            # Drift: the model is valid but some facts are not yet covered.
-            # Re-render with the model and surface the unreviewed facts.
-            result = render_c4(self.output_path, svg=render_c4_svg, collector=self._collector, show_drift=True)
-            model_status = "drift"
-            for w in model_warnings:
-                if "not in the model" in w.lower() or "was found in the code" in w.lower():
-                    drift.append({"message": w})
+        # render() already drew the facts-only model when the model is invalid,
+        # and drew the model with an Unreviewed facts section when it drifts.
+        drift = [{"message": message} for message in result["drift"]]
 
         # Print one warning per failed stem, naming the cause (SPEC-05 AC8)
         if result["svg_failed"]:

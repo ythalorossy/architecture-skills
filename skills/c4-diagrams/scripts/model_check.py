@@ -208,14 +208,14 @@ def check_structure(model: dict) -> ValidationResult:
     if components is not None:
         if not isinstance(components, dict):
             errors.append(
-                f"{label}:components: expected a map, got {type(components).__name__}"
+                f"{label}:components: expected a map of maps, got {type(components).__name__}"
             )
         else:
-            for container_id, descriptions in components.items():
-                if not isinstance(descriptions, list):
+            for container_id, inner in components.items():
+                if not isinstance(inner, dict):
                     errors.append(
-                        f"{label}:components[{container_id!r}]: expected a list of descriptions, "
-                        f"got {type(descriptions).__name__}"
+                        f"{label}:components[{container_id!r}]: expected a map of "
+                        f"component descriptions, got {type(inner).__name__}"
                     )
 
     return ValidationResult(model=model, errors=errors)

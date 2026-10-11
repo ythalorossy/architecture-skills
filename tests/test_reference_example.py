@@ -44,7 +44,7 @@ class ReferenceExampleTest(unittest.TestCase):
         cls.output = Path(cls._output.name)
         # The real analyzer, without the SVG step (it needs Node.js and the network).
         with mock.patch.object(analyze_repository, "render_svg", return_value=False), \
-                mock.patch.object(render_c4, "render_svg", return_value=False), \
+                mock.patch.object(render_c4, "render", return_value={"status": "ok", "errors": [], "drift": [], "warnings": []}), \
                 contextlib.redirect_stdout(io.StringIO()):
             analyze_repository.RepositoryAnalyzer(str(FIXTURE), str(cls.output)).run()
         cls.facts = json.loads((cls.output / "c4-facts.json").read_text(encoding="utf-8"))

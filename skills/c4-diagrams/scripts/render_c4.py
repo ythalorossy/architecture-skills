@@ -32,7 +32,7 @@ from scripts.generate_mermaid import _node_ids
 from scripts import svg_render as _sr
 from scripts import code_diagrams
 from scripts import mermaid_syntax as _ms
-from scripts.model_check import ValidationResult
+from scripts.model_check import ValidationResult, check_structure, load_model
 
 
 MAX_COMPONENTS = 20
@@ -213,10 +213,7 @@ def all_component_ids(model, facts):
 
 
 def _unreviewed_facts_warnings(model, facts):
-    """
-    Return model-tier warning messages for every fact not covered by the model.
-    Used when rendering on drift to surface new facts for the agent to review.
-    """
+    """Kept for the legacy show_drift path; not used by tiered render()."""
     covered = {fact for section in ("containers", "external_systems") for e in model.get(section) or [] for fact in _covers(e)}
     covered |= {item["id"] for item in model.get("excluded") or []}
     warnings = []
@@ -802,7 +799,37 @@ def _inventory_section(facts, model):
             "| Container | Declared |", "|---|---|"] + rows + [""]
 
 
-def render(output_dir, facts_only=False, svg=True, repo_override=None, collector=None, show_drift=False):
+def _unreviewed_facts_section(facts, drift):
+    """Render the `### Unreviewed facts` subsection for drift runs (SPEC-06 AC3)."""
+    if not drift:
+        return []
+    by_id = {}
+    for kind in ("containers", "data_stores", "external_systems"):
+        for fact in facts[kind]:
+            by_id[fact["id"]] = (kind.rstrip("_systems"), fact)
+    rows = ["| id | name | kind | evidence |", "|---|---|---|---|"]
+    for message in drift:
+        first_token = message.split(" ", 1)[0]
+        kind, fact = by_id.get(first_token, ("?", None))
+        if fact is None:
+            rows.append(f"| `{first_token}` | | {kind} | |")
+            continue
+        evidence = ", ".join(f"`{e}`" for e in (fact.get("evidence") or [])[:4])
+        rows.append(f"| `{fact['id']}` | {_cell(fact.get('name', ''))} | {kind} | {evidence or '—'} |")
+    return ["### Unreviewed facts", "",
+            "Facts discovered in the code since this model was written. Add each to the model (or list it in `excluded` with a reason) before the next render.",
+            ""] + rows + [""]
+
+
+def render(output_dir, facts_only=False, svg=True, repo_override=None, collector=None):
+    """Render C4 diagrams tiered by status.
+
+    Returns a dict with `status`, `errors`, `drift`, `warnings`, `diagrams`,
+    `facts_only`, `svg` and `svg_failed`. `status` is one of `ok`, `drift`,
+    `invalid`. When the model is invalid the facts-only model is drawn; the
+    errors are preserved. When the model drifts the model is rendered as-is
+    and an `Unreviewed facts` section is appended to the C4 block.
+    """
     output = Path(output_dir).resolve()
     facts_file = output / "c4-facts.json"
     if not facts_file.is_file():
@@ -812,52 +839,78 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
     facts = json.loads(facts_file.read_text(encoding="utf-8"))
     model_file = output / "c4-model.json"
 
-    errors, warnings = [], []
+    result = ValidationResult(model=None)
+    use_model = None
     code_entries = []
     if facts_only or not model_file.is_file():
-        model = facts_only_model(facts)
+        use_model = facts_only_model(facts)
     else:
-        model = json.loads(model_file.read_text(encoding="utf-8"))
-        for key in ("people", "containers", "external_systems", "relationships", "excluded", "flows"):
-            model.setdefault(key, [])
-        errors, warnings = validate(model, facts)
-        if errors:
-            for err in errors:
+        loaded = load_model(model_file)
+        result = loaded
+        if loaded.errors:
+            # JSON syntax error or non-object top level: fall back to facts-only.
+            use_model = facts_only_model(facts)
+            for err in loaded.errors:
                 if collector:
-                    collector.model_warning("render_c4", err)
-            return {"errors": errors, "warnings": warnings}
-        errors, code_warnings, code_entries = code_diagrams.prepare(
-            model, facts, output, collector, repo_override=repo_override
-        )
-        warnings += code_warnings
-        if errors:
-            return {"errors": errors, "warnings": warnings, "facts_only": True}
+                    collector.model_error("render_c4", err)
+        else:
+            model = loaded.model
+            for key in ("people", "containers", "external_systems", "relationships", "excluded", "flows"):
+                model.setdefault(key, [])
+            structural = check_structure(model)
+            result.errors.extend(structural.errors)
+            if result.errors:
+                use_model = facts_only_model(facts)
+                for err in structural.errors:
+                    if collector:
+                        collector.model_error("render_c4", err)
+            else:
+                # Semantic checks: append to the existing ValidationResult.
+                result = validate(model, facts, result)
+                if result.errors:
+                    use_model = facts_only_model(facts)
+                    for err in result.errors:
+                        if collector:
+                            collector.model_error("render_c4", err)
+                else:
+                    use_model = model
 
-    # show_drift: surface unreviewed facts as model-tier warnings
-    if show_drift and not facts_only and model_file.is_file():
-        drift_warnings = _unreviewed_facts_warnings(model, facts)
-        warnings += drift_warnings
-        for w in drift_warnings:
-            if collector:
-                collector.model_warning("render_c4", w)
+    # code_diagrams.prepare is only run when we have a usable model.
+    if not use_model.get("_facts_only") and not result.errors:
+        code_errors, code_warnings, code_entries = code_diagrams.prepare(
+            use_model, facts, output, collector, repo_override=repo_override
+        )
+        result.warnings.extend(code_warnings)
+        if code_errors:
+            # Map code_diagrams errors into the invalid tier; fall back to facts-only.
+            result.errors.extend(code_errors)
+            use_model = facts_only_model(facts)
+            for err in code_errors:
+                if collector:
+                    collector.model_error("render_c4", err)
+
+    status = result.status
+    if collector and status == "drift":
+        for message in result.drift:
+            collector.model_warning("render_c4", message)
 
     for old in list(output.glob("c4-*.mmd")) + list(output.glob("c4-*.svg")):
         old.unlink()
 
     diagrams = {}
-    if not model.get("_facts_only"):
-        diagrams["c4-context"] = context_diagram(model)
-    if model["containers"]:
-        diagrams["c4-container"] = container_diagram(model)
-    components = component_diagrams(model, facts)
+    if not use_model.get("_facts_only"):
+        diagrams["c4-context"] = context_diagram(use_model)
+    if use_model["containers"]:
+        diagrams["c4-container"] = container_diagram(use_model)
+    components = component_diagrams(use_model, facts)
     for stem, _, mermaid, _, _ in components:
         diagrams[stem] = mermaid
-    flows = flow_diagrams(model, facts)
+    flows = flow_diagrams(use_model, facts)
     for stem, _, mermaid, _ in flows:
         diagrams[stem] = mermaid
     for entry in code_entries:
         diagrams[entry["stem"]] = entry["mermaid"]
-    deployment = deployment_diagram(facts, model)
+    deployment = deployment_diagram(facts, use_model)
     if deployment:
         diagrams["c4-deployment"] = deployment
 
@@ -876,29 +929,29 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
             rendered[r.stem] = r.status == "ok"
 
     block = [BLOCK_START, "", "## Architecture (C4 model)", ""]
-    if model.get("_facts_only"):
+    if use_model.get("_facts_only"):
         block += [
             "> Drawn from code facts only: no `c4-model.json` yet, so people, external purposes, "
             "descriptions and key flows are missing and the System Context level is left out. "
             "Write `c4-model.json` and run `render_c4.py` to complete it.", "",
         ]
-    if not model["containers"]:
+    if not use_model["containers"]:
         block += ["> No containers, data stores or external systems were detected, so there are no C4 diagrams. "
                   "Build the model from the source by hand, or see the dependency graph appendix.", ""]
-    elif model["system"].get("description") and not model.get("_facts_only"):
-        block += [_clean(model["system"]["description"]), ""]
+    elif use_model["system"].get("description") and not use_model.get("_facts_only"):
+        block += [_clean(use_model["system"]["description"]), ""]
 
     if "c4-context" in diagrams:
         block.append(_section("### Level 1: System context", "c4-context", diagrams["c4-context"], rendered.get("c4-context")))
     if "c4-container" in diagrams:
         block.append(_section("### Level 2: Containers", "c4-container", diagrams["c4-container"], rendered.get("c4-container")))
-        block += _containers_table(model, facts) + [""]
+        block += _containers_table(use_model, facts) + [""]
 
     if components:
         block += ["### Level 3: Components", "",
                   "For each container: the modules it is built from (when it has several), then the code structure "
                   "inside them (packages or namespaces and the imports between them).", ""]
-        for stem, title, mermaid, notes, kind in components:
+        for stem, title, mermaid, notes, _kind in components:
             block.append(_section(f"#### {title}", stem, mermaid, rendered.get(stem), notes))
 
     if code_entries:
@@ -914,14 +967,17 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
         for stem, title, mermaid, description in flows:
             block.append(_section(f"#### {_clean(title)}", stem, mermaid, rendered.get(stem), intro=description))
 
-    block += _deployment_section(facts, model, rendered.get("c4-deployment"), deployment)
-    block += _endpoints_section(facts, model)
-    block += _configuration_section(facts, model)
-    block += _inventory_section(facts, model)
+    block += _deployment_section(facts, use_model, rendered.get("c4-deployment"), deployment)
+    block += _endpoints_section(facts, use_model)
+    block += _configuration_section(facts, use_model)
+    block += _inventory_section(facts, use_model)
 
-    assumptions = _assumptions(model)
+    assumptions = _assumptions(use_model)
     if assumptions:
         block += ["### Assumptions", "", "Not backed by code evidence; confirm with the team:", ""] + assumptions + [""]
+
+    # Unreviewed facts section for drift renders (SPEC-06 AC3 / REVIEW FOCUS 5).
+    block += _unreviewed_facts_section(facts, result.drift)
 
     block += ["### C4 files", ""] + [f"- [{stem}.mmd]({stem}.mmd)" for stem in diagrams]
     block += ["- [c4-facts.json](c4-facts.json)"] + (["- [c4-model.json](c4-model.json)"] if model_file.is_file() and not facts_only else [])
@@ -938,7 +994,7 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
         if pattern.search(text):
             report.write_text(pattern.sub(lambda _: "\n".join(block), text), encoding="utf-8")
         else:
-            warnings.append("ArchitectureReport.md has no C4 block; re-run analyze_repository.py")
+            result.warnings.append("ArchitectureReport.md has no C4 block; re-run analyze_repository.py")
 
     # Per-stem SVG status for summary.json (SPEC-05 AC8)
     svg_status = {}
@@ -946,11 +1002,13 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
         svg_status[r.stem] = {"status": r.status, "message": r.message}
 
     return {
-        "errors": [],
-        "warnings": warnings,
+        "status": status,
+        "errors": result.errors,
+        "drift": result.drift,
+        "warnings": result.warnings,
         "diagrams": list(diagrams),
         "svg_failed": [stem for stem, ok in rendered.items() if not ok] if svg else [],
-        "facts_only": bool(model.get("_facts_only")),
+        "facts_only": bool(use_model.get("_facts_only")),
         "svg": svg_status,
     }
 
@@ -963,6 +1021,8 @@ def main():
     parser.add_argument("--repo", dest="repo", default=None,
                         help="Override the repository path stored in c4-facts.json (for relocatable output)")
     parser.add_argument("--debug", action="store_true", help="Print the full traceback when an unexpected error occurs")
+    parser.add_argument("--strict", action="store_true",
+                        help="Exit with code 2 when the model drifts from the code (the DRIFT: lines)")
     args = parser.parse_args()
 
     result = render(args.output, facts_only=args.facts_only, svg=not args.no_svg, repo_override=args.repo)
@@ -976,6 +1036,8 @@ def main():
         sys.exit(1)
 
     print("Diagrams: " + ", ".join(result["diagrams"]))
+    for message in result["drift"]:
+        print(f"DRIFT: {message}")
     if result["svg_failed"]:
         # Print one line per failed stem, naming the cause (SPEC-05 AC8)
         svg_status = result.get("svg", {})
@@ -987,6 +1049,9 @@ def main():
                 print(f"WARNING: {stem}: {status} — {msg}")
             else:
                 print(f"WARNING: {stem}: {status}")
+    # Exit codes: 0 ok, 0 drift (DRIFT: lines printed), 1 invalid, 2 drift with --strict.
+    if result["status"] == "drift" and args.strict:
+        sys.exit(2)
 
 
 if __name__ == "__main__":

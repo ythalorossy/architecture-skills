@@ -10,7 +10,8 @@ Kinds
 - parse  : a manifest or source file that could not be read
 - skipped: a file or path that was skipped (permission, symlink, size)
 - render : a diagram or SVG that failed to render
-- model  : a model-tier issue (drift, invalid relationship id)
+- model  : a model-tier drift (a fact the model does not cover yet)
+- model_error : a model-tier error (the model is invalid and was not drawn)
 
 The collector is passed into components that would otherwise print to stderr.
 """
@@ -20,12 +21,20 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 
+def _is_invalid(diagnostic: "Diagnostic") -> bool:
+    """Legacy text rule for model_warning: 'unknown' or 'not found' about an id -> invalid."""
+    lc = diagnostic.message.lower()
+    if "was found in the code but is not in the model" in lc:
+        return False
+    return "unknown" in lc or ("not found" in lc and "type" not in lc)
+
+
 @dataclass
 class Diagnostic:
     source: str       # module / script name, e.g. "python_projects"
     path: str | None  # repo-relative path, forward-slash, or None
     message: str
-    kind: str         # parse | skipped | render | model
+    kind: str         # parse | skipped | render | model | model_error
 
     def to_dict(self) -> dict:
         d = {"source": self.source, "message": self.message, "kind": self.kind}
@@ -82,8 +91,12 @@ class DiagnosticsCollector:
         self._add(Diagnostic(source, path, message, "render"))
 
     def model_warning(self, source: str, message: str, path: str | None = None) -> None:
-        """Record a model-tier issue (drift, invalid relationship, etc.)."""
+        """Record a model-tier drift: a fact the model does not cover yet."""
         self._add(Diagnostic(source, path, message, "model"))
+
+    def model_error(self, source: str, message: str, path: str | None = None) -> None:
+        """Record a model-tier error: the model is invalid and is not drawn."""
+        self._add(Diagnostic(source, path, message, "model_error"))
 
     # ------------------------------------------------------------------
     # RepoIndex compatibility (RepoIndex calls skipped(path, reason) directly)
@@ -136,31 +149,26 @@ class DiagnosticsCollector:
         """
         One of 'ok' | 'drift' | 'invalid' based on model-tier diagnostics.
 
-        'drift'  – at least one unreviewed fact (new element not in model)
-        'invalid' – at least one unknown relationship id or missing element
-        'ok'     – no model-tier diagnostics
+        'invalid' – a model_error was recorded, or a model-tier message names an
+                    unknown id or a missing element
+        'drift'   – model-tier messages that are not invalid
+        'ok'      – no model-tier diagnostics
+
+        Callers that know the tier use model_error; model_warning messages are
+        classified by their text (legacy contract, see _is_invalid).
         """
-        kinds = {d.kind for d in self._list}
-        if "model" not in kinds:
+        if any(d.kind == "model_error" for d in self._list):
+            return "invalid"
+        model = [d for d in self._list if d.kind == "model"]
+        if not model:
             return "ok"
-        # Heuristic: messages about "unknown" ids or missing elements = invalid.
-        # Messages about facts "found in code but not in the model" = drift.
-        for d in self._list:
-            if d.kind == "model":
-                lc = d.message.lower()
-                # "was found in the code but is not in the model" -> drift
-                if "was found in the code but is not in the model" in lc:
-                    continue
-                # "unknown" or "not found" about an id/element -> invalid
-                if "unknown" in lc or ("not found" in lc and "type" not in lc):
-                    return "invalid"
-        return "drift"
+        return "invalid" if any(_is_invalid(d) for d in model) else "drift"
 
     def model_errors(self) -> list[str]:
         """Model-tier error messages (invalid only)."""
         if self.model_status() != "invalid":
             return []
-        return [d.message for d in self._list if d.kind == "model"]
+        return [d.message for d in self._list if d.kind == "model_error" or (d.kind == "model" and _is_invalid(d))]
 
     def drift(self) -> list[dict]:
         """Drift entries: model-tier diagnostics that are not invalid."""
