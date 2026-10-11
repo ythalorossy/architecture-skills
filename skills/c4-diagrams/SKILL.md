@@ -36,17 +36,21 @@ The script does the parts that are objective, and every item it finds carries `f
 - **Components:** the modules each container is built from (projects, Maven/Gradle modules, Go packages, Python/TS folders), and inside them the code structure: Java/Kotlin packages, C# namespaces and Go packages grouped below each module's root, with import edges. Stores and external systems attach to the package that uses them. Tests and third-party code (`vendor/`, `wwwroot/lib`, `*.min.js`) are left out; dense graphs hide shortcut edges; more than 20 components are split per module or folder.
 - **Report sections:** HTTP endpoints (Spring, JAX-RS, ASP.NET attribute and conventional `{controller}/{action}` routes, Express/Fastify/Nest, FastAPI/Flask/Django, Go), deployment (compose, Dockerfiles, Kubernetes, CI, hosting), environment variables with defaults, and a technology inventory per container.
 
+## Where things are
+
+`<skill>` below is this skill's folder: the folder that holds this `SKILL.md`. When the skill loads, the harness shows its base directory. Use that absolute path wherever `<skill>` appears. The working directory is the user's repository, so a bare `scripts/…` or `assets/…` path does not resolve. Every command below uses `<skill>` for that reason.
+
 ## Step 1 — Run the analysis
 
 ```bash
-python3 scripts/analyze_repository.py <repository_path>
+python3 "<skill>/scripts/analyze_repository.py" "<repository_path>"
 ```
 
-- Paths to `scripts/` and `assets/` are relative to this skill's folder (the one holding this `SKILL.md`). Use its absolute path when running, since the working directory is the user's repository.
+- Quote paths: repository and folder names may contain spaces.
 - Run it from the user's current working directory. By default the files go to `./architecture-docs/<repository name>/` there, so the user can keep, commit or delete them. Pass `--output <directory>` only if the user named another location. Never write into the skill folder.
 - It writes `c4-facts.json`, facts-only C4 diagrams (`c4-container.*`, `c4-component-*.*`), `ArchitectureReport.md`, `dependency-graph.*`, `repository-scan.json` and `summary.json`.
 - Requires Python 3.11+ (checked at startup) to read `pyproject.toml`.
-- SVGs are rendered with `mmdc` or `npx @mermaid-js/mermaid-cli` and embedded in the report as images, so they show in any Markdown viewer. Without Node.js the report keeps only the Mermaid blocks. Tell the user if that happened.
+- SVGs are rendered with `mmdc` or `npx @mermaid-js/mermaid-cli@10.9.1` (pinned) and embedded in the report as images, so they show in any Markdown viewer. Each render returns a status: `ok` (SVG written), `syntax-error` (a bug in the diagram — report it), `timeout` (diagram too complex), `tool-error` (other failure), `missing-tool` (neither mmdc nor npx found), or `skipped` (circuit breaker tripped). A degraded run exits 0 but sets `status: degraded` in `summary.json`. Use `--no-svg` or set `C4_SVG=0` in the environment to skip all SVG rendering (useful in CI or when Node.js is absent).
 
 ### Check for degraded runs
 
@@ -79,7 +83,7 @@ Treat the component graph as the source of truth for which components and edges 
 
 ## Step 3 — Write `c4-model.json` and draw
 
-Write `c4-model.json` in the output folder, following `assets/c4-model-reference.md`. In short:
+Write `c4-model.json` in the output folder, following `<skill>/assets/c4-model-reference.md`. In short:
 
 - cover every fact id, either as an element, in an element's `facts` list, or in `excluded` with a reason;
 - data stores go in `containers` with `"type": "database"`;
@@ -91,10 +95,12 @@ Write `c4-model.json` in the output folder, following `assets/c4-model-reference
 Then run:
 
 ```bash
-python3 scripts/render_c4.py <output folder>
+python3 "<skill>/scripts/render_c4.py" "<output folder>"
 ```
 
-If it exits with errors, fix the model and run it again. It rewrites the C4 section of `ArchitectureReport.md` and the `c4-*.mmd`/`.svg` files.
+It reports the model in three tiers. `ok` draws the model as written. `drift` (a fact the code has and the model does not cover yet) prints one `DRIFT:` line per item and exits 0; add each item to the model, or list it in `excluded` with a reason. `invalid` (a JSON syntax error with its line and column, a wrong-typed section with its JSON path, an unknown id, or a duplicate id) draws the facts-only diagrams and exits 1: fix the model and run it again. Use `--strict` to exit 2 on drift as well. Fix every error, resolve every drift item, and fix or justify each warning before you finish.
+
+It prints a status line per SVG (`ok`, `syntax-error`, `timeout`, `tool-error`, `missing-tool`). A `syntax-error` is a bug in the diagram — fix the model. Use `--no-svg` or `C4_SVG=0` to skip SVG rendering. It rewrites the C4 section of `ArchitectureReport.md` and the `c4-*.mmd`/`.svg` files.
 
 If `c4-model.json` already exists from an earlier run, it was kept (and maybe edited by the user). Update it rather than rewriting it from scratch, and keep the user's wording.
 
@@ -107,7 +113,7 @@ If `c4-model.json` already exists from an earlier run, it was kept (and maybe ed
 5. **Recommendations**: only ones backed by a finding.
 6. **Artifacts**: the output folder path. It's the user's to keep, commit, or delete (or add to `.gitignore`), and `c4-model.json` can be edited and re-rendered with `render_c4.py`.
 
-For an architecture review, walk through `assets/architecture-review-checklist.md`. If the user wants a system overview or per-service docs, fill `assets/system-overview-template.md` / `assets/service-template.md` from what you found.
+For an architecture review, walk through `<skill>/assets/architecture-review-checklist.md`. If the user wants a system overview or per-service docs, fill `<skill>/assets/system-overview-template.md` / `<skill>/assets/service-template.md` from what you found.
 
 **If nothing was detected** (no containers and an empty graph, e.g. an unsupported stack): build the picture from the source yourself, write the model by hand, and tell the user the diagrams were derived manually rather than by the script.
 

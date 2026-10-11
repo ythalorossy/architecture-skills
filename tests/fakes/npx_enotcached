@@ -1,0 +1,18 @@
+#!/bin/bash
+# Fake npx that returns ENOTCACHED on first call, succeeds on second
+# This tracks calls via a temp file
+STATE_FILE="/tmp/npx_enotcached_call_count"
+if [ -f "$STATE_FILE" ]; then
+    COUNT=$(cat "$STATE_FILE")
+    COUNT=$((COUNT + 1))
+else
+    COUNT=1
+fi
+echo "$COUNT" > "$STATE_FILE"
+
+if [ "$COUNT" -eq 1 ]; then
+    echo "npm: ENOTCACHED dependency not in cache" >&2
+    exit 1
+fi
+
+exit 0
