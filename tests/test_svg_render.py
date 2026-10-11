@@ -31,7 +31,8 @@ class RenderTestCase(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
         self.out = self.tmp / "out"
-        self.log = self.tmp / "calls.jsonl"
+        self.log = self.tmp / "calls"
+        self.log.mkdir()
 
     def tearDown(self):
         import shutil
@@ -54,9 +55,7 @@ class RenderTestCase(unittest.TestCase):
             return sr.render(stems, self.out)
 
     def calls(self):
-        if not self.log.exists():
-            return []
-        return [json.loads(line) for line in self.log.read_text(encoding="utf-8").splitlines()]
+        return [json.loads(p.read_text(encoding="utf-8")) for p in self.log.glob("*.json")]
 
 
 class TestOk(RenderTestCase):

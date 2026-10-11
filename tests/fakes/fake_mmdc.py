@@ -12,14 +12,16 @@ tool. FAKE_MMDC_MODE picks the behaviour:
                 set; otherwise behave like ok
     no-output   exit 0 without writing anything
 
-Each call appends one JSON line to FAKE_MMDC_LOG, if set, so tests can count
-invocations and see whether they ran offline.
+Each call writes one JSON file into the folder FAKE_MMDC_LOG, if set, so tests
+can count invocations and see whether they ran offline. (One file per call:
+parallel appends to a shared file can lose lines on Windows.)
 """
 import json
 import os
 import subprocess
 import sys
 import time
+import uuid
 
 
 def main(argv):
@@ -29,8 +31,8 @@ def main(argv):
 
     log = os.environ.get("FAKE_MMDC_LOG")
     if log:
-        with open(log, "a", encoding="utf-8") as fh:
-            fh.write(json.dumps({"input": args.get("-i"), "output": args.get("-o"), "offline": offline}) + "\n")
+        with open(os.path.join(log, f"{uuid.uuid4().hex}.json"), "w", encoding="utf-8") as fh:
+            json.dump({"input": args.get("-i"), "output": args.get("-o"), "offline": offline}, fh)
 
     if mode == "syntax":
         sys.stderr.write("Error: Parse error on line 9:\n...Unexpected token 'end'\n")
