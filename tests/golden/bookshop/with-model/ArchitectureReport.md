@@ -20,6 +20,21 @@ bookshop has 6 projects (6 production, 0 test) with 4 project references between
 
 [//]: # (c4:start)
 
+## Architecture overview
+
+Bookshop sells books online. A React web app calls a FastAPI service, which keeps orders in its own PostgreSQL database, searches a catalogue index that the catalogue team runs, and charges cards through an external payment provider.
+
+### Findings
+
+- The card is charged before the order is stored (`api/bookshop/orders/service.py:31-32`): if the insert fails, the reader has paid and no order exists.
+- The charge is sent without an idempotency key (`api/bookshop/payments/client.py:10`), so a retried request can charge the card twice.
+- Search goes straight to another team's index (`api/bookshop/search/index.py:13`), with no fallback when it is unavailable.
+
+### Recommendations
+
+- Store the order as pending before charging, then mark it paid; refund when the update fails.
+- Send an idempotency key with each charge so the request can be retried safely.
+
 ## Architecture (C4 model)
 
 Online shop where readers find books and buy them

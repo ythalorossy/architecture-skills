@@ -1,6 +1,6 @@
 ---
 name: c4-diagrams
-description: Use when the user asks for architecture documentation, C4 diagrams, a dependency graph or diagram, an architecture review, or an explanation of how a repository's projects, packages or modules fit together. Works on local repository paths (.NET, Java/Kotlin, Go, Node.js/TypeScript, Python).
+description: Use when the user asks for architecture documentation, C4 diagrams, the key request flows of a codebase as sequence diagrams, a deployment, API or configuration overview, a dependency graph or diagram, an architecture review, or an explanation of how a repository's projects, packages or modules fit together. Works on local repository paths (.NET, Java/Kotlin, Go, Node.js/TypeScript, Python). Not for a quick question about one file or import, for changing code, or for diagrams unrelated to a codebase.
 license: MIT
 compatibility: Requires python3 (3.11+, checked at startup). Node.js with @mermaid-js/mermaid-cli is optional, for SVG rendering.
 metadata:
@@ -40,6 +40,8 @@ The script does the parts that are objective, and every item it finds carries `f
 
 `<skill>` below is this skill's folder: the folder that holds this `SKILL.md`. When the skill loads, the harness shows its base directory. Use that absolute path wherever `<skill>` appears. The working directory is the user's repository, so a bare `scripts/…` or `assets/…` path does not resolve. Every command below uses `<skill>` for that reason.
 
+The commands use `python3`. If it isn't on the PATH (common on Windows), use `python` or `py -3`; the scripts need Python 3.11+ and say so if it's older.
+
 ## Step 1 — Run the analysis
 
 ```bash
@@ -49,25 +51,17 @@ python3 "<skill>/scripts/analyze_repository.py" "<repository_path>"
 - Quote paths: repository and folder names may contain spaces.
 - Run it from the user's current working directory. By default the files go to `./architecture-docs/<repository name>/` there, so the user can keep, commit or delete them. Pass `--output <directory>` only if the user named another location. Never write into the skill folder.
 - It writes `c4-facts.json`, facts-only C4 diagrams (`c4-container.*`, `c4-component-*.*`, `c4-structure-*.*`, `c4-deployment.*`, each as `.mmd` and `.svg`), `ArchitectureReport.md`, `dependency-graph.*`, `repository-scan.json` and `summary.json`.
-- Requires Python 3.11+ (checked at startup) to read `pyproject.toml`.
-- SVGs are rendered with `mmdc` or `npx @mermaid-js/mermaid-cli@12.0.0` (pinned) and embedded in the report as images, so they show in any Markdown viewer. Each render returns a status: `ok` (SVG written), `syntax-error` (a bug in the diagram — report it), `timeout` (diagram too complex), `tool-error` (other failure), `missing-tool` (neither mmdc nor npx found), or `skipped` (rendering turned off, or the renderer failed on the first diagram). A degraded run exits 0 but sets `status: degraded` in `summary.json`. Use `--no-svg` or set `C4_SVG=0` in the environment to skip all SVG rendering (useful in CI or when Node.js is absent).
+- Diagrams are rendered to SVG with `mmdc` or `npx @mermaid-js/mermaid-cli@12.0.0` (pinned) and embedded in the report as images. Without Node.js the run prints a `NOTE:` and the report shows Mermaid source instead; tell the user. `--no-svg` or `C4_SVG=0` turns rendering off.
 
-### Check for degraded runs
+### Check `summary.json`
 
-After running, read `summary.json` and check:
+`status: "degraded"` means something needs attention; every cause is in `warnings` (each with `kind`, `message`, `source` and maybe `path`):
 
-- **`status`**: `"degraded"` means something needs attention: a file could not be read or parsed, a diagram failed to render, or `c4-model.json` is invalid. Every cause is listed in `warnings`. `"ok"` means clean. Missing Node.js is not degraded: the run prints a `NOTE:` and the report shows Mermaid source instead of images; tell the user.
-- **`warnings`**: one entry per problem, from parsers (`kind: parse`), unreadable paths (`skipped`), diagrams that failed to render (`render`) and the model (`model`, `model_error`). Each entry has `source`, `message`, `kind` and optionally `path`.
-- **`c4.model_status`**: `"drift"` means the model is valid but some new facts are unreviewed; `"invalid"` means the model has unknown relationship ids and fell back to facts-only; `"ok"` means the model and facts are in sync.
-- **`skipped_files`**: files that could not be read (permission errors, broken symlinks).
+- **`parse`** / **`skipped`** (also listed in `skipped_files`): files that could not be parsed or read. Tell the user which and why.
+- **`render`**: a diagram failed to render. A `syntax-error` is a bug in the diagram, often a label in the model: fix it and re-run `render_c4.py`. Report `timeout` and `tool-error` to the user.
+- **`model_error`** (`c4.model_status: "invalid"`): the model fell back to facts-only. Fix the listed errors and re-run `render_c4.py`.
 
-**Actions based on status:**
-- **`drift`**: update `c4-model.json` to cover the new facts. Re-run `render_c4.py`.
-- **`invalid`**: fix the reported errors in `c4-model.json` (unknown ids, missing elements). Re-run `render_c4.py`.
-- **`parse` warnings**: tell the user which files could not be parsed and what the error was.
-- **`render` warnings**: a `syntax-error` is a bug in the diagram (often a label in the model); fix it and re-run `render_c4.py`. Report `timeout` and `tool-error` to the user.
-- **`skipped_files`**: tell the user which files were skipped and why.
-- **`degraded` with `--strict`**: the script exits with code 2; without `--strict` it exits 0.
+`c4.model_status: "drift"` (not degraded) means new facts aren't in the model yet: add them, or list them in `excluded` with a reason, and re-run `render_c4.py`. With `--strict` a degraded run exits 2; otherwise 0.
 
 ## Step 2 — Read the facts and the code
 
@@ -79,6 +73,7 @@ Read `summary.json` and `c4-facts.json`. Then read enough code to answer what th
 - **What does each container and key component do?** Open the code components in `c4-facts.json` (`containers[].code_components`) and read a file or two per package, so you can describe them.
 - **What are the main flows?** Follow 1–3 important requests from the entry point (an endpoint in `endpoints`, a UI action, a CLI command or a scheduled job) through the components to the stores and external systems.
 - **Which components matter most?** Pick 2–5 that hold the core behaviour (a workflow engine, the migration agents, a client wrapper) for Level 4, and read their main classes.
+- **What did the script miss?** The detectors are pattern-based. When the code shows a container, store, external system or link the facts don't have (a queue consumer, a scheduled job, a gRPC or in-house SDK client, a call through a wrapper), add it to the model with `evidence` pointing at that code. Recall matters as much as precision: a missing payment provider misleads more than a mislabelled one.
 
 Treat the component graph as the source of truth for which components and edges exist.
 
@@ -92,6 +87,7 @@ Write `c4-model.json` in the output folder, following `<skill>/assets/c4-model-r
 - add a one-line description for each important component, using the ids from `c4-facts.json` (module ids, and code ids such as `weather-api::controller`);
 - add 1–3 `flows`: each a named, ordered list of steps between people, containers, external systems or components. Use component ids for the steps inside a container, so the flow shows the code path.
 - add `code`: 2–5 key components (component ids from `c4-facts.json`), each with a one-line `description` and, optionally, the `types` to center the class diagram on.
+- add `summary`: an `overview` paragraph, your `findings` (each tied to a `file:line`) and `recommendations` (each backed by a finding). It becomes the report's "Architecture overview", so the analysis stays with the diagrams.
 
 Then run:
 
@@ -99,20 +95,22 @@ Then run:
 python3 "<skill>/scripts/render_c4.py" "<output folder>"
 ```
 
-It reports the model in three tiers. `ok` draws the model as written. `drift` (a fact the code has and the model does not cover yet) prints one `DRIFT:` line per item and exits 0; add each item to the model, or list it in `excluded` with a reason. `invalid` (a JSON syntax error with its line and column, a wrong-typed section with its JSON path, an unknown id, or a duplicate id) draws the facts-only diagrams and exits 1: fix the model and run it again. Use `--strict` to exit 2 on drift as well. Fix every error, resolve every drift item, and fix or justify each warning before you finish.
+It reports the model in three tiers. `ok` draws the model as written. `drift` (a fact the code has and the model does not cover yet) prints one `DRIFT:` line per item and exits 0; add each item to the model, or list it in `excluded` with a reason. `invalid` (a JSON syntax error with its line and column, a wrong-typed section with its JSON path, an unknown id, or a duplicate id) draws the facts-only diagrams and exits 1: fix the model and run it again. Use `--strict` to exit 2 on drift as well. Messages suggest the likely fix (`did you mean 'bookshop-web'?`), and evidence that points at a missing file or line is a warning. Fix every error, resolve every drift item, and fix or justify each warning before you finish.
 
-It prints a status line per SVG (`ok`, `syntax-error`, `timeout`, `tool-error`, `missing-tool`). A `syntax-error` is a bug in the diagram — fix the model. Use `--no-svg` or `C4_SVG=0` to skip SVG rendering. It rewrites the C4 section of `ArchitectureReport.md` and the `c4-*.mmd`/`.svg` files.
+It prints a warning per diagram that fails to render (a `syntax-error` is a bug in the diagram: fix the model), and rewrites the C4 section of `ArchitectureReport.md` and the `c4-*.mmd`/`.svg` files.
 
 If `c4-model.json` already exists from an earlier run, it was kept (and maybe edited by the user). Update it rather than rewriting it from scratch, and keep the user's wording.
 
 ## Step 4 — Report to the user
 
+Your overview, findings and recommendations are already in `ArchitectureReport.md` (from `summary`). In the chat, give the short version:
+
 1. **What the system is**: 2–3 sentences, from the Context level.
 2. **Diagrams**: the Context and Container Mermaid blocks inline, then list the component, code, flow and deployment diagrams by file.
-3. **Findings**: each tied to a concrete element, component, file or edge. Mark which came from the automated checks (appendix) and which are your judgement. For a cycle, name an import that causes it.
+3. **Findings**: the most important ones, each tied to a concrete element, component, file or edge. Mark which came from the automated checks (appendix) and which are your judgement. For a cycle, name an import that causes it.
 4. **Assumptions**: the elements you marked as assumptions, for the user to confirm.
 5. **Recommendations**: only ones backed by a finding.
-6. **Artifacts**: the output folder path. It's the user's to keep, commit, or delete (or add to `.gitignore`), and `c4-model.json` can be edited and re-rendered with `render_c4.py`.
+6. **Artifacts**: the output folder path and `ArchitectureReport.md`. It's the user's to keep, commit, or delete (or add to `.gitignore`), and `c4-model.json` can be edited and re-rendered with `render_c4.py`.
 
 For an architecture review, walk through `<skill>/assets/architecture-review-checklist.md`. If the user wants a system overview or per-service docs, fill `<skill>/assets/system-overview-template.md` / `<skill>/assets/service-template.md` from what you found.
 
@@ -123,6 +121,8 @@ For an architecture review, walk through `<skill>/assets/architecture-review-che
 | Mistake | Fix |
 |---|---|
 | Stopping after Step 1 | The facts-only diagrams have no people, no purposes, no flows and no Context level. Write the model. |
+| Findings only in the chat | The chat is gone when the session ends. Put them in `summary` so they're in the report. |
+| Modelling only what the script found | Add what the code shows and the facts missed, with evidence. |
 | A model with no `components` descriptions or `flows` | Level 3 then shows bare package names. Describe the important components and trace at least one flow. |
 | Inventing people, external systems or flows | Only what code, config or docs support; mark the rest `"assumption": true`. |
 | Reporting "0 projects, no concerns" as healthy | Empty graph = not analyzed. Analyze manually. |

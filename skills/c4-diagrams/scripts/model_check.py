@@ -218,4 +218,18 @@ def check_structure(model: dict) -> ValidationResult:
                         f"component descriptions, got {type(inner).__name__}"
                     )
 
+    summary = model.get("summary")
+    if summary is not None:
+        if not isinstance(summary, dict):
+            errors.append(f"{label}:summary: expected an object, got {type(summary).__name__}")
+        else:
+            overview = summary.get("overview")
+            if overview is not None and not isinstance(overview, str):
+                errors.append(f"{label}:summary.overview: expected a string, got {type(overview).__name__}")
+            for key in ("findings", "recommendations"):
+                items = summary.get(key)
+                if items is not None and (not isinstance(items, list)
+                                          or not all(isinstance(i, str) for i in items)):
+                    errors.append(f"{label}:summary.{key}: expected a list of strings, got {type(items).__name__}")
+
     return ValidationResult(model=model, errors=errors)
