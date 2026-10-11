@@ -278,5 +278,68 @@ class ValidateContractTest(unittest.TestCase):
                 self.assertNotIn("facts_only", result)
 
 
+# ---------- SPEC-06: ValidationResult + safe loader (Task 1) ----------
+
+class LoaderResultTest(unittest.TestCase):
+    """Task 1: ValidationResult status derivation and safe loader errors.
+
+    Each loader call returns a ValidationResult with status, errors, drift,
+    warnings lists. Status is derived: errors -> invalid, else drift -> drift,
+    else ok. Messages are prefixed `c4-model.json:` and JSON parse errors
+    name the line and column of the failure.
+    """
+
+    def test_bad_json_reports_line_and_column(self):
+        """Trailing comma on line 3 -> message names line 3 and a column."""
+        from scripts.model_check import load_model
+
+        with tempfile.TemporaryDirectory() as tmp:
+            model_path = Path(tmp) / "c4-model.json"
+            # A trailing comma after a closing bracket is the canonical
+            # malformed-JSON case. AC2 requires the message to name the line
+            # and column of the trailing comma (line 3 here), not the EOF
+            # position the stdlib parser reports.
+            model_path.write_text(
+                '{\n  "system": {"name": "Demo"},\n  "containers": [],\n',
+                encoding="utf-8",
+            )
+            result = load_model(model_path)
+
+        self.assertEqual(result.status, "invalid")
+        self.assertEqual(len(result.errors), 1)
+        message = result.errors[0]
+        self.assertTrue(
+            message.startswith("c4-model.json: line 3"),
+            f"expected 'c4-model.json: line 3 ...' prefix, got {message!r}",
+        )
+        self.assertIn("column", message)
+
+    def test_top_level_list_is_invalid(self):
+        """A list at the top level is invalid (it must be an object)."""
+        from scripts.model_check import load_model
+
+        with tempfile.TemporaryDirectory() as tmp:
+            model_path = Path(tmp) / "c4-model.json"
+            model_path.write_text("[1, 2, 3]", encoding="utf-8")
+            result = load_model(model_path)
+
+        self.assertEqual(result.status, "invalid")
+        self.assertTrue(result.errors)
+
+    def test_valid_object_returns_ok(self):
+        """A well-formed object returns status ok with empty lists."""
+        from scripts.model_check import load_model
+
+        with tempfile.TemporaryDirectory() as tmp:
+            model_path = Path(tmp) / "c4-model.json"
+            model_path.write_text('{"system": {"name": "Demo"}}', encoding="utf-8")
+            result = load_model(model_path)
+
+        self.assertEqual(result.status, "ok")
+        self.assertEqual(result.errors, [])
+        self.assertEqual(result.drift, [])
+        self.assertEqual(result.warnings, [])
+
+
 if __name__ == "__main__":
     unittest.main()
