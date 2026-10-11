@@ -198,22 +198,23 @@ class SequenceTextEscaperTest(unittest.TestCase):
 
 @unittest.skipUnless(_MERMAID_SYNTAX_AVAILABLE, "mermaid_syntax module not yet implemented")
 class EntityCodesTest(unittest.TestCase):
-    """AC7: quotes and angle brackets use entity codes, not lookalikes."""
+    """Angle brackets use entity codes; double quotes become “…” in flowchart labels."""
 
-    def test_entities_not_lookalikes(self):
-        cases = [
-            ('"', "#quot;"),
-            ("<", "#lt;"),
-            (">", "#gt;"),
-        ]
-        for char, entity in cases:
-            result = mermaid_syntax.label_text("flowchart_md", char)
-            self.assertIn(entity, result,
-                f"{char!r} should become {entity}, got {result!r}")
-            self.assertNotIn("‹", result, "lookalike ‹ found")
-            self.assertNotIn("›", result, "lookalike › found")
-            self.assertNotIn("'", result.replace("#quot;", ""),
-                "lookalike ' found")
+    def test_angle_brackets_use_entities(self):
+        for kind in ("flowchart_md", "flowchart_plain"):
+            self.assertEqual(mermaid_syntax.label_text(kind, "<b>"), "#lt;b#gt;")
+
+    def test_double_quotes_become_typographic(self):
+        # mermaid shows #quot; literally in flowchart labels (checked against
+        # mermaid-cli 12, see test_svg_render.TestRealRenderer).
+        for kind in ("flowchart_md", "flowchart_plain"):
+            result = mermaid_syntax.label_text(kind, 'Says "hi" and "bye"')
+            self.assertEqual(result, "Says “hi” and “bye”", kind)
+            self.assertNotIn('"', result)
+
+    def test_sequence_alias_keeps_the_entity(self):
+        # Sequence diagrams decode #quot; correctly.
+        self.assertEqual(mermaid_syntax.label_text("sequence_alias", 'a "b"'), "a #quot;b#quot;")
 
 
 @unittest.skipUnless(_MERMAID_SYNTAX_AVAILABLE, "mermaid_syntax module not yet implemented")
