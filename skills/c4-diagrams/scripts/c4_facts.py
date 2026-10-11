@@ -26,7 +26,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 try:
-    from scripts.repo_index import walk_files, is_ignored_dir
+    from scripts.repo_index import is_ignored_dir
     from scripts.paths import TEST_DIRS, local_tag
     from scripts.projects import discover_all
     from scripts.python_projects import _distributions, normalize, _python_files
@@ -35,7 +35,7 @@ try:
     from scripts.repo_index import RepoIndex, MAX_TEXT_BYTES
 except ImportError:
     import code_facts, go_projects
-    from repo_index import walk_files, is_ignored_dir
+    from repo_index import is_ignored_dir
     from paths import TEST_DIRS, local_tag
     from projects import discover_all
     from python_projects import _distributions, normalize, _python_files
@@ -223,10 +223,7 @@ def _is_vendored(rel_parts):
 
 def _source_files(repo, test_dirs, index=None):
     files = []
-    if index is not None:
-        candidates = index.walk(lambda name: name.endswith(SOURCE_EXTENSIONS))
-    else:
-        candidates = walk_files(repo, lambda name: name.endswith(SOURCE_EXTENSIONS))
+    candidates = RepoIndex.ensure(index, repo).walk(lambda name: name.endswith(SOURCE_EXTENSIONS))
     for file in candidates:
         rel_parts = file.resolve().relative_to(repo).parts
         if any(part.lower() in TEST_DIRS for part in rel_parts[:-1]):
@@ -369,7 +366,7 @@ def _requirements_services(repo, index, packaged):
     def wanted(name):
         return re.match(r"requirements.*\.txt$", name)
 
-    files = index.walk(wanted) if index is not None else walk_files(repo, wanted)
+    files = RepoIndex.ensure(index, repo).walk(wanted)
     folders = set()
     for file in files:
         folder = file.parent.resolve()
@@ -431,20 +428,11 @@ def _python_containers(repo, index):
 
 def _node_containers(repo, index):
     containers = []
-    if index is not None:
-        candidates = index.walk(lambda name: name == "package.json")
-    else:
-        candidates = walk_files(repo, lambda name: name == "package.json")
-    for file in candidates:
-        if index is not None:
-            data = index.read_json(file)
-            if data is None:
-                continue
-        else:
-            try:
-                data = json.loads(_file_text(file))
-            except ValueError:
-                continue
+    index = RepoIndex.ensure(index, repo)
+    for file in index.walk(lambda name: name == "package.json"):
+        data = index.read_json(file)
+        if data is None:
+            continue
         if data.get("workspaces"):
             continue
         dependencies = {**(data.get("dependencies") or {}), **(data.get("devDependencies") or {})}
@@ -506,10 +494,7 @@ def _java_containers(repo, projects, index):
 
 def _has_jvm_main(module_dir, index):
     base = Path(module_dir).resolve()
-    if index is not None:
-        candidates = index.walk(lambda n: n.endswith((".java", ".kt")), under=base)
-    else:
-        candidates = walk_files(base, lambda n: n.endswith((".java", ".kt")))
+    candidates = RepoIndex.ensure(index, base).walk(lambda n: n.endswith((".java", ".kt")), under=base)
     for file in candidates:
         if any(part in TEST_DIRS for part in file.resolve().relative_to(base).parts[:-1]):
             continue
@@ -566,8 +551,7 @@ def _compose_services(repo, index=None):
     Reads them with code_facts.compose_services, the one compose parser, so
     service names match the relationships and the deployment section.
     """
-    if index is None:
-        index = RepoIndex.build(repo)
+    index = RepoIndex.ensure(index, repo)
     return [
         {"name": s["name"], "image": s["image"], "build": s["build"],
          "file": Path(repo) / s["file"], "line": s["line"]}
@@ -691,8 +675,7 @@ class _Ownership:
 
 def collect_facts(repo_path, graph, index=None, discovery=None):
     repo = Path(repo_path).resolve()
-    if index is None:
-        index = RepoIndex.build(repo)
+    index = RepoIndex.ensure(index, repo)
     if discovery is None:
         discovery = discover_all(repo, index)
     projects = [p for p in discovery["projects"] if p["in_solution"] is not False]
@@ -848,7 +831,7 @@ def collect_facts(repo_path, graph, index=None, discovery=None):
     for project in projects:
         if is_test_project(project["id"]) or not project["path"].is_file():
             continue
-        text = index.read_text(project["path"]) if index is not None else _file_text(project["path"])
+        text = index.read_text(project["path"])
         for prefix, kind, technology in PACKAGE_SIGNALS:
             match = re.search(r"""(Include="|<artifactId>|['":])""" + re.escape(prefix), text)
             if match:
@@ -858,10 +841,7 @@ def collect_facts(repo_path, graph, index=None, discovery=None):
     # setting that maps to several hosts (per state, per year) stays one box
     # named after the setting.
     config_urls = {}
-    if index is not None:
-        appsettings = index.walk(lambda name: re.match(r"appsettings.*\.json$", name))
-    else:
-        appsettings = walk_files(repo, lambda name: re.match(r"appsettings.*\.json$", name))
+    appsettings = index.walk(lambda name: re.match(r"appsettings.*\.json$", name))
     for file in appsettings:
         text = _file_text(file)
         for setting, host in _config_urls(text):
@@ -869,10 +849,7 @@ def collect_facts(repo_path, graph, index=None, discovery=None):
                 record(externals, KNOWN_HOSTS[host], new_entry(KNOWN_HOSTS[host]), file.resolve(), _line_of(text, max(text.find(host), 0)))
                 continue
             config_urls.setdefault(setting, []).append((host, file, _line_of(text, max(text.find(host), 0))))
-    if index is not None:
-        config_ymls = index.walk(lambda name: re.match(r"(application|bootstrap)[\w-]*\.(ya?ml|properties)$|^config\.ya?ml$|^settings\.ya?ml$", name))
-    else:
-        config_ymls = walk_files(repo, lambda name: re.match(r"(application|bootstrap)[\w-]*\.(ya?ml|properties)$|^config\.ya?ml$|^settings\.ya?ml$", name))
+    config_ymls = index.walk(lambda name: re.match(r"(application|bootstrap)[\w-]*\.(ya?ml|properties)$|^config\.ya?ml$|^settings\.ya?ml$", name))
     for file in config_ymls:
         if any(part in TEST_DIRS for part in file.relative_to(repo).parts[:-1]):
             continue

@@ -6,10 +6,10 @@ from pathlib import Path, PurePosixPath
 
 
 try:
-    from scripts.repo_index import is_ignored_dir, walk_files, IGNORED_DIRS
+    from scripts.repo_index import is_ignored_dir, IGNORED_DIRS, RepoIndex
     from scripts.paths import normalize_include, resolve_include, local_tag, project_group
 except ImportError:
-    from repo_index import is_ignored_dir, walk_files, IGNORED_DIRS
+    from repo_index import is_ignored_dir, IGNORED_DIRS, RepoIndex
     from paths import normalize_include, resolve_include, local_tag, project_group
 
 
@@ -19,13 +19,6 @@ SLN_PROJECT_LINE = re.compile(
     r'^Project\("\{[^}]+\}"\)\s*=\s*"([^"]+)",\s*"([^"]+)"',
     re.MULTILINE
 )
-
-
-def find_solutions(repo_path):
-    return list(walk_files(
-        repo_path,
-        lambda name: name.endswith((".sln", ".slnx"))
-    ))
 
 
 def solution_project_paths(solution_file, collector=None):
@@ -84,12 +77,9 @@ def discover_projects(repo_path, index=None, collector=None):
     """
     repo = Path(repo_path).resolve()
 
-    if index is not None:
-        solution_files = list(index.walk(lambda name: name.endswith((".sln", ".slnx"))))
-        project_files = list(index.walk(lambda name: name.endswith(PROJECT_EXTENSIONS)))
-    else:
-        solution_files = find_solutions(repo)
-        project_files = list(walk_files(repo, lambda name: name.endswith(PROJECT_EXTENSIONS)))
+    index = RepoIndex.ensure(index, repo, collector)
+    solution_files = list(index.walk(lambda name: name.endswith((".sln", ".slnx"))))
+    project_files = list(index.walk(lambda name: name.endswith(PROJECT_EXTENSIONS)))
 
     solutions = solution_files
     solution_paths = set()

@@ -5,11 +5,11 @@ from fnmatch import fnmatch
 from pathlib import Path, PurePosixPath
 
 try:
-    from scripts.repo_index import walk_files
+    from scripts.repo_index import RepoIndex
     from scripts.paths import project_group
     from scripts.js_modules import module_projects
 except ImportError:
-    from repo_index import walk_files
+    from repo_index import RepoIndex
     from paths import project_group
     from js_modules import module_projects
 
@@ -21,14 +21,6 @@ DEPENDENCY_FIELDS = (
 # Version specs that only make sense for a package inside this repository.
 LOCAL_SPEC = re.compile(r"^(workspace:|file:|link:|portal:)")
 
-
-def _parse_json(path, collector=None):
-    try:
-        return json.loads(path.read_text(encoding="utf-8-sig"))
-    except (OSError, ValueError) as ex:
-        if collector:
-            collector.parse_error("node_projects", str(path), f"invalid JSON: {ex}")
-        return None
 
 
 def _pnpm_workspace_globs(file):
@@ -87,22 +79,19 @@ def discover_projects(repo_path, index=None, collector=None):
     every workspace pattern are flagged with in_solution=False. A repository
     with a single package is drawn as a folder-level import graph instead.
 
-    When `index` is provided (RepoIndex), uses it for file discovery and reads;
-    otherwise falls back to walk_files for backward compatibility.
+    Uses `index` (a RepoIndex) for discovery and reads; one is built when
+    none is passed.
     """
     repo = Path(repo_path).resolve()
 
     packages = []
     roots = []
 
-    # Find package.json files via index or walk_files fallback.
-    if index is not None:
-        package_json_files = [repo / rel for rel in index.by_suffix(".json") if rel.name == "package.json"]
-    else:
-        package_json_files = list(walk_files(repo, lambda name: name == "package.json"))
+    index = RepoIndex.ensure(index, repo, collector)
+    package_json_files = [repo / rel for rel in index.by_suffix(".json") if rel.name == "package.json"]
 
     for file in package_json_files:
-        data = _parse_json(file, collector) if index is None else index.read_json(file)
+        data = index.read_json(file)
         if data is None:
             continue
 
