@@ -22,8 +22,7 @@ line-length = 120
 extend-exclude = ["tests/fixtures", "tests/golden"]
 
 [tool.ruff.lint]
-# E9   syntax/indentation errors
-# F63  comparison mistakes (e.g. `is` with a literal)
-# F7   syntax-adjacent mistakes (e.g. `l = 1l`, `break` outside a loop)
-# F82  undefined or misspelled names
-select = ["E9", "F63", "F7", "F82"]
+# E9  syntax and indentation errors
+# F   pyflakes: undefined or unused names and imports, duplicate keys,
+#     f-strings without placeholders, comparison mistakes
+select = ["E9", "F"]

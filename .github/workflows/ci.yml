@@ -70,13 +70,36 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install ruff (dev tool)
-        run: python -m pip install ruff
+      - name: Install ruff (dev tool, pinned so a ruff release can't turn CI red)
+        run: python -m pip install ruff==0.17.0
 
       # The rules live in pyproject.toml [tool.ruff], so a local
       # `ruff check skills tests` behaves identically.
       - name: Run ruff
         run: ruff check skills tests
+
+  # The renderer tests against the real, pinned mermaid-cli (the rest of the
+  # suite uses a fake). Not a required check: it downloads mermaid-cli and a
+  # headless Chrome, so a network hiccup shouldn't block a merge.
+  real-render:
+    name: real render (ubuntu, mermaid-cli)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Render with the real mermaid-cli
+        env:
+          C4_REAL_RENDER: "1"
+          C4_SVG_TIMEOUT_INSTALL: "900"
+        run: python -m unittest discover -s tests -p "test_*.py" -k Real -k Adversarial -v
 
   # Below the 3.11 floor both CLIs must exit 1 and say why, rather than
   # crashing on a syntax or import error.
