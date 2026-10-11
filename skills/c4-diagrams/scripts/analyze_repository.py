@@ -10,7 +10,7 @@ SKILL_DIR = Path(__file__).resolve().parent.parent
 if str(SKILL_DIR) not in sys.path:
     sys.path.insert(0, str(SKILL_DIR))
 
-from scripts.cli_support import require_python, run_cli
+from scripts.cli_support import UserError, require_python, run_cli
 
 # Must run before the imports below: they reach python_projects, which needs
 # tomllib (3.11+) and would otherwise fail with an opaque ImportError.
@@ -106,20 +106,35 @@ class RepositoryAnalyzer:
 
     def _validate_repository(self):
         if not self.repo_path.exists():
-            raise FileNotFoundError(
-                f"Repository not found: {self.repo_path}"
+            raise UserError(
+                "repository folder not found; pass the folder that holds the code",
+                path=self.repo_path,
             )
 
         if not self.repo_path.is_dir():
-            raise NotADirectoryError(
-                f"Not a directory: {self.repo_path}"
+            raise UserError(
+                "expected a repository folder, not a file; pass the folder that holds the code",
+                path=self.repo_path,
             )
 
     def _prepare_output_folder(self):
-        self.output_path.mkdir(
-            parents=True,
-            exist_ok=True
-        )
+        if self.output_path.resolve().is_relative_to(SKILL_DIR):
+            raise UserError(
+                "the output folder is inside the skill folder; run from your repository or pass --output",
+                path=self.output_path,
+            )
+        try:
+            self.output_path.mkdir(
+                parents=True,
+                exist_ok=True
+            )
+        except FileExistsError:
+            raise UserError(
+                "the output path is an existing file; pass a folder with --output",
+                path=self.output_path,
+            )
+        except OSError as ex:
+            raise UserError(f"cannot create the output folder ({ex.strerror})", path=self.output_path)
 
     def _detect_stack(self, index):
         print("Detecting technology stack...")

@@ -161,7 +161,7 @@ def _python_files(path, index=None):
     if path.is_file():
         return [path]
     if index is not None:
-        return list(index.walk(lambda name: name.endswith(".py")))
+        return list(index.walk(lambda name: name.endswith(".py"), under=path))
     return list(walk_files(path, lambda name: name.endswith(".py")))
 
 

@@ -471,12 +471,13 @@ def _java_containers(repo, projects, index):
 
 
 def _has_jvm_main(module_dir, index):
+    base = Path(module_dir).resolve()
     if index is not None:
-        candidates = index.walk(lambda n: n.endswith((".java", ".kt")))
+        candidates = index.walk(lambda n: n.endswith((".java", ".kt")), under=base)
     else:
-        candidates = walk_files(module_dir, lambda n: n.endswith((".java", ".kt")))
+        candidates = walk_files(base, lambda n: n.endswith((".java", ".kt")))
     for file in candidates:
-        if any(part in TEST_DIRS for part in file.relative_to(module_dir).parts[:-1]):
+        if any(part in TEST_DIRS for part in file.resolve().relative_to(base).parts[:-1]):
             continue
         text = _file_text(file)
         if "@SpringBootApplication" in text or "@QuarkusMain" in text or re.search(r"\bstatic\s+void\s+main\s*\(|^fun\s+main\s*\(", text, re.MULTILINE):
