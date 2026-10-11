@@ -19,6 +19,7 @@ writes on top of it can be checked. People and the purpose of each element
 are left to that model.
 """
 import json
+import os
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -31,7 +32,7 @@ try:
     from scripts.python_projects import _distributions, normalize, _python_files
     from scripts.generate_docs import is_test_project
     from scripts import code_facts, go_projects
-    from scripts.repo_index import RepoIndex
+    from scripts.repo_index import RepoIndex, MAX_TEXT_BYTES
 except ImportError:
     import code_facts, go_projects
     from repo_index import walk_files, is_ignored_dir
@@ -39,7 +40,7 @@ except ImportError:
     from projects import discover_all
     from python_projects import _distributions, normalize, _python_files
     from generate_docs import is_test_project
-    from repo_index import RepoIndex
+    from repo_index import RepoIndex, MAX_TEXT_BYTES
 
 
 SOURCE_EXTENSIONS = (".cs", ".fs", ".vb", ".py", ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".vue", ".svelte",
@@ -201,8 +202,12 @@ def _line_of(text, index):
 
 
 def _file_text(path):
+    """File text, or "" when unreadable or larger than MAX_TEXT_BYTES (generated bundles, data dumps)."""
     try:
-        return Path(path).read_text(encoding="utf-8-sig", errors="replace")
+        path = Path(path)
+        if path.stat().st_size > MAX_TEXT_BYTES:
+            return ""
+        return path.read_text(encoding="utf-8-sig", errors="replace")
     except OSError:
         return ""
 
@@ -356,16 +361,41 @@ def _python_imports(files):
     return names
 
 
+def _requirements_services(repo, index, packaged):
+    """
+    Folders with their own requirements*.txt and no pyproject.toml/setup.py:
+    small services often have only that. One candidate each; folders inside
+    a packaged distribution, tests and docs are skipped.
+    """
+    def wanted(name):
+        return re.match(r"requirements.*\.txt$", name)
+
+    files = index.walk(wanted) if index is not None else walk_files(repo, wanted)
+    folders = set()
+    for file in files:
+        folder = file.parent.resolve()
+        parts = [p.lower() for p in folder.relative_to(repo).parts]
+        if any(p in TEST_DIRS or p in ("docs", "doc") for p in parts):
+            continue
+        if any(folder == d or folder.is_relative_to(d) for d in packaged):
+            continue
+        folders.add(folder)
+    return [
+        {"name": folder.name if folder != repo else repo.name, "directory": folder, "file": None, "requirements": []}
+        for folder in sorted(folders)
+    ]
+
+
 def _python_containers(repo, index):
+    repo = Path(repo).resolve()
     distributions = _distributions(repo, index)
-    if not distributions:
-        if not any(index.walk(lambda name: re.match(r"requirements.*\.txt$", name)) if index else walk_files(repo, lambda name: re.match(r"requirements.*\.txt$", name))):
-            return []
-        distributions = [{"name": repo.name, "directory": repo, "file": None, "requirements": []}]
+    distributions += _requirements_services(repo, index, [d["directory"] for d in distributions])
 
     containers = []
     for dist in distributions:
         directory = dist["directory"]
+        # A service inside this folder scans its own code, not this one's.
+        nested = [d["directory"] for d in distributions if d["directory"] != directory and d["directory"].is_relative_to(directory)]
         requirements = set(dist["requirements"])
         for req_file in directory.glob("requirements*.txt"):
             for line in _file_text(req_file).splitlines():
@@ -373,7 +403,11 @@ def _python_containers(repo, index):
                 if match:
                     requirements.add(normalize(match.group(1)))
 
-        code = [f for f in _python_files(directory, index) if not any(p in TEST_DIRS for p in f.relative_to(directory).parts[:-1])]
+        code = [
+            f for f in _python_files(directory, index)
+            if not any(p in TEST_DIRS for p in f.relative_to(directory).parts[:-1])
+            and not any(f.is_relative_to(n) for n in nested)
+        ]
         imports = _python_imports(code)
         names = {normalize(n) for n in requirements} | {normalize(n) for n in imports}
         kinds = _signal_match(names, [(normalize(n), k, t) for n, k, t in PYTHON_CONTAINER_SIGNALS])
@@ -608,18 +642,52 @@ def _components(repo, container, projects, graph, all_containers):
     }
 
 
-def _owner_component(file, components, by_id):
-    best, best_len = None, -1
-    for node in components["nodes"]:
-        path = by_id[node]["path"].resolve()
-        base = path.parent if path.is_file() and path.suffix not in (".py",) else path
-        if node.endswith(" (files)"):
-            matches = file.parent == base
-        else:
-            matches = file == base or file.is_relative_to(base)
-        if matches and len(base.parts) > best_len:
-            best, best_len = node, len(base.parts)
-    return best
+def _inside(path, folder):
+    """True when the path string is the folder or lies below it."""
+    return path == folder or path.startswith(folder if folder.endswith(os.sep) else folder + os.sep)
+
+
+class _Ownership:
+    """
+    Which containers, and which component in each, own a file.
+
+    Every evidence line asks this, so it is computed once per file: each
+    component base is resolved once, and paths are compared as strings.
+    (Path.resolve and Path.is_relative_to per container, component and line
+    took 95% of the run on a 20-package monorepo.)
+
+    A file belongs to every container whose scope holds it; within a
+    container, the component with the deepest base wins (the first one on a
+    tie), and a "(files)" component only owns files directly in its folder.
+    """
+
+    def __init__(self, runnable, by_id):
+        self._containers = []
+        for container in runnable:
+            bases = []
+            for node in container["components"]["nodes"]:
+                path = by_id[node]["path"].resolve()
+                base = path.parent if path.is_file() and path.suffix not in (".py",) else path
+                bases.append((node, str(base), len(base.parts), node.endswith(" (files)")))
+            self._containers.append((container["id"], [str(d) for d in container["scope"]], bases))
+        self._cache = {}
+
+    def __call__(self, file):
+        key = str(file)
+        if key not in self._cache:
+            parent = os.path.dirname(key)
+            result = []
+            for container_id, scope, bases in self._containers:
+                if not any(_inside(key, folder) for folder in scope):
+                    continue
+                best, best_len = None, -1
+                for node, base, length, files_only in bases:
+                    matches = parent == base if files_only else _inside(key, base)
+                    if matches and length > best_len:
+                        best, best_len = node, length
+                result.append((container_id, best))
+            self._cache[key] = result
+        return self._cache[key]
 
 
 def collect_facts(repo_path, graph, index=None, discovery=None):
@@ -707,12 +775,7 @@ def collect_facts(repo_path, graph, index=None, discovery=None):
     ]
     by_id = {p["id"]: p for p in projects}
 
-    def owners(file):
-        result = []
-        for container in runnable:
-            if any(file.is_relative_to(d) for d in container["scope"]):
-                result.append((container["id"], _owner_component(file, container["components"], by_id)))
-        return result
+    owners = _Ownership(runnable, by_id)
 
     def owner_container(file):
         found = owners(Path(file).resolve())

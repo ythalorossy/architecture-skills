@@ -253,6 +253,14 @@ class RepositoryAnalyzer:
 
         facts = collect_facts(self.repo_path, dependency_graph, index=index, discovery=discovery)
         facts["repository_root"] = repository_root(self.repo_path, self.output_path)
+        if facts["containers"] and all(c["kind"] == "unknown" for c in facts["containers"]):
+            message = (
+                "no container detected (nothing with an entry point, framework or compose "
+                "service); the whole repository is drawn as one box. Identify the runnable "
+                "parts from the code and describe them in c4-model.json."
+            )
+            print(f"WARNING: {message}")
+            self._collector.detection("c4_facts", message)
 
         self._save_json(
             facts,
