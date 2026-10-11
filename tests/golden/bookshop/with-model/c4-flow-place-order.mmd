@@ -1,0 +1,14 @@
+sequenceDiagram
+    actor reader as Reader
+    participant bookshop_web as Web app
+    participant web_src_api as web/src/api
+    participant bookshop_main as bookshop.main
+    participant bookshop_orders as bookshop.orders
+    participant ext_payments_example as Payment provider
+    participant db_postgresql as Orders database
+    reader->>bookshop_web: Clicks Buy on a book
+    web_src_api->>bookshop_main: POST /api/orders [JSON/HTTPS]
+    bookshop_main->>bookshop_orders: Places the order
+    bookshop_orders->>ext_payments_example: POST /v1/charges [HTTPS]
+    bookshop_orders->>db_postgresql: Inserts the order with its charge id [psycopg]
+    bookshop_main-->>web_src_api: Order id and charge id

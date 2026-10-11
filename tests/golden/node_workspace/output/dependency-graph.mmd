@@ -1,0 +1,6 @@
+graph TD
+    subgraph group_packages["packages"]
+        acme_core["@acme/core"]
+        acme_web["@acme/web"]
+    end
+    acme_web --> acme_core

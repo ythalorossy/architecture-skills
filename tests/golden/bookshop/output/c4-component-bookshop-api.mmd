@@ -1,0 +1,37 @@
+---
+config:
+  layout: elk
+---
+flowchart TB
+    subgraph boundary["`**bookshop-api** [Container]`"]
+        bookshop_main["`**main**
+[Component]`"]
+        bookshop_orders["`**orders**
+[Component]`"]
+        bookshop_payments["`**payments**
+[Component]`"]
+        bookshop_search["`**search**
+[Component]`"]
+    end
+    bookshop_main --> bookshop_orders
+    bookshop_main --> bookshop_search
+    bookshop_orders --> bookshop_payments
+    db_elasticsearch[("`**Elasticsearch**
+[Container: Elasticsearch]`")]
+    bookshop_search -->|"`Reads/writes`"| db_elasticsearch
+    db_postgresql[("`**PostgreSQL**
+[Container: PostgreSQL]`")]
+    bookshop_orders -->|"`Reads/writes`"| db_postgresql
+    ext_payments_example["`**payments.example**
+[Software System]`"]
+    bookshop_payments -->|"`Calls`"| ext_payments_example
+    classDef person fill:#08427b,stroke:#052e56,color:#ffffff
+    classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
+    classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff
+    classDef component fill:#85bbf0,stroke:#5d82a8,color:#000000
+    classDef external fill:#999999,stroke:#6b6b6b,color:#ffffff
+    classDef shared fill:#dbe9f6,stroke:#5d82a8,color:#000000,stroke-dasharray:4 3
+    class bookshop_main,bookshop_orders,bookshop_payments,bookshop_search component
+    class db_elasticsearch,db_postgresql container
+    class ext_payments_example external
+    style boundary fill:none,stroke:#444444,stroke-dasharray:6 4
