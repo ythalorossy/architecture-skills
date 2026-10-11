@@ -20,73 +20,35 @@ BOOKSHOP = FIXTURES_ROOT / "bookshop"
 
 
 class TestDriftOnRerun(unittest.TestCase):
-    """One new fact triggers drift, not invalid."""
+    """Re-running the analyzer after the code changed keeps the model and reports drift."""
 
     def setUp(self):
-        self.maxDiff = 0x10000
         self.tmp = Path(tempfile.mkdtemp())
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def test_model_file_unchanged_after_drift_rerun(self):
-        """
-        c4-model.json is never modified by analyze_repository.py.
-        Run 1 and Run 2 produce the same model file bytes.
-        """
-        fixture = self.tmp / "repo"
-        shutil.copytree(BOOKSHOP, fixture)
+    def test_new_store_in_the_code_is_drift_and_the_model_is_kept(self):
+        repo = self.tmp / "repo"
+        shutil.copytree(BOOKSHOP, repo)
+        out = self.tmp / "out"
+        out.mkdir()
+        shutil.copy(BOOKSHOP / "c4-model.json", out / "c4-model.json")
+        run_analyzer(repo, out)
+        model_before = (out / "c4-model.json").read_bytes()
 
-        out1 = self.tmp / "run1"
-        out1.mkdir()
-        run_analyzer(fixture, out1)
+        # The code gains a Redis cache the model doesn't know about.
+        (repo / "api" / "bookshop" / "cache.py").write_text("import redis\nclient = redis.Redis()\n", encoding="utf-8")
+        _, summary = run_analyzer(repo, out)
 
-        # Copy model from repo to output (agent may have placed it there)
-        model_src = fixture / "c4-model.json"
-        if model_src.exists():
-            shutil.copy(model_src, out1 / "c4-model.json")
-
-        # Re-run (simulate: add a file, then run again)
-        new_file = fixture / "api" / "extra.py"
-        new_file.write_text("# new module\n", encoding="utf-8")
-
-        out2 = self.tmp / "run2"
-        out2.mkdir()
-        run_analyzer(fixture, out2)
-        if model_src.exists():
-            shutil.copy(model_src, out2 / "c4-model.json")
-
-        model1 = (out1 / "c4-model.json").read_bytes()
-        model2 = (out2 / "c4-model.json").read_bytes()
-        self.assertEqual(model1, model2, "c4-model.json must not be modified by analyze_repository.py")
-
-    def test_drift_status_after_new_fact(self):
-        """
-        Adding a new file that introduces an unreviewed fact makes
-        model_status == "drift" after re-render.
-        """
-        fixture = self.tmp / "repo"
-        shutil.copytree(BOOKSHOP, fixture)
-        model_src = fixture / "c4-model.json"
-
-        out1 = self.tmp / "run1"
-        out1.mkdir()
-        run_analyzer(fixture, out1)
-        if model_src.exists():
-            shutil.copy(model_src, out1 / "c4-model.json")
-
-        # Add new file
-        new_file = fixture / "api" / "new_service.py"
-        new_file.write_text("import httpx\n", encoding="utf-8")
-
-        out2 = self.tmp / "run2"
-        out2.mkdir()
-        run_analyzer(fixture, out2)
-
-        summary = json.loads((out2 / "summary.json").read_text(encoding="utf-8"))
-        # model_status should be drift (or ok if the new file doesn't change facts)
-        # The key assertion is: it should NOT be invalid
-        self.assertNotEqual(summary["c4"]["model_status"], "invalid")
+        self.assertEqual((out / "c4-model.json").read_bytes(), model_before, "the analyzer must never rewrite the model")
+        self.assertEqual(summary["c4"]["model_status"], "drift")
+        self.assertTrue(any("db-redis" in d["message"] for d in summary["c4"]["drift"]), summary["c4"]["drift"])
+        report = (out / "ArchitectureReport.md").read_text(encoding="utf-8")
+        self.assertIn("### Unreviewed facts", report)
+        # Drift still draws the model: the System Context and the key flow are there.
+        self.assertTrue((out / "c4-context.mmd").exists())
+        self.assertTrue((out / "c4-flow-place-order.mmd").exists())
 
 
 class TestInvalidModel(unittest.TestCase):

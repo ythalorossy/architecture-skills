@@ -42,7 +42,7 @@ class TestRelocatableOutput(unittest.TestCase):
                 [sys.executable, str(skill_dir / "scripts" / "render_c4.py"), str(self.out)],
                 capture_output=True, text=True,
             )
-            # If render fails, that's OK - the test will check for Level 4
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
         # Verify Level 4 exists in the original output
         mmd_files = list(self.out.glob("c4-*.mmd"))
