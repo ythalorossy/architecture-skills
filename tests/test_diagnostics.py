@@ -1,4 +1,4 @@
-"""Tests for diagnostics.py – SPEC-08 diagnostics collector."""
+"""Tests for the diagnostics collector."""
 import unittest
 
 import sys
@@ -10,7 +10,7 @@ SKILL = REPO_ROOT / "skills" / "c4-diagrams"
 if str(SKILL) not in sys.path:
     sys.path.insert(0, str(SKILL))
 
-from scripts.diagnostics import DiagnosticsCollector, Diagnostic
+from scripts.diagnostics import DiagnosticsCollector
 
 
 class TestDiagnosticDedup(unittest.TestCase):
@@ -45,7 +45,7 @@ class TestDiagnosticKinds(unittest.TestCase):
         self.assertTrue(c.degraded)
 
     def test_file_skipped_marks_degraded(self):
-        # D2: skipped paths make the run degraded, exit 0 (SPEC-03)
+        # skipped paths make the run degraded, exit 0
         c = DiagnosticsCollector()
         c.file_skipped("repo_index", "path/to/file", "permission denied")
         self.assertTrue(c.degraded)
@@ -81,7 +81,7 @@ class TestRepoIndexCompatibility(unittest.TestCase):
     """RepoIndex calls skipped(path, reason) and warn(...) directly."""
 
     def test_skipped_two_arg_form_works(self):
-        # D2: skipped paths make the run degraded, exit 0 (SPEC-03)
+        # skipped paths make the run degraded, exit 0
         c = DiagnosticsCollector()
         c.skipped("/some/path", "permission denied")
         self.assertTrue(c.degraded)

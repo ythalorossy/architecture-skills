@@ -1,10 +1,10 @@
-"""Tests for SPEC-08 re-run semantics – AC3, AC4.
+"""Re-runs: drift keeps the model; an invalid model falls back to facts-only.
 
-AC3: Re-run with one new fact -> model_status == "drift", report contains Level 1,
+Re-run with one new fact -> model_status == "drift", report contains Level 1,
 flows and Level 4, plus "### Unreviewed facts" listing the new fact.
 c4-model.json is byte-unchanged.
 
-AC4: A model with an unknown relationship id gives model_status == "invalid",
+A model with an unknown relationship id gives model_status == "invalid",
 facts-only render, and errors listed in summary.json.
 """
 import json
@@ -20,7 +20,7 @@ BOOKSHOP = FIXTURES_ROOT / "bookshop"
 
 
 class TestDriftOnRerun(unittest.TestCase):
-    """AC3: one new fact triggers drift, not invalid."""
+    """One new fact triggers drift, not invalid."""
 
     def setUp(self):
         self.maxDiff = 0x10000

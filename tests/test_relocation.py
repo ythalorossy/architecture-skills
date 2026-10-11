@@ -1,10 +1,9 @@
-"""Tests for SPEC-08 relocatable output – AC5.
+"""Relocatable output: an output folder that moved can still be rendered.
 
-AC5: Copying the output folder one level deeper and running render_c4.py <copy>
+Copying the output folder one level deeper and running render_c4.py <copy>
 exits 0. It prints exactly one "repository not found at … pass --repo" warning,
 and no "no classes or interfaces found" warning. With --repo <real path>, Level 4 renders.
 """
-import json
 import shutil
 import subprocess
 import sys
@@ -17,7 +16,7 @@ BOOKSHOP = FIXTURES_ROOT / "bookshop"
 
 
 class TestRelocatableOutput(unittest.TestCase):
-    """AC5: output folder can be moved and re-rendered with --repo."""
+    """Output folder can be moved and re-rendered with --repo."""
 
     def setUp(self):
         self.maxDiff = 0x10000

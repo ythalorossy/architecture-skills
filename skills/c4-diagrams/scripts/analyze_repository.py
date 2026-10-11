@@ -67,11 +67,11 @@ class RepositoryAnalyzer:
 
         print(f"Analyzing repository: {self.repo_path}")
 
-        # Build the RepoIndex once for the entire run (SPEC-03: one walk per run)
+        # One walk of the repository for the whole run.
         self._collector = DiagnosticsCollector()
         index = RepoIndex.build(self.repo_path, self._collector)
 
-        # Discover projects once and reuse (SPEC-03: I/O efficiency)
+        # Discover projects once; every step reuses the result.
         discovery = discover_all(self.repo_path, index, self._collector)
 
         stacks = self._detect_stack(index)
@@ -439,7 +439,7 @@ class RepositoryAnalyzer:
                 "@mermaid-js/mermaid-cli) for images."
             )
 
-        # DEGRADED line (SPEC-08: diagnostics channel)
+        # One line saying the run needs attention, with the first causes.
         if summary["status"] == "degraded":
             n_warnings = len(summary.get("warnings") or [])
             n_skipped = len(summary.get("skipped_files") or [])

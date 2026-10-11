@@ -166,7 +166,6 @@ def code_components(module_dirs, index=None):
                 group = relative[0] if len(relative) > 1 else "(root)"
                 path = "/".join(relative[:1]) if len(relative) > 1 else "."
             elif language == "go":
-                module_path = package.split("/")
                 _, go_root = _go_module_path(file.parent)
                 relative = file.parent.relative_to(go_root).parts if go_root else ()
                 if relative[:1] and relative[0] in ("cmd", "internal", "pkg", "api", "app") and len(relative) > 1:

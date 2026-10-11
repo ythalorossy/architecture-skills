@@ -1,13 +1,12 @@
 """
-Tests for RepoIndex — SPEC-03 Tasks 1-3.
+Tests for RepoIndex: ignore policy, tolerant walk, tolerant reader.
 
 These tests cover:
 - Task 1: single walk, ignore policy, views
-- Task 2: tolerant walk (REL-02) — permission errors, symlinks
-- Task 3: tolerant reader (REL-01) — encoding, cap, structured readers
+- Task 2: tolerant walk — permission errors, symlinks
+- Task 3: tolerant reader — encoding, cap, structured readers
 """
 import os
-import stat
 import tempfile
 import unittest
 from pathlib import Path
@@ -42,14 +41,14 @@ def _repo_index():
 
 
 class _MockCollector:
-    """Minimal SPEC-08 collector stub for tests."""
+    """Minimal collector stub for tests."""
 
     def __init__(self):
         self.warnings = []
         self._skipped_list = []
 
     def skipped(self, path, reason):
-        """Record a skipped path (SPEC-08 collector interface)."""
+        """Record a skipped path."""
         self._skipped_list.append({"path": str(path), "reason": reason})
 
     @property
@@ -157,7 +156,7 @@ class TestIgnorePolicy(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Task 2: tolerant walk — REL-02
+# Tolerant walk
 # ---------------------------------------------------------------------------
 
 class TestTolerantWalk(unittest.TestCase):
@@ -273,11 +272,11 @@ class TestTolerantWalk(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Task 3: tolerant reader — REL-01
+# Tolerant reader
 # ---------------------------------------------------------------------------
 
 class TestTolerantReader(unittest.TestCase):
-    """read_text, structured readers, cache, cap enforcement."""
+    """Read_text, structured readers, cache, cap enforcement."""
 
     def test_read_text_latin1_replaced_and_warned(self):
         RepoIndex = _repo_index()

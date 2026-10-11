@@ -1,16 +1,14 @@
-import os
 import re
-import sys
 import xml.etree.ElementTree as ET
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 
 try:
-    from scripts.repo_index import is_ignored_dir, IGNORED_DIRS, RepoIndex
-    from scripts.paths import normalize_include, resolve_include, local_tag, project_group
+    from scripts.repo_index import RepoIndex
+    from scripts.paths import resolve_include, local_tag, project_group
 except ImportError:
-    from repo_index import is_ignored_dir, IGNORED_DIRS, RepoIndex
-    from paths import normalize_include, resolve_include, local_tag, project_group
+    from repo_index import RepoIndex
+    from paths import resolve_include, local_tag, project_group
 
 
 PROJECT_EXTENSIONS = (".csproj", ".fsproj", ".vbproj")

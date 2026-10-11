@@ -16,11 +16,10 @@ import configparser
 import json
 import os
 
-# SPEC-11 cap: 2 MB default, enforced only in read_text.
-# One constant — grep test will verify no second cap anywhere in scripts/.
+# Files larger than this are not read (generated bundles, data dumps).
 MAX_TEXT_BYTES = 2 * 1024 * 1024
 
-# Base ignore set (IGNORED_DIRS from SPEC-03).
+# Folders never walked: build output, dependencies, tool caches.
 IGNORED_DIRS = {
     "bin", "obj", "node_modules", "TestResults", "__pycache__", "venv",
     "dist", "build", "target", "coverage", "out", "site-packages",

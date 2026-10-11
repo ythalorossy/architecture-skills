@@ -1,7 +1,5 @@
 import ast
-import configparser
 import re
-import sys
 from pathlib import Path
 
 try:

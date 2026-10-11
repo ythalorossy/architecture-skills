@@ -107,7 +107,7 @@ def mask_volatile(obj):
     comparisons stable: ``summary["output_folder"]`` and
     ``facts["repository_root"]`` are the two fields that actually vary
     today; the by-name ``run_id`` / ``Generated On`` masks stay correct
-    for free when SPEC-09 lands.
+    for free if those fields are added.
     """
     return _mask_value(copy.deepcopy(obj))
 
@@ -116,7 +116,7 @@ def run_analyzer(fixture, tmp, *, no_svg=True, timestamp=False, strict=False):
     """Run the analyzer in ``fixture``; write outputs under ``tmp``.
 
     Uses the public ``RepositoryAnalyzer.run()`` entry point. ``no_svg`` is on
-    by default so AC1 (no Node.js / no network) holds without mocking.
+    by default so tests need no Node.js and no network.
 
     Returns the ``(facts, summary)`` pair as parsed JSON dicts, read off disk
     so the values are byte-identical to what the CLI wrote.
