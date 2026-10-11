@@ -122,9 +122,9 @@ mmdc --version
 
 Installing it ahead of time is recommended. With the `npx` fallback, the first run downloads mermaid-cli and a headless Chrome (a few hundred MB). Each diagram tries npm's cache first and goes online only if the package isn't cached (`ENOTCACHED`). The timeouts are 180 s per diagram and 600 s for that first download; `C4_SVG_TIMEOUT_PER_DIAGRAM` and `C4_SVG_TIMEOUT_INSTALL` change them.
 
-Each SVG render returns a status: `ok` (SVG written), `syntax-error` (bug in the diagram — fix the model), `timeout` (diagram too complex), `tool-error` (other failure), `missing-tool` (neither mmdc nor npx found), or `skipped` (rendering turned off, or the renderer itself failed to start or timed out on the first diagram). A degraded run (any SVG failure) exits 0 but sets `status: degraded` in `summary.json`.
+Each SVG render returns a status: `ok` (SVG written), `syntax-error` (bug in the diagram — fix the model), `timeout` (diagram too complex), `tool-error` (other failure), `missing-tool` (neither mmdc nor npx found), or `skipped` (rendering turned off, or the renderer itself failed to start or timed out on the first diagram). A diagram that fails to render (`syntax-error`, `timeout`, `tool-error`) makes the run `degraded`: it exits 0, sets `status: degraded` in `summary.json` and lists the failure in `warnings`. With `--strict` a degraded run exits 2. A degraded run also comes from files that couldn't be read or parsed, and from an invalid `c4-model.json`.
 
-Use `--no-svg` or set `C4_SVG=0` in the environment to skip all SVG rendering (useful in CI or when Node.js is absent). Without Node.js the analysis still works; the report then contains only the Mermaid source, and the script prints a warning.
+Use `--no-svg` or set `C4_SVG=0` in the environment to skip all SVG rendering (useful in CI or when Node.js is absent). Without Node.js the analysis still works and the run is still `ok`; the report then contains the Mermaid source instead of images, and the script prints a note.
 
 > **Linux / WSL:** headless Chrome needs some system libraries. If `mmdc` fails with an error such as `error while loading shared libraries: libnss3.so`, install the packages listed in [Puppeteer's troubleshooting guide](https://pptr.dev/troubleshooting#chrome-doesnt-launch-on-linux) for your distribution.
 

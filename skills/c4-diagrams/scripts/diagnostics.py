@@ -18,7 +18,6 @@ The collector is passed into components that would otherwise print to stderr.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import ClassVar
 
 
 def _is_invalid(diagnostic: "Diagnostic") -> bool:
@@ -71,8 +70,13 @@ class DiagnosticsCollector:
 
     @property
     def degraded(self) -> bool:
-        """True when at least one diagnostic makes the run degraded."""
-        return self._degraded
+        """
+        True when something went wrong that the user should look at: a file
+        that could not be read or parsed, a diagram that failed to render, or
+        an invalid c4-model.json. Drift (facts the model doesn't cover yet)
+        is the normal state after the code changes, so it isn't degraded.
+        """
+        return self._degraded or self.model_status() == "invalid"
 
     # ------------------------------------------------------------------
     # Public API – call these from detectors and scripts
@@ -126,7 +130,7 @@ class DiagnosticsCollector:
         if diagnostic not in self._seen:
             self._seen.add(diagnostic)
             self._list.append(diagnostic)
-            if diagnostic.kind in ("parse", "skipped"):
+            if diagnostic.kind in ("parse", "skipped", "render", "model_error"):
                 self._degraded = True
 
     # ------------------------------------------------------------------

@@ -37,11 +37,29 @@ class RepositoryAnalyzer:
         self.strict = strict
         self.timestamp = timestamp
         self._collector: DiagnosticsCollector | None = None
+        self._svg_missing_tool = False
 
     def _render_svg(self):
         """SVGs are rendered unless --no-svg or C4_SVG=0 turns them off."""
         from scripts import svg_render as _sr
         return not self.no_svg and not _sr.disabled_by_env()
+
+    def _record_svg(self, statuses):
+        """
+        Report SVG results. A diagram that failed to render (syntax error,
+        timeout, tool error) is a warning and makes the run degraded. No
+        mmdc or npx at all is not an error: Node.js is optional, and the
+        report keeps the Mermaid source. That gets one note instead.
+        """
+        for stem, info in statuses.items():
+            status = info.get("status", "")
+            message = info.get("message", "")
+            if status == "missing-tool":
+                self._svg_missing_tool = True
+            elif status not in ("ok", "skipped"):
+                text = f"{stem}: {status}" + (f" — {message}" if message else "")
+                print(f"WARNING: {text}")
+                self._collector.render_warning("svg_render", text, f"{stem}.mmd")
 
     def run(self):
         self._validate_repository()
@@ -184,12 +202,11 @@ class RepositoryAnalyzer:
                 env_disabled=False,
             )
             self._dep_svg_result = results[0] if results else None
-
-            if self._dep_svg_result and self._dep_svg_result.status != "ok":
-                print(
-                    f"WARNING: {self._dep_svg_result.stem}: "
-                    f"{self._dep_svg_result.status} — {self._dep_svg_result.message}"
-                )
+            if self._dep_svg_result:
+                self._record_svg({"dependency-graph": {
+                    "status": self._dep_svg_result.status,
+                    "message": self._dep_svg_result.message,
+                }})
         elif not self._render_svg():
             from scripts import svg_render as _sr
             self._dep_svg_result = _sr.Result("dependency-graph", "skipped", "rendering disabled", 0.0)
@@ -257,17 +274,14 @@ class RepositoryAnalyzer:
         # and drew the model with an Unreviewed facts section when it drifts.
         drift = [{"message": message} for message in result["drift"]]
 
-        # Print one warning per failed stem, naming the cause (SPEC-05 AC8)
-        if result["svg_failed"]:
-            svg_status = result.get("svg", {})
-            for stem in result["svg_failed"]:
-                info = svg_status.get(stem, {})
-                status = info.get("status", "unknown")
-                msg = info.get("message", "")
-                if msg:
-                    print(f"WARNING: {stem}: {status} — {msg}")
-                else:
-                    print(f"WARNING: {stem}: {status}")
+        self._record_svg(result.get("svg", {}))
+        svg = {}
+        if self._dep_svg_result and self._dep_svg_result.status != "skipped":
+            svg["dependency-graph"] = {
+                "status": self._dep_svg_result.status,
+                "message": self._dep_svg_result.message,
+            }
+        svg.update(result.get("svg", {}))
 
         return {
             "containers": len(facts["containers"]),
@@ -278,7 +292,7 @@ class RepositoryAnalyzer:
             "model_errors": model_errors,
             "model_status": model_status,
             "drift": drift,
-            "svg": result.get("svg", {}),
+            "svg": svg,
         }
 
     def _generate_summary(
@@ -299,21 +313,7 @@ class RepositoryAnalyzer:
         )
 
         collector = self._collector
-
-        # Degraded if collector says so, or if any SVG render failed (SPEC-05 AC8 / SPEC-08 D2)
-        degraded = (collector and collector.degraded)
-        if c4 and not degraded:
-            svg_statuses = c4.get("svg", {})
-            dep_result = getattr(self, "_dep_svg_result", None)
-            if dep_result and dep_result.status not in ("ok", "skipped"):
-                degraded = True
-            if any(
-                info.get("status") not in ("ok", "skipped")
-                for info in svg_statuses.values()
-            ):
-                degraded = True
-
-        status = "degraded" if degraded else "ok"
+        status = "degraded" if collector and collector.degraded else "ok"
 
         return {
             "repository": self.repo_path.name,
@@ -427,6 +427,13 @@ class RepositoryAnalyzer:
             f"{self.output_path}"
         )
 
+        if self._svg_missing_tool:
+            print(
+                "NOTE: SVGs not rendered: neither mmdc nor npx is on PATH. The report "
+                "shows the Mermaid source instead. Install Node.js 22.13+ (and optionally "
+                "@mermaid-js/mermaid-cli) for images."
+            )
+
         # DEGRADED line (SPEC-08: diagnostics channel)
         if summary["status"] == "degraded":
             n_warnings = len(summary.get("warnings") or [])
@@ -502,8 +509,9 @@ def parse_arguments():
         "--strict",
         action="store_true",
         help=(
-            "Exit with code 2 when the run is degraded (parse errors, skipped files, "
-            "or model drift/invalid).  By default a degraded run exits 0."
+            "Exit with code 2 when the run is degraded: a file that could not be read "
+            "or parsed, a diagram that failed to render, or an invalid c4-model.json. "
+            "By default a degraded run exits 0."
         ),
     )
 
