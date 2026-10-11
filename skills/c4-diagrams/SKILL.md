@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires python3 (3.11+, checked at startup). Node.js with @mermaid-js/mermaid-cli is optional, for SVG rendering.
 metadata:
   author: ythalorossy
-  version: "3.3.4"
+  version: "3.3.5"
 ---
 
 # Architecture Diagram Generator
