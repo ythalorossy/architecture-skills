@@ -267,6 +267,8 @@ skills/c4-diagrams/
   SKILL.md                 instructions the agent follows (Agent Skills format)
   scripts/                 analyzer (one module per ecosystem), C4 facts and renderer
   assets/                  report template, C4 model reference, review checklist, and templates for the system-overview and per-service docs
+examples/bookshop/         complete output for the bookshop test fixture
+tests/                     unittest suite, fixture repositories, golden outputs
 ```
 
 The skills are wrapped once per agent installer; every manifest points at `skills/`:
