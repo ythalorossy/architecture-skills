@@ -1,0 +1,8 @@
+graph TD
+    subgraph group_cmd["cmd"]
+        cmd_api["cmd/api"]
+    end
+    subgraph group_internal["internal"]
+        internal_store["internal/store"]
+    end
+    cmd_api --> internal_store

@@ -1,7 +1,6 @@
 from pathlib import Path
 import argparse
 import json
-import os
 import sys
 
 # Allow running as a plain script from any directory, not only
@@ -19,7 +18,7 @@ require_python()
 from scripts.detect_stack import detect_stack
 from scripts.scan_repo import scan_repo
 from scripts.build_graph import build_dependency_graph, build_groups
-from scripts.generate_mermaid import generate_mermaid, render_svg
+from scripts.generate_mermaid import generate_mermaid
 from scripts.generate_docs import analyze_graph, generate_report
 from scripts.c4_facts import collect_facts
 from scripts.render_c4 import render as render_c4
@@ -31,14 +30,36 @@ from scripts.diagnostics import DiagnosticsCollector
 
 class RepositoryAnalyzer:
     def __init__(self, repo_path: str, output_path: str, no_svg: bool = False,
-                 svg: bool = True, strict: bool = False, timestamp: bool = False):
+                 strict: bool = False, timestamp: bool = False):
         self.repo_path = Path(repo_path).resolve()
         self.output_path = Path(output_path).resolve()
         self.no_svg = no_svg
-        self.svg = svg        # --svg flag: also render C4 SVGs (D3 / SPEC-05)
         self.strict = strict
         self.timestamp = timestamp
         self._collector: DiagnosticsCollector | None = None
+        self._svg_missing_tool = False
+
+    def _render_svg(self):
+        """SVGs are rendered unless --no-svg or C4_SVG=0 turns them off."""
+        from scripts import svg_render as _sr
+        return not self.no_svg and not _sr.disabled_by_env()
+
+    def _record_svg(self, statuses):
+        """
+        Report SVG results. A diagram that failed to render (syntax error,
+        timeout, tool error) is a warning and makes the run degraded. No
+        mmdc or npx at all is not an error: Node.js is optional, and the
+        report keeps the Mermaid source. That gets one note instead.
+        """
+        for stem, info in statuses.items():
+            status = info.get("status", "")
+            message = info.get("message", "")
+            if status == "missing-tool":
+                self._svg_missing_tool = True
+            elif status not in ("ok", "skipped"):
+                text = f"{stem}: {status}" + (f" — {message}" if message else "")
+                print(f"WARNING: {text}")
+                self._collector.render_warning("svg_render", text, f"{stem}.mmd")
 
     def run(self):
         self._validate_repository()
@@ -170,7 +191,7 @@ class RepositoryAnalyzer:
 
         self._dep_svg_result = None
 
-        if dependency_graph and not self.no_svg and os.environ.get("C4_SVG", "1") not in ("0", "false", "no"):
+        if dependency_graph and self._render_svg():
             print("Rendering diagram to SVG...")
 
             from scripts import svg_render as _sr
@@ -181,13 +202,12 @@ class RepositoryAnalyzer:
                 env_disabled=False,
             )
             self._dep_svg_result = results[0] if results else None
-
-            if self._dep_svg_result and self._dep_svg_result.status != "ok":
-                print(
-                    f"WARNING: {self._dep_svg_result.stem}: "
-                    f"{self._dep_svg_result.status} — {self._dep_svg_result.message}"
-                )
-        elif self.no_svg or os.environ.get("C4_SVG", "1") in ("0", "false", "no"):
+            if self._dep_svg_result:
+                self._record_svg({"dependency-graph": {
+                    "status": self._dep_svg_result.status,
+                    "message": self._dep_svg_result.message,
+                }})
+        elif not self._render_svg():
             from scripts import svg_render as _sr
             self._dep_svg_result = _sr.Result("dependency-graph", "skipped", "rendering disabled", 0.0)
 
@@ -241,33 +261,27 @@ class RepositoryAnalyzer:
 
         print("Drawing C4 diagrams...")
 
-        # D3: analyzer default renders only dependency-graph.svg.
-        # --svg adds C4 SVGs. --no-svg renders nothing.
-        render_c4_svg = self.svg and not self.no_svg
 
         # An existing c4-model.json (written by the agent or edited by the user)
         # is kept. On drift (new facts not covered) it is rendered and the
         # unreviewed facts are listed; on invalid (unknown ids, missing
         # elements) it falls back to facts-only.  c4-model.json is never
         # modified.
-        result = render_c4(self.output_path, svg=render_c4_svg, collector=self._collector)
+        result = render_c4(self.output_path, svg=self._render_svg(), collector=self._collector)
         model_status = result["status"]
         model_errors = result["errors"]
         # render() already drew the facts-only model when the model is invalid,
         # and drew the model with an Unreviewed facts section when it drifts.
         drift = [{"message": message} for message in result["drift"]]
 
-        # Print one warning per failed stem, naming the cause (SPEC-05 AC8)
-        if result["svg_failed"]:
-            svg_status = result.get("svg", {})
-            for stem in result["svg_failed"]:
-                info = svg_status.get(stem, {})
-                status = info.get("status", "unknown")
-                msg = info.get("message", "")
-                if msg:
-                    print(f"WARNING: {stem}: {status} — {msg}")
-                else:
-                    print(f"WARNING: {stem}: {status}")
+        self._record_svg(result.get("svg", {}))
+        svg = {}
+        if self._dep_svg_result and self._dep_svg_result.status != "skipped":
+            svg["dependency-graph"] = {
+                "status": self._dep_svg_result.status,
+                "message": self._dep_svg_result.message,
+            }
+        svg.update(result.get("svg", {}))
 
         return {
             "containers": len(facts["containers"]),
@@ -278,7 +292,7 @@ class RepositoryAnalyzer:
             "model_errors": model_errors,
             "model_status": model_status,
             "drift": drift,
-            "svg": result.get("svg", {}),
+            "svg": svg,
         }
 
     def _generate_summary(
@@ -299,21 +313,7 @@ class RepositoryAnalyzer:
         )
 
         collector = self._collector
-
-        # Degraded if collector says so, or if any SVG render failed (SPEC-05 AC8 / SPEC-08 D2)
-        degraded = (collector and collector.degraded)
-        if c4 and not degraded:
-            svg_statuses = c4.get("svg", {})
-            dep_result = getattr(self, "_dep_svg_result", None)
-            if dep_result and dep_result.status not in ("ok", "skipped"):
-                degraded = True
-            if any(
-                info.get("status") not in ("ok", "skipped")
-                for info in svg_statuses.values()
-            ):
-                degraded = True
-
-        status = "degraded" if degraded else "ok"
+        status = "degraded" if collector and collector.degraded else "ok"
 
         return {
             "repository": self.repo_path.name,
@@ -427,6 +427,13 @@ class RepositoryAnalyzer:
             f"{self.output_path}"
         )
 
+        if self._svg_missing_tool:
+            print(
+                "NOTE: SVGs not rendered: neither mmdc nor npx is on PATH. The report "
+                "shows the Mermaid source instead. Install Node.js 22.13+ (and optionally "
+                "@mermaid-js/mermaid-cli) for images."
+            )
+
         # DEGRADED line (SPEC-08: diagnostics channel)
         if summary["status"] == "degraded":
             n_warnings = len(summary.get("warnings") or [])
@@ -479,20 +486,17 @@ def parse_arguments():
         "--no-svg",
         action="store_true",
         help=(
-            "Skip SVG rendering so the output is byte-identical without "
-            "Node.js and @mermaid-js/mermaid-cli (recommended for CI and "
-            "golden-file tests)"
+            "Skip SVG rendering; the report then shows the Mermaid source. "
+            "C4_SVG=0 in the environment does the same."
         ),
     )
 
     parser.add_argument(
         "--svg",
         action="store_true",
-        help=(
-            "Also render the C4 SVGs (container, component, deployment, etc.). "
-            "By default only the dependency-graph SVG is rendered. "
-            "C4_SVG=0 in the environment acts like --no-svg."
-        ),
+        # Accepted so scripts written for 3.3.0-3.3.2 keep working; SVGs are
+        # rendered by default again.
+        help=argparse.SUPPRESS,
     )
 
     parser.add_argument(
@@ -505,8 +509,9 @@ def parse_arguments():
         "--strict",
         action="store_true",
         help=(
-            "Exit with code 2 when the run is degraded (parse errors, skipped files, "
-            "or model drift/invalid).  By default a degraded run exits 0."
+            "Exit with code 2 when the run is degraded: a file that could not be read "
+            "or parsed, a diagram that failed to render, or an invalid c4-model.json. "
+            "By default a degraded run exits 0."
         ),
     )
 
@@ -529,7 +534,6 @@ def main():
         repo_path=args.repository,
         output_path=args.output or default_output_path(args.repository),
         no_svg=args.no_svg,
-        svg=args.svg,
         strict=args.strict,
         timestamp=args.timestamp,
     )

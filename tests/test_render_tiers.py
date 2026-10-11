@@ -104,6 +104,20 @@ class RenderTierTest(unittest.TestCase):
             self.assertIn("### Unreviewed facts", report)
             self.assertIn("b", report)
 
+    def test_unreviewed_facts_name_their_kind(self):
+        from scripts.render_c4 import _unreviewed_facts_section
+
+        facts = {
+            "containers": [{"id": "api", "name": "API"}],
+            "data_stores": [{"id": "db-postgresql", "name": "PostgreSQL"}],
+            "external_systems": [{"id": "ext-stripe", "name": "Stripe"}],
+        }
+        drift = ["api is new", "db-postgresql is new", "ext-stripe is new"]
+        table = "\n".join(_unreviewed_facts_section(facts, drift))
+        self.assertIn("| `api` | API | container |", table)
+        self.assertIn("| `db-postgresql` | PostgreSQL | data store |", table)
+        self.assertIn("| `ext-stripe` | Stripe | external system |", table)
+
     def test_invalid_falls_back_to_facts_only(self):
         from scripts.render_c4 import render
 

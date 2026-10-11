@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires python3 (3.11+, checked at startup). Node.js with @mermaid-js/mermaid-cli is optional, for SVG rendering.
 metadata:
   author: ythalorossy
-  version: "3.3.2"
+  version: "3.3.3"
 ---
 
 # Architecture Diagram Generator
@@ -48,16 +48,16 @@ python3 "<skill>/scripts/analyze_repository.py" "<repository_path>"
 
 - Quote paths: repository and folder names may contain spaces.
 - Run it from the user's current working directory. By default the files go to `./architecture-docs/<repository name>/` there, so the user can keep, commit or delete them. Pass `--output <directory>` only if the user named another location. Never write into the skill folder.
-- It writes `c4-facts.json`, facts-only C4 diagrams (`c4-container.*`, `c4-component-*.*`), `ArchitectureReport.md`, `dependency-graph.*`, `repository-scan.json` and `summary.json`.
+- It writes `c4-facts.json`, facts-only C4 diagrams (`c4-container.*`, `c4-component-*.*`, `c4-structure-*.*`, `c4-deployment.*`, each as `.mmd` and `.svg`), `ArchitectureReport.md`, `dependency-graph.*`, `repository-scan.json` and `summary.json`.
 - Requires Python 3.11+ (checked at startup) to read `pyproject.toml`.
-- SVGs are rendered with `mmdc` or `npx @mermaid-js/mermaid-cli@10.9.1` (pinned) and embedded in the report as images, so they show in any Markdown viewer. Each render returns a status: `ok` (SVG written), `syntax-error` (a bug in the diagram — report it), `timeout` (diagram too complex), `tool-error` (other failure), `missing-tool` (neither mmdc nor npx found), or `skipped` (circuit breaker tripped). A degraded run exits 0 but sets `status: degraded` in `summary.json`. Use `--no-svg` or set `C4_SVG=0` in the environment to skip all SVG rendering (useful in CI or when Node.js is absent).
+- SVGs are rendered with `mmdc` or `npx @mermaid-js/mermaid-cli@12.0.0` (pinned) and embedded in the report as images, so they show in any Markdown viewer. Each render returns a status: `ok` (SVG written), `syntax-error` (a bug in the diagram — report it), `timeout` (diagram too complex), `tool-error` (other failure), `missing-tool` (neither mmdc nor npx found), or `skipped` (rendering turned off, or the renderer failed on the first diagram). A degraded run exits 0 but sets `status: degraded` in `summary.json`. Use `--no-svg` or set `C4_SVG=0` in the environment to skip all SVG rendering (useful in CI or when Node.js is absent).
 
 ### Check for degraded runs
 
 After running, read `summary.json` and check:
 
-- **`status`**: `"degraded"` means at least one warning or skipped file occurred. `"ok"` means clean.
-- **`warnings`**: a list of diagnostics from parsers, renderers and the model. Each entry has `source`, `message`, `kind` and optionally `path`.
+- **`status`**: `"degraded"` means something needs attention: a file could not be read or parsed, a diagram failed to render, or `c4-model.json` is invalid. Every cause is listed in `warnings`. `"ok"` means clean. Missing Node.js is not degraded: the run prints a `NOTE:` and the report shows Mermaid source instead of images; tell the user.
+- **`warnings`**: one entry per problem, from parsers (`kind: parse`), unreadable paths (`skipped`), diagrams that failed to render (`render`) and the model (`model`, `model_error`). Each entry has `source`, `message`, `kind` and optionally `path`.
 - **`c4.model_status`**: `"drift"` means the model is valid but some new facts are unreviewed; `"invalid"` means the model has unknown relationship ids and fell back to facts-only; `"ok"` means the model and facts are in sync.
 - **`skipped_files`**: files that could not be read (permission errors, broken symlinks).
 
@@ -65,6 +65,7 @@ After running, read `summary.json` and check:
 - **`drift`**: update `c4-model.json` to cover the new facts. Re-run `render_c4.py`.
 - **`invalid`**: fix the reported errors in `c4-model.json` (unknown ids, missing elements). Re-run `render_c4.py`.
 - **`parse` warnings**: tell the user which files could not be parsed and what the error was.
+- **`render` warnings**: a `syntax-error` is a bug in the diagram (often a label in the model); fix it and re-run `render_c4.py`. Report `timeout` and `tool-error` to the user.
 - **`skipped_files`**: tell the user which files were skipped and why.
 - **`degraded` with `--strict`**: the script exits with code 2; without `--strict` it exits 0.
 

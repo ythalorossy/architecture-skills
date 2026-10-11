@@ -244,6 +244,7 @@ class TestTolerantWalk(unittest.TestCase):
             reasons = [s["reason"] for s in collector.skipped_entries if "missing.csproj" in s["path"]]
             self.assertEqual(reasons, ["broken_symlink"], "reason must be 'broken_symlink'")
 
+    @unittest.skipUnless(os.name == "posix", "POSIX-only: chmod 000")
     def test_each_skip_recorded_once(self):
         RepoIndex = _repo_index()
         if RepoIndex is None:
@@ -368,6 +369,22 @@ class TestTolerantReader(unittest.TestCase):
             self.assertEqual(len(too_large), 1, "exactly one skip with reason 'too_large'")
             self.assertIn("big.txt", too_large[0]["path"])
 
+    def test_build_without_collector_survives_skips(self):
+        # Without a collector, a skipped file used to crash with
+        # "'list' object is not callable" in the default collector.
+        import sys
+        skill = SKILL_SCRIPTS.parent
+        if str(skill) not in sys.path:
+            sys.path.insert(0, str(skill))
+        from scripts.repo_index import MAX_TEXT_BYTES, RepoIndex
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            big = repo / "big.txt"
+            big.write_bytes(b"x" * (MAX_TEXT_BYTES + 1))
+            index = RepoIndex.build(repo)
+            self.assertIsNone(index.read_text(big))
+
     def test_read_toml_invalid_returns_none_with_warning(self):
         RepoIndex = _repo_index()
         if RepoIndex is None:
@@ -385,6 +402,7 @@ class TestTolerantReader(unittest.TestCase):
             self.assertEqual(len(parse_warnings), 1)
             self.assertIn("pyproject.toml", parse_warnings[0]["file"])
 
+    @unittest.skipUnless(os.name == "posix", "POSIX-only: chmod 000")
     def test_parse_xml_permission_error_returns_none(self):
         RepoIndex = _repo_index()
         if RepoIndex is None:

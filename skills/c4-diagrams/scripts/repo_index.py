@@ -255,23 +255,13 @@ class RepoIndex:
             self._collector.warn("parse", file=str(path), detail=f"invalid XML: {exc}")
             return None
 
-    # ---------- diagnostics collector (SPEC-08 minimal stub) ----------
+    # ---------- diagnostics collector ----------
 
     @staticmethod
     def _default_collector():
-        """A minimal SPEC-08 collector stub."""
-        class _StubCollector:
-            def __init__(self):
-                self.warnings = []
-                self.skipped = []
-
-            def warn(self, kind, *, file=None, detail=None):
-                self.warnings.append({"kind": kind, "file": file, "detail": detail})
-
-            def skipped(self, path, reason):
-                self.skipped.append({"path": str(path), "reason": reason})
-
-        return _StubCollector()
+        """Collector for callers that don't pass one (it has warn() and skipped())."""
+        from scripts.diagnostics import DiagnosticsCollector
+        return DiagnosticsCollector()
 
     # ---------- construction ----------
 

@@ -2,7 +2,7 @@
 Single safe Mermaid emitter (SPEC-04): owns all Mermaid syntax concerns —
 id allocation per diagram kind, text escaping per diagram kind, and the C4 palette.
 """
-import hashlib
+import re
 
 
 # ---------------------------------------------------------------------------
@@ -28,114 +28,74 @@ CLASS_KEYWORDS = FLOWCHART_KEYWORDS | {
 
 
 # ---------------------------------------------------------------------------
-# Stable hash (used only for collision suffixes — not cryptographic)
-# ---------------------------------------------------------------------------
-
-def _stable_hash(text: str) -> str:
-    """Short deterministic hex digest of ``text``."""
-    return hashlib.md5(text.encode()).hexdigest()[:6]
-
-
-# ---------------------------------------------------------------------------
 # IdAllocator
 # ---------------------------------------------------------------------------
 
+_ID_CHARS = re.compile(r"[^A-Za-z0-9_]")
+
+
 class IdAllocator:
     """
-    Allocate Mermaid-safe identifiers per diagram kind.
+    Allocate Mermaid ids for one diagram.
 
-    ``kind`` is one of ``"flowchart"``, ``"sequence"``, ``"class"``.
-    Each kind has its own keyword guard set.
+    ``kind`` is ``"flowchart"``, ``"sequence"`` or ``"class"``; each has its
+    own reserved words. The id is a readable slug of the key (``db-sql-server``
+    becomes ``db_sql_server``). If that slug is a reserved word, or another
+    key in the same diagram already has it, a numeric suffix is added
+    (``db_sql_server_2``), so two different keys never share an id.
 
-    The base id is derived *solely* from the key, never from position or
-    insertion order.  Collisions (keyword, or a key already allocated) are
-    resolved by appending a stable hash suffix so the result is still
-    deterministic and order-independent.
-
-    The special entry point ``internal(name)`` uses a reserved prefix that
-    no slug or free-text model key can produce.
+    Use one allocator per diagram, for element ids and internal nodes
+    (boundaries, module boxes) alike, so they can't collide either.
     """
 
-    _INTERNAL_PREFIX = "__Int__"
+    # Internal keys start with a character no model or fact id contains.
+    _INTERNAL = "\x00"
 
     def __init__(self, kind: str):
         if kind not in ("flowchart", "sequence", "class"):
             raise ValueError(f"Unknown diagram kind: {kind!r}")
-        self._kind = kind
-        self._keywords = {
+        keywords = {
             "flowchart": FLOWCHART_KEYWORDS,
             "sequence": SEQUENCE_KEYWORDS,
             "class": CLASS_KEYWORDS,
         }[kind]
-        self._allocated: dict[str, str] = {}
+        self._keywords = {k.lower() for k in keywords}
+        self._ids: dict[str, str] = {}
+        self._used: set[str] = set()
 
-    @staticmethod
-    def _slug(key: str) -> str:
-        """Slug a key into a valid Mermaid id, preserving enough structure to avoid collisions."""
-        import re
-        # Replace common separators with distinct words to avoid a.b, a-b, a_b all → a_b
-        intermediate = key.replace(".", "_dot_").replace("-", "_dash_").replace("/", "_slash_")
-        base = re.sub(r"[^A-Za-z0-9_]", "_", intermediate).strip("_") or "node"
-        if base[0].isdigit():
-            base = f"n_{base}"
-        return base
-
-    @staticmethod
-    def _is_safe_id(candidate: str, keywords: set[str]) -> bool:
-        """True when candidate is a valid Mermaid id and not a keyword (case-insensitively)."""
-        import re
-        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", candidate):
-            return False
-        if candidate.lower() in {k.lower() for k in keywords}:
-            return False
-        return True
+    def __contains__(self, key: str) -> bool:
+        """True once ``key`` has an id in this diagram."""
+        return key in self._ids
 
     def id(self, key: str) -> str:
-        """Return a safe Mermaid id for ``key``. Result is deterministic and order-independent."""
-        if key in self._allocated:
-            return self._allocated[key]
-
-        base = self._slug(key)
+        """Return the id for ``key``; the same key always gets the same id."""
+        if key in self._ids:
+            return self._ids[key]
+        base = _ID_CHARS.sub("_", key).strip("_") or "node"
+        if base[0].isdigit():
+            base = f"n_{base}"
         candidate = base
         suffix = 2
-
-        while not self._is_safe_id(candidate, self._keywords):
-            candidate = f"{base}_{_stable_hash(key)}"
-            break  # one shot is enough because hash is stable; no counter loop
-
-        # Second safety check: even with hash suffix we might still hit a keyword
-        # (e.g. key="class" slug="class", hash suffix still produces "class_<hash>")
-        # In practice hash suffix always breaks the keyword, but guard anyway
-        while not self._is_safe_id(candidate, self._keywords):
+        while candidate in self._used or candidate.lower() in self._keywords:
             candidate = f"{base}_{suffix}"
             suffix += 1
-
-        self._allocated[key] = candidate
+        self._used.add(candidate)
+        self._ids[key] = candidate
         return candidate
 
     def internal(self, name: str) -> str:
-        """Return a safe id for an internal node (system boundary, module box, etc.)."""
-        key = f"{self._INTERNAL_PREFIX}{name}"
-        if key not in self._allocated:
-            self._allocated[key] = self.id(key)
-        return self._allocated[key]
+        """Id for an internal node (system boundary, module box, …)."""
+        return self.id(self._INTERNAL + name)
 
+    @classmethod
+    def internal_key(cls, name: str) -> str:
+        """Key to pass to ``id`` (or a diagram's node/edge) for an internal node."""
+        return cls._INTERNAL + name
 
-# ---------------------------------------------------------------------------
-# Convenience wrappers matching the original signatures
-# ---------------------------------------------------------------------------
 
 def safe_id(kind: str, key: str) -> str:
     """One-shot safe id for ``key`` in the given diagram kind."""
     return IdAllocator(kind).id(key)
-
-
-def internal_id(name: str) -> str:
-    """Safe id for an internal node (system, boundary, etc.) in any diagram kind.
-
-    Uses a prefix that user ids (slugged or free-text) can never produce.
-    """
-    return IdAllocator("flowchart").internal(name)
 
 
 # ---------------------------------------------------------------------------
@@ -191,6 +151,10 @@ def _escape_md_metachars(text: str) -> str:
             out.append("#gt;")
         elif c == '"':
             out.append("#quot;")
+        elif c == "`":
+            # A backtick would end the "`…`" markdown string, and mermaid
+            # shows #96; literally there, so use an apostrophe.
+            out.append("'")
         else:
             out.append(c)
     return "".join(out)
@@ -201,6 +165,8 @@ _FLOWCHART_PLAIN_TABLE = str.maketrans({
     '"': "#quot;",
     '<': "#lt;",
     '>': "#gt;",
+    # Plain text is also placed inside "`…`" strings (titles, edge labels).
+    '`': "'",
 })
 
 def flowchart_plain_escape(text: str) -> str:
@@ -304,12 +270,12 @@ C4_PALETTE = {
 def flowchart_classdef_lines() -> list[str]:
     """Mermaid ``classDef`` lines for all C4 styles."""
     return [
-        f"classDef person     fill:{C4_PALETTE['person']},stroke:{C4_PALETTE['person_stroke']},color:{C4_PALETTE['person_text']}",
-        f"classDef container  fill:{C4_PALETTE['container']},stroke:{C4_PALETTE['container_stroke']},color:{C4_PALETTE['container_text']}",
-        f"classDef system    fill:{C4_PALETTE['system']},stroke:{C4_PALETTE['system_stroke']},color:{C4_PALETTE['system_text']}",
+        f"classDef person fill:{C4_PALETTE['person']},stroke:{C4_PALETTE['person_stroke']},color:{C4_PALETTE['person_text']}",
+        f"classDef container fill:{C4_PALETTE['container']},stroke:{C4_PALETTE['container_stroke']},color:{C4_PALETTE['container_text']}",
+        f"classDef system fill:{C4_PALETTE['system']},stroke:{C4_PALETTE['system_stroke']},color:{C4_PALETTE['system_text']}",
         f"classDef component fill:{C4_PALETTE['component']},stroke:{C4_PALETTE['component_stroke']},color:{C4_PALETTE['component_text']}",
-        f"classDef external  fill:{C4_PALETTE['external']},stroke:{C4_PALETTE['external_stroke']},color:{C4_PALETTE['external_text']}",
-        f"classDef shared    fill:{C4_PALETTE['shared']},stroke:{C4_PALETTE['shared_stroke']},color:{C4_PALETTE['shared_text']},stroke-dasharray:4 3",
+        f"classDef external fill:{C4_PALETTE['external']},stroke:{C4_PALETTE['external_stroke']},color:{C4_PALETTE['external_text']}",
+        f"classDef shared fill:{C4_PALETTE['shared']},stroke:{C4_PALETTE['shared_stroke']},color:{C4_PALETTE['shared_text']},stroke-dasharray:4 3",
     ]
 
 
