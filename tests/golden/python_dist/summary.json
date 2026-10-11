@@ -15,7 +15,13 @@
   "untested_projects": [],
   "dependency_graph_available": true,
   "status": "ok",
-  "warnings": [],
+  "warnings": [
+    {
+      "source": "c4_facts",
+      "message": "no container detected (nothing with an entry point, framework or compose service); the whole repository is drawn as one box. Identify the runnable parts from the code and describe them in c4-model.json.",
+      "kind": "detection"
+    }
+  ],
   "skipped_files": [],
   "c4": {
     "containers": 1,

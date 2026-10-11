@@ -94,6 +94,10 @@ class DiagnosticsCollector:
         """Record a render (SVG or diagram) failure."""
         self._add(Diagnostic(source, path, message, "render"))
 
+    def detection(self, source: str, message: str) -> None:
+        """Record a gap in what the analyzer could detect (not degraded: nothing failed)."""
+        self._add(Diagnostic(source, None, message, "detection"))
+
     def model_warning(self, source: str, message: str, path: str | None = None) -> None:
         """Record a model-tier drift: a fact the model does not cover yet."""
         self._add(Diagnostic(source, path, message, "model"))

@@ -82,8 +82,7 @@ def _module_packages(module_dir, index=None):
     """{file: (language, package, [imports])} for the JVM/C#/Go code of one module, tests excluded."""
     files = {}
     if index is not None:
-        candidates = [f for f in index.walk(lambda name: Path(name).suffix in CODE_EXTENSIONS)
-                     if f.parent.resolve().is_relative_to(module_dir.resolve())]
+        candidates = list(index.walk(lambda name: Path(name).suffix in CODE_EXTENSIONS, under=module_dir))
     else:
         candidates = walk_files(module_dir, lambda name: Path(name).suffix in CODE_EXTENSIONS)
     for file in candidates:
