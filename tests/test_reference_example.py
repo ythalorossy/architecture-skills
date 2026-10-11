@@ -63,9 +63,10 @@ class ReferenceExampleTest(unittest.TestCase):
 
     def test_fixture_model_validates_against_fresh_facts(self):
         model = load_model()
-        errors, warnings = render_c4.validate(model, self.facts)
-        self.assertEqual(errors, [], "the fixture model no longer matches the facts; update c4-model.json")
-        self.assertEqual(warnings, [], "the example should render without warnings")
+        result = render_c4.validate(model, self.facts)
+        self.assertEqual(result.status, "ok", f"the fixture model no longer matches the facts: {result.errors + result.drift + result.warnings}")
+        self.assertEqual(result.errors, [], "the fixture model no longer matches the facts; update c4-model.json")
+        self.assertEqual(result.warnings, [], "the example should render without warnings")
         errors, warnings, entries = code_diagrams.prepare(model, self.facts, self.output)
         self.assertEqual(errors, [], "the `code` entries no longer match the fixture code")
         self.assertEqual(warnings, [])
