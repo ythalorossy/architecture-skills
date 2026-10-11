@@ -86,7 +86,7 @@ class TestNoRglobOrReadCopies(unittest.TestCase):
         def_read_matches = []
 
         for py_file in scripts_dir.rglob("*.py"):
-            text = py_file.read_text()
+            text = py_file.read_text(encoding="utf-8")
             for lineno, line in enumerate(text.splitlines(), 1):
                 if "rglob" in line:
                     rglob_matches.append((py_file.relative_to(REPO_ROOT), lineno, line.strip()))
@@ -116,7 +116,7 @@ class TestNoRglobOrReadCopies(unittest.TestCase):
         for py_file in scripts_dir.rglob("*.py"):
             if py_file.name == "dotnet_projects.py":
                 continue
-            text = py_file.read_text()
+            text = py_file.read_text(encoding="utf-8")
             for lineno, line in enumerate(text.splitlines(), 1):
                 # Flag: importing helper functions from dotnet_projects (they should come from repo_index/paths)
                 if "from scripts.dotnet_projects import" in line or \
@@ -139,7 +139,7 @@ class TestSingleSizeCap(unittest.TestCase):
         cap_lines = []
 
         for py_file in scripts_dir.rglob("*.py"):
-            text = py_file.read_text()
+            text = py_file.read_text(encoding="utf-8")
             for lineno, line in enumerate(text.splitlines(), 1):
                 stripped = line.strip()
                 # Match size cap literals: 2 * 1024 * 1024, MAX_TEXT_BYTES, SIZE_CAP, etc.
