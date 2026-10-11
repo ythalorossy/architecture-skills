@@ -94,7 +94,9 @@ Then run:
 python3 scripts/render_c4.py <output folder>
 ```
 
-If it exits with errors, fix the model and run it again. It prints a status line per SVG (`ok`, `syntax-error`, `timeout`, `tool-error`, `missing-tool`). A `syntax-error` is a bug in the diagram — fix the model. Use `--no-svg` or `C4_SVG=0` to skip SVG rendering. It rewrites the C4 section of `ArchitectureReport.md` and the `c4-*.mmd`/`.svg` files.
+It reports the model in three tiers. `ok` draws the model as written. `drift` (a fact the code has and the model does not cover yet) prints one `DRIFT:` line per item and exits 0; add each item to the model, or list it in `excluded` with a reason. `invalid` (a JSON syntax error with its line and column, a wrong-typed section with its JSON path, an unknown id, or a duplicate id) draws the facts-only diagrams and exits 1: fix the model and run it again. Use `--strict` to exit 2 on drift as well. Fix every error, resolve every drift item, and fix or justify each warning before you finish.
+
+It prints a status line per SVG (`ok`, `syntax-error`, `timeout`, `tool-error`, `missing-tool`). A `syntax-error` is a bug in the diagram — fix the model. Use `--no-svg` or `C4_SVG=0` to skip SVG rendering. It rewrites the C4 section of `ArchitectureReport.md` and the `c4-*.mmd`/`.svg` files.
 
 If `c4-model.json` already exists from an earlier run, it was kept (and maybe edited by the user). Update it rather than rewriting it from scratch, and keep the user's wording.
 
