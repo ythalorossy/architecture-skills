@@ -193,5 +193,5 @@ graph TD
 
 ## Report Metadata
 
-Generator Version: 3.2
+Generator Version: <version>
 
