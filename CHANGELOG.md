@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Dense diagrams no longer drop real dependencies in import cycles.** Hiding an edge A → C because a longer path shows it could follow a path through a cycle back to A and then use A → C itself, so a dependency with no other path disappeared. On a real 218-dependency solution, 17 dependencies were missing.
+- **Passwords are never copied into `ArchitectureReport.md` or `c4-facts.json`.** A password inside a URL (`postgresql://user:password@db/…`) or a connection string (`Password=…`) is shown as `***`, whatever the variable is called, and secret-named compose variables (`POSTGRES_PASSWORD`) are stored as `***` in `c4-facts.json`.
+
 ## 3.3.3 — 2026-10-11
 
 Recovery release. 3.3.0–3.3.2 hardened the analyzer but also crashed on a common repository shape and reduced and degraded the diagrams. This release fixes those regressions and keeps the hardening.
