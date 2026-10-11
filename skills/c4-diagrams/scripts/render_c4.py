@@ -288,16 +288,42 @@ def _element_node(diagram, element, section, indent="    "):
         diagram.node(element["id"], _label(element["name"], kind, element.get("description")), "container", shape, indent)
 
 
+# Descriptions that only say "there is a link" (compose depends_on, defaults).
+_GENERIC_DESCRIPTIONS = {"", "depends on", "uses"}
+
+
 def _merge_relationships(relationships):
-    """One edge per (from, to): keep the first description, collect technologies."""
+    """
+    One edge per (from, to). The first specific description wins over a
+    generic one ("Depends on" from compose loses to "Reads/writes" found in
+    the code), and the technologies of all records are combined.
+    """
     merged = {}
     for r in relationships:
         key = (r["from"], r["to"])
         if key[0] == key[1]:
             continue
-        if key not in merged:
+        current = merged.get(key)
+        if current is None:
             merged[key] = dict(r)
+            continue
+        technologies = [t for t in (current.get("technology"), r.get("technology")) if t]
+        if _is_generic(current) and not _is_generic(r):
+            # Reassigning an existing key keeps the edge where it was.
+            merged[key] = current = dict(r)
+        combined = []
+        for tech in technologies:
+            for part in str(tech).split(","):
+                part = part.strip()
+                if part and part not in combined:
+                    combined.append(part)
+        if combined:
+            current["technology"] = ", ".join(combined)
     return list(merged.values())
+
+
+def _is_generic(relationship):
+    return (relationship.get("description") or "").strip().lower() in _GENERIC_DESCRIPTIONS
 
 
 def context_diagram(model):
