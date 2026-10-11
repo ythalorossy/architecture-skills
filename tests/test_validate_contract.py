@@ -7,16 +7,9 @@ Each shape asserts two things per AC4:
      shape).
   2. No "Traceback" appears in the captured output — REVIEW FOCUS 4.
 
-Today seven of eight shapes raise `JSONDecodeError`, `AttributeError`, or
-`KeyError` from inside `render_c4.render` (render_c4.py:110,115,119,137,145,
-760,762 — see `.serena/SPEC-02-traceability.md` §4/A-6 for the per-shape
-call site). They are marked `@unittest.expectedFailure` until SPEC-06 makes
-them return clean error strings without raising. The eighth shape (unknown
-`facts` id) already returns an error and is tested as a passing case — see
-`test_unknown_facts_id_returns_error` below and the report-back in
-`/home/ysaldanha/lab/architecture-skills/.serena/SPEC-02-traceability.md` §4
-for the discrepancy with the directive that asked for all eight to be
-`expectedFailure`.
+Under SPEC-06 the seven crashing shapes return tiered `invalid` errors and
+the eighth (unknown facts id) returns `drift`. All eight are plain passing
+tests (the former `@unittest.expectedFailure` markers are removed).
 
 The `c4-model.json` string is a CLI-layer wrapper (`render_c4.py:886`) and
 must NOT be asserted on at the render() level — see A-7. The CLI-layer
