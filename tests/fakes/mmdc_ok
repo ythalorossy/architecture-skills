@@ -1,6 +1,5 @@
 #!/bin/bash
 # Fake mmdc that succeeds and writes expected SVG files to the output directory
-# The output path is passed via -o
 
 OUTPUT_DIR=""
 INPUT_FILE=""
@@ -21,19 +20,19 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ -z "$OUTPUT_DIR" ]]; then
-    # Batch mode: extract stems from %%=~=~ markers and write to cwd
-    if [[ -n "$INPUT_FILE" && -f "$INPUT_FILE" ]]; then
-        for stem in $(grep -oP '%%=~=~\K[^=]+(?==~=~%%)' "$INPUT_FILE" 2>/dev/null || echo ""); do
-            echo "fake svg for $stem" > "${stem}.svg"
-        done
-    fi
+if [[ -z "$INPUT_FILE" || ! -f "$INPUT_FILE" ]]; then
+    # No input file: nothing to do
+    :
+elif grep -q '%%=~=~' "$INPUT_FILE"; then
+    # Batch mode: input contains %%=~=~ markers
+    TARGET_DIR="${OUTPUT_DIR:-.}"
+    for stem in $(awk -F'%%=~=~' '{print $2}' "$INPUT_FILE" | awk -F'=~=~%%' '{print $1}' | grep -v '^$'); do
+        echo "fake svg for $stem" > "${TARGET_DIR}/${stem}.svg"
+    done
 else
-    # Per-diagram mode: derive stem from input filename
-    if [[ -n "$INPUT_FILE" ]]; then
-        stem=$(basename "$INPUT_FILE" .mmd)
-        echo "fake svg for $stem" > "${OUTPUT_DIR}/${stem}.svg"
-    fi
+    # Per-diagram mode: plain mmd file
+    stem=$(basename "$INPUT_FILE" .mmd)
+    echo "fake svg for $stem" > "${OUTPUT_DIR}/${stem}.svg"
 fi
 
 exit 0

@@ -10,10 +10,10 @@ Writes c4-*.mmd / c4-*.svg into the output folder and replaces the C4 block of
 ArchitectureReport.md. Exits with status 1 when c4-model.json does not match the
 facts (missing elements, unknown ids), listing every problem.
 """
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import argparse
 import json
+import os
 import re
 import sys
 import textwrap
@@ -28,7 +28,8 @@ from scripts.cli_support import UserError, require_python, run_cli
 # tomllib (3.11+) and would otherwise fail with an opaque ImportError.
 require_python()
 
-from scripts.generate_mermaid import _node_ids, render_svg
+from scripts.generate_mermaid import _node_ids
+from scripts import svg_render as _sr
 from scripts import code_diagrams
 from scripts import mermaid_syntax as _ms
 
@@ -834,11 +835,16 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
     for stem, mermaid in diagrams.items():
         (output / f"{stem}.mmd").write_text(mermaid, encoding="utf-8")
 
-    rendered = {}
-    if svg:
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            jobs = {stem: pool.submit(render_svg, output / f"{stem}.mmd", output / f"{stem}.svg") for stem in diagrams}
-            rendered = {stem: job.result() for stem, job in jobs.items()}
+    # C4_SVG=0 acts like --no-svg (D3 / SPEC-05)
+    env_disabled = os.environ.get("C4_SVG", "1") in ("0", "false", "no")
+
+    rendered: dict = {}
+    render_results: list = []
+    if svg and not env_disabled:
+        stems = [(stem, output / f"{stem}.mmd") for stem in diagrams]
+        render_results = _sr.render(stems, output)
+        for r in render_results:
+            rendered[r.stem] = r.status == "ok"
 
     block = [BLOCK_START, "", "## Architecture (C4 model)", ""]
     if model.get("_facts_only"):
@@ -905,12 +911,18 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
         else:
             warnings.append("ArchitectureReport.md has no C4 block; re-run analyze_repository.py")
 
+    # Per-stem SVG status for summary.json (SPEC-05 AC8)
+    svg_status = {}
+    for r in render_results:
+        svg_status[r.stem] = {"status": r.status, "message": r.message}
+
     return {
         "errors": [],
         "warnings": warnings,
         "diagrams": list(diagrams),
         "svg_failed": [stem for stem, ok in rendered.items() if not ok] if svg else [],
         "facts_only": bool(model.get("_facts_only")),
+        "svg": svg_status,
     }
 
 
@@ -936,7 +948,16 @@ def main():
 
     print("Diagrams: " + ", ".join(result["diagrams"]))
     if result["svg_failed"]:
-        print("WARNING: SVG rendering failed for " + ", ".join(result["svg_failed"]) + " (needs Node.js and @mermaid-js/mermaid-cli)")
+        # Print one line per failed stem, naming the cause (SPEC-05 AC8)
+        svg_status = result.get("svg", {})
+        for stem in result["svg_failed"]:
+            info = svg_status.get(stem, {})
+            status = info.get("status", "unknown")
+            msg = info.get("message", "")
+            if msg:
+                print(f"WARNING: {stem}: {status} — {msg}")
+            else:
+                print(f"WARNING: {stem}: {status}")
 
 
 if __name__ == "__main__":
