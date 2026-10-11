@@ -116,17 +116,20 @@ def validate(model, facts, result=None):
     drift = result.drift
     warnings = result.warnings
 
+    def invalid(message):
+        errors.append(f"c4-model.json: {message}")
+
     elements = {}
     for section in ("people", "containers", "external_systems"):
         for index, element in enumerate(model.get(section) or []):
             if "id" not in element or "name" not in element:
-                errors.append(
+                invalid(
                     f"{section}[{index}]: every element needs an id and a name "
                     f"({element!r})"
                 )
                 continue
             if element["id"] in elements:
-                errors.append(
+                invalid(
                     f"{section}[{index}]: duplicate id {element['id']!r}"
                 )
             elements[element["id"]] = section
@@ -135,7 +138,7 @@ def validate(model, facts, result=None):
 
     system_name = (model.get("system") or {}).get("name")
     if system_name is None or system_name == "":
-        errors.append("system.name is missing")
+        invalid("system.name is missing")
 
     covered = {fact for section in ("containers", "external_systems") for e in model.get(section) or [] for fact in _covers(e)}
     covered |= {item["id"] for item in model.get("excluded") or []}
@@ -150,7 +153,7 @@ def validate(model, facts, result=None):
     for index, relationship in enumerate(model.get("relationships") or []):
         for end in ("from", "to"):
             if relationship.get(end) not in elements:
-                errors.append(
+                invalid(
                     f"relationships[{index}]: {relationship.get('from')!r} -> "
                     f"{relationship.get('to')!r}: unknown {end} id {relationship.get(end)!r}"
                 )
@@ -158,7 +161,7 @@ def validate(model, facts, result=None):
     component_ids = all_component_ids(model, facts)
     for container_id, descriptions in (model.get("components") or {}).items():
         if elements.get(container_id) != "containers":
-            errors.append(
+            invalid(
                 f"components[{container_id!r}]: {container_id!r} is not a container id"
             )
             continue
@@ -169,7 +172,7 @@ def validate(model, facts, result=None):
     known = set(elements) | {c for ids in component_ids.values() for c in ids}
     for flow_index, flow in enumerate(model.get("flows") or []):
         if not flow.get("name") or not flow.get("steps"):
-            errors.append(
+            invalid(
                 f"flows[{flow_index}]: every flow needs a name and steps "
                 f"({flow.get('id') or flow.get('name')!r})"
             )
@@ -177,7 +180,7 @@ def validate(model, facts, result=None):
         for number, step in enumerate(flow["steps"], 1):
             for end in ("from", "to"):
                 if step.get(end) not in known:
-                    errors.append(
+                    invalid(
                         f"flows[{flow_index}].steps[{number-1}]: flow {flow['name']!r} step "
                         f"{number}: unknown {end} {step.get(end)!r} "
                         "(use a person, container or external system id, or a component id from c4-facts.json)"
@@ -210,21 +213,6 @@ def all_component_ids(model, facts):
                 ids |= set((container.get("code_components") or {}).get("nodes", {}))
         result[element["id"]] = ids
     return result
-
-
-def _unreviewed_facts_warnings(model, facts):
-    """Kept for the legacy show_drift path; not used by tiered render()."""
-    covered = {fact for section in ("containers", "external_systems") for e in model.get(section) or [] for fact in _covers(e)}
-    covered |= {item["id"] for item in model.get("excluded") or []}
-    warnings = []
-    for kind in ("containers", "data_stores", "external_systems"):
-        for fact in facts[kind]:
-            if fact["id"] not in covered:
-                warnings.append(
-                    f"{fact['id']} ({fact['name']}) was found in the code but is not in the model; "
-                    "add it (or list it in `facts` of an element) or put it in `excluded` with a reason"
-                )
-    return warnings
 
 
 # ---------- mermaid ----------

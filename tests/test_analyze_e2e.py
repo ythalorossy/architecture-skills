@@ -317,9 +317,13 @@ class TestAnalyzerSurvivesBadModel(unittest.TestCase):
 
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertNotIn("Traceback", proc.stdout + proc.stderr)
+            # Facts-only diagrams and the report are refreshed, not left from an earlier run.
             self.assertTrue((out / "c4-facts.json").is_file())
+            self.assertTrue((out / "c4-container.mmd").is_file())
+            self.assertTrue((out / "ArchitectureReport.md").is_file())
             summary = json.loads((out / "summary.json").read_text(encoding="utf-8"))
             self.assertEqual(summary["c4"]["model_status"], "invalid")
+            self.assertEqual(summary["c4"]["model"], "facts-only")
             self.assertTrue(any("c4-model.json: line" in e for e in summary["c4"]["model_errors"]))
 
 

@@ -278,5 +278,32 @@ class CliExitCodeTest(unittest.TestCase):
             self.assertEqual(invalid.returncode, 1, invalid.stderr)
 
 
+class ErrorPrefixTest(unittest.TestCase):
+    """AC1/AC6: every invalid-tier message starts `c4-model.json:` and names a JSON path."""
+
+    def test_every_invalid_shape_message_is_prefixed(self):
+        from scripts.render_c4 import render
+
+        facts = _facts_with_two_containers()
+        base = _valid_model_for(["a", "b"])
+        shapes = {
+            "system-str": {**base, "system": "not a dict"},
+            "element-str": {**base, "containers": ["oops"]},
+            "excluded-noid": {**base, "excluded": [{"reason": "no id"}]},
+            "flow-steps-str": {**base, "flows": [{"id": "f", "name": "F", "steps": "x"}]},
+            "unknown-relationship": {**base, "relationships": [{"from": "a", "to": "ghost"}]},
+            "duplicate-id": {**base, "people": [{"id": "a", "name": "Alice"}]},
+        }
+        for label, model in shapes.items():
+            with self.subTest(shape=label), tempfile.TemporaryDirectory() as tmp:
+                out = Path(tmp) / "out"
+                _write_facts_and_model(out, facts, model)
+                result = render(out, svg=False)
+                self.assertEqual(result["status"], "invalid")
+                self.assertTrue(result["errors"])
+                for message in result["errors"]:
+                    self.assertTrue(message.startswith("c4-model.json:"), message)
+
+
 if __name__ == "__main__":
     unittest.main()
