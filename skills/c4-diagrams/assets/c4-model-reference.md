@@ -83,7 +83,7 @@ This is the complete model of Bookshop, a small synthetic sample system: a React
 
 ## Rules
 
-- **Cover every fact.** Every `id` in `c4-facts.json` (`containers`, `data_stores`, `external_systems`) must appear in the model: as an element with the same `id`, in some element's `facts` list (to merge or rename facts), or in `excluded` with a reason. `render_c4.py` fails and lists any fact you missed.
+- **Cover every fact.** Every `id` in `c4-facts.json` (`containers`, `data_stores`, `external_systems`) must appear in the model: as an element with the same `id`, in some element's `facts` list (to merge or rename facts), or in `excluded` with a reason. A fact you missed is drift: `render_c4.py` prints a `DRIFT:` line for it and exits 0 (exit 2 with `--strict`).
 - **Data stores are containers.** Put a database, cache or queue the system owns in `containers` with `"type": "database"` (or `"queue"`). A store the system doesn't own (a SaaS vector DB, another team's database) goes there too, with `"external": true`; it is then drawn outside the system boundary.
 - **Evidence or assumption.** Give each person, container and external system `evidence` (repo-relative `file` or `file:line`), or mark it `"assumption": true`. Assumptions are listed in the report for the team to confirm. People are usually assumptions unless the code names them (auth roles, UI copy, README).
 - **Don't invent.** Only add elements and relationships the code, config or docs support. When you have no evidence for who calls the API, say so with one `assumption` person rather than inventing several.
@@ -97,11 +97,17 @@ This is the complete model of Bookshop, a small synthetic sample system: a React
 
 `analyze_repository.py` never overwrites `c4-model.json`. When the code changes, the facts are refreshed:
 
-- **`drift`** (model valid but new facts not covered): the script renders the existing model *with* the new facts, and surfaces the unreviewed facts in `summary.json` (`c4.model_status == "drift"`). The report includes an `### Unreviewed facts` section listing what to add to the model. Update the model to cover the new facts, then re-run `render_c4.py`.
+Every model is checked in three tiers:
 
-- **`invalid`** (model has unknown relationship ids or missing elements): the script falls back to facts-only diagrams and lists the errors in `summary.json` (`c4.model_status == "invalid"`, `c4.model_errors[]`). Fix the errors in `c4-model.json`, then re-run `render_c4.py`.
+- **`ok`**: the model is well-formed and covers every fact. It is drawn as written.
+- **`drift`**: the model is well-formed but some facts are not covered yet (a container found in the code and not in the model). The model is drawn with the new facts listed in an `### Unreviewed facts` section of the report, one `DRIFT:` line per item on stdout, and `c4.model_status == "drift"` in `summary.json`. `render_c4.py` exits 0; with `--strict` it exits 2.
+- **`invalid`**: the model cannot be drawn as written. This covers a JSON syntax error (the message names the line and column, e.g. `c4-model.json: line 3, column 1: trailing comma before closing bracket`), a wrong-typed section or element (the message gives the JSON path, e.g. `containers[3]`), an unknown relationship or flow id, and duplicate ids. The facts-only diagrams are drawn instead and the errors are listed in `c4.model_errors[]`. `render_c4.py` exits 1.
 
-In both cases `c4-model.json` is left unchanged.
+`analyze_repository.py` never aborts on a bad model: it records the tier in `summary.json` and exits 0.
+
+When you re-run `render_c4.py` after a change to the code or the model, fix every error, resolve every drift item (add the fact to the model, or list it in `excluded` with a reason), and fix or justify each warning. A warning does not change the exit code.
+
+In all cases `c4-model.json` is left unchanged by the analyzer.
 
 ```bash
 python3 scripts/render_c4.py <output folder>
