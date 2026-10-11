@@ -32,6 +32,7 @@ from scripts.generate_mermaid import _node_ids
 from scripts import svg_render as _sr
 from scripts import code_diagrams
 from scripts import mermaid_syntax as _ms
+from scripts.model_check import ValidationResult
 
 
 MAX_COMPONENTS = 20
@@ -98,23 +99,42 @@ def _covers(element):
     return element.get("facts") or [element["id"]]
 
 
-def validate(model, facts):
-    """Return (errors, warnings). Errors make the model unusable."""
-    errors, warnings = [], []
+def validate(model, facts, result=None):
+    """Tiered semantic checks. Returns a ValidationResult.
+
+    `result` (optional) is a ValidationResult from `check_structure`; we
+    append to its lists. A new result is created when `result is None`.
+
+    Routing per SPEC-06:
+      - unknown relationship/flow ids and duplicate ids -> errors (invalid)
+      - facts not covered by the model and not in `excluded` -> drift
+      - evidence / assumption missing -> warnings
+    """
+    if result is None:
+        result = ValidationResult(model=model)
+    errors = result.errors
+    drift = result.drift
+    warnings = result.warnings
 
     elements = {}
     for section in ("people", "containers", "external_systems"):
-        for element in model.get(section) or []:
+        for index, element in enumerate(model.get(section) or []):
             if "id" not in element or "name" not in element:
-                errors.append(f"{section}: every element needs an id and a name ({element})")
+                errors.append(
+                    f"{section}[{index}]: every element needs an id and a name "
+                    f"({element!r})"
+                )
                 continue
             if element["id"] in elements:
-                errors.append(f"duplicate id: {element['id']}")
+                errors.append(
+                    f"{section}[{index}]: duplicate id {element['id']!r}"
+                )
             elements[element["id"]] = section
             if not element.get("evidence") and not element.get("assumption"):
                 warnings.append(f"{element['id']}: no evidence and not marked as an assumption")
 
-    if model.get("system", {}).get("name") is None:
+    system_name = (model.get("system") or {}).get("name")
+    if system_name is None or system_name == "":
         errors.append("system.name is missing")
 
     covered = {fact for section in ("containers", "external_systems") for e in model.get(section) or [] for fact in _covers(e)}
@@ -122,35 +142,44 @@ def validate(model, facts):
     for kind in ("containers", "data_stores", "external_systems"):
         for fact in facts[kind]:
             if fact["id"] not in covered:
-                errors.append(
+                drift.append(
                     f"{fact['id']} ({fact['name']}) was found in the code but is not in the model; "
                     "add it (or list it in `facts` of an element) or put it in `excluded` with a reason"
                 )
 
-    for relationship in model.get("relationships") or []:
+    for index, relationship in enumerate(model.get("relationships") or []):
         for end in ("from", "to"):
             if relationship.get(end) not in elements:
-                errors.append(f"relationship {relationship.get('from')} -> {relationship.get('to')}: unknown id {relationship.get(end)!r}")
+                errors.append(
+                    f"relationships[{index}]: {relationship.get('from')!r} -> "
+                    f"{relationship.get('to')!r}: unknown {end} id {relationship.get(end)!r}"
+                )
 
     component_ids = all_component_ids(model, facts)
     for container_id, descriptions in (model.get("components") or {}).items():
         if elements.get(container_id) != "containers":
-            errors.append(f"components: {container_id!r} is not a container id")
+            errors.append(
+                f"components[{container_id!r}]: {container_id!r} is not a container id"
+            )
             continue
         for component in descriptions:
             if component not in component_ids.get(container_id, set()):
                 warnings.append(f"components.{container_id}: {component!r} is not a component of that container; its description is ignored")
 
     known = set(elements) | {c for ids in component_ids.values() for c in ids}
-    for flow in model.get("flows") or []:
+    for flow_index, flow in enumerate(model.get("flows") or []):
         if not flow.get("name") or not flow.get("steps"):
-            errors.append(f"flows: every flow needs a name and steps ({flow.get('id') or flow.get('name')})")
+            errors.append(
+                f"flows[{flow_index}]: every flow needs a name and steps "
+                f"({flow.get('id') or flow.get('name')!r})"
+            )
             continue
         for number, step in enumerate(flow["steps"], 1):
             for end in ("from", "to"):
                 if step.get(end) not in known:
                     errors.append(
-                        f"flow {flow['name']!r} step {number}: unknown {end} {step.get(end)!r} "
+                        f"flows[{flow_index}].steps[{number-1}]: flow {flow['name']!r} step "
+                        f"{number}: unknown {end} {step.get(end)!r} "
                         "(use a person, container or external system id, or a component id from c4-facts.json)"
                     )
 
@@ -166,7 +195,7 @@ def validate(model, facts):
         if a and b and a != b and (a, b) not in drawn:
             warnings.append(f"{a} -> {b} is declared in {', '.join(r['evidence'])} ({r['source']}) but has no relationship in the model")
 
-    return errors, warnings
+    return result
 
 
 def all_component_ids(model, facts):
