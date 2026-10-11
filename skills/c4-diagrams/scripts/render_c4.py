@@ -425,6 +425,7 @@ def _component_views(graph, overview=True, full_list="the dependency graph appen
     """
     nodes = graph["nodes"]
     edges = graph["edges"]
+    all_edges = edges
     notes = []
 
     edge_count = sum(len(t) for t in edges.values())
@@ -464,23 +465,36 @@ def _component_views(graph, overview=True, full_list="the dependency graph appen
                 packs.append([(group, members)])
             else:
                 target.append((group, members))
+        part_of = {n: index for index, pack in enumerate(packs, 1) for _, members in pack for n in members}
         for index, pack in enumerate(packs, 1):
             members = [n for _, m in pack for n in m]
             member_set = set(members)
             first_notes = [] if overview or index > 1 else notes + [f"{len(nodes)} components, drawn in {len(packs)} parts."]
+            view_nodes = {n: nodes[n] for n in members}
+            view_edges = {}
+            for n in members:
+                view_edges[n] = []
+                for target in edges.get(n, []):
+                    if target not in member_set:
+                        # Drawn elsewhere: keep the dependency, with a stub saying where.
+                        where = f"in part {part_of[target]}" if target in part_of else "in the overview"
+                        view_nodes.setdefault(target, {**nodes[target], "stub": where})
+                    view_edges[n].append(target)
             views.append((
                 f"-part{index}",
                 ", ".join(sorted(g for g, _ in pack)) if len(pack) <= 3 else f"part {index} of {len(packs)}",
-                {n: nodes[n] for n in members},
-                {n: [t for t in edges.get(n, []) if t in member_set] for n in members},
+                view_nodes,
+                view_edges,
                 first_notes,
             ))
         return views
 
     shared = []
     if len(nodes) > MAX_COMPONENTS:
+        # Count every dependency, not only the ones left after hiding
+        # shortcuts: reduction removes most edges into a widely used component.
         indegree = {n: 0 for n in nodes}
-        for targets in edges.values():
+        for targets in all_edges.values():
             for target in targets:
                 indegree[target] += 1
         threshold = max(3, len(nodes) // 2)
@@ -515,8 +529,9 @@ def _graph_diagram(model, facts, container, container_fact, title, nodes, edges,
     short = _short_names(list(nodes))
     boundary = d.internal("boundary")
     d.lines.append(f'    subgraph {boundary}["`**{_clean(title)}** [Container]`"]')
-    regular = [n for n, info in nodes.items() if not info.get("shared")]
+    regular = [n for n, info in nodes.items() if not info.get("shared") and not info.get("stub")]
     shared = [n for n, info in nodes.items() if info.get("shared")]
+    stubs = [n for n, info in nodes.items() if info.get("stub")]
 
     def label_of(node):
         return (nodes[node].get("label") or short[node]).replace(" (files)", " (root files)")
@@ -542,11 +557,14 @@ def _graph_diagram(model, facts, container, container_fact, title, nodes, edges,
             d.node(node, _label(label_of(node), "Component", texts.get(node, "")), "shared", indent="            ")
         d.lines.append("        end")
     d.lines.append("    end")
+    # Components drawn in another part of a split view.
+    for node in stubs:
+        d.node(node, _label(label_of(node), f"Component, {nodes[node]['stub']}"), "shared")
 
     for source, targets in edges.items():
         for target in targets:
             if source in nodes and target in nodes:
-                d.edge(source, target)
+                d.edge(source, target, dashed=bool(nodes[target].get("stub")))
 
     # ELK puts every top-level component in one row; invisible links
     # stack them in rows of ROW_WIDTH so wide diagrams stay readable.
@@ -559,7 +577,8 @@ def _graph_diagram(model, facts, container, container_fact, title, nodes, edges,
     for kind in ("data_stores", "external_systems"):
         for fact in facts[kind]:
             element = by_fact.get(fact["id"])
-            users = [n for n in (fact.get(usage_key) or {}).get(container_fact["id"], []) if n in nodes]
+            users = [n for n in (fact.get(usage_key) or {}).get(container_fact["id"], [])
+                     if n in nodes and not nodes[n].get("stub")]
             if element is None or not users:
                 continue
             if element["id"] not in d:

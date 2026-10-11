@@ -37,6 +37,55 @@ class MergeRelationshipsTest(unittest.TestCase):
         self.assertEqual([(r["from"], r["to"]) for r in merged], [("b", "c"), ("a", "b")])
 
 
+def _graph(groups, edges):
+    """Component graph {nodes, edges} from {group: [node, ...]} and [(a, b), ...]."""
+    nodes = {n: {"group": g} for g, members in groups.items() for n in members}
+    out = {}
+    for a, b in edges:
+        out.setdefault(a, []).append(b)
+    return {"nodes": nodes, "edges": out}
+
+
+class SharedComponentTest(unittest.TestCase):
+    def test_hub_is_found_even_when_reduction_hides_its_edges(self):
+        # A chain n0 -> n1 -> ... -> n23 where every node also uses util. The
+        # graph is dense, so reduction keeps only n23 -> util; util is still
+        # used by all 24 others and belongs in the Shared box.
+        chain = [f"n{i:02}" for i in range(24)]
+        edges = list(zip(chain, chain[1:])) + [(n, "util") for n in chain]
+        [(_, _, nodes, drawn, notes)] = render_c4._component_views(_graph({"": chain + ["util"]}, edges))
+        self.assertTrue(nodes["util"]["shared"])
+        self.assertIn("util (24)", " ".join(notes))
+        self.assertFalse(any("util" in targets for targets in drawn.values()))
+
+
+class SplitPartsTest(unittest.TestCase):
+    def test_edge_to_another_part_keeps_the_target_as_a_stub(self):
+        a = [f"a{i:02}" for i in range(13)]
+        b = [f"b{i:02}" for i in range(12)]
+        graph = _graph({"alpha": a, "beta": b}, [("a00", "b00"), ("a01", "a02")])
+        views = render_c4._component_views(graph, overview=False)
+        part_a = next(v for v in views if "a00" in v[2] and not v[2]["a00"].get("stub"))
+        _, _, nodes, edges, _ = part_a
+        self.assertIn("b00", edges["a00"])
+        self.assertIn("part", nodes["b00"]["stub"])
+        self.assertNotIn("stub", nodes["a01"])
+
+    def test_stub_is_drawn_outside_the_boundary_with_a_dashed_edge(self):
+        a = [f"a{i:02}" for i in range(13)]
+        b = [f"b{i:02}" for i in range(12)]
+        graph = _graph({"alpha": a, "beta": b}, [("a00", "b00")])
+        views = render_c4._component_views(graph, overview=False)
+        _, title, nodes, edges, _ = next(v for v in views if "a00" in v[2] and not v[2]["a00"].get("stub"))
+        model = render_c4.facts_only_model({"repository": "r", "containers": [], "data_stores": [],
+                                            "external_systems": [], "relationships": []})
+        facts = {"data_stores": [], "external_systems": []}
+        mermaid = render_c4._graph_diagram(model, facts, {"id": "c"}, {"id": "c"}, title, nodes, edges, {}, "used_by_components")
+        boundary_end = mermaid.index("\n    end\n")
+        self.assertGreater(mermaid.index("b00["), boundary_end, "stub must be outside the container boundary")
+        self.assertIn("a00 -.-> b00", mermaid)
+
+
 class FactsOnlyContainerDiagramTest(unittest.TestCase):
     def test_bookshop_edges_use_the_code_evidence(self):
         from helpers import run_analyzer
