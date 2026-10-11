@@ -224,13 +224,13 @@ def prepare(model, facts, output, collector=None, repo_override=None):
         return ["code: c4-facts.json has no repository_root; re-run analyze_repository.py"], warnings, []
     repo_rel = repo_override if repo_override else facts.get("repository_root", "")
     repo = (Path(output) / repo_rel).resolve() if repo_override else (Path(output) / facts["repository_root"]).resolve()
-    # Relocatable output (ARC-06): verify the resolved path points to a directory
-    # whose name matches the last segment of the relative path.  If not, skip
-    # Level 4 with a model-tier warning.
-    # A relative path that climbs out of the output folder ("../..") has no
-    # folder name to compare; the name check only applies to a named folder.
-    named = Path(os.path.normpath(repo_rel)).name
-    if not repo.is_dir() or (not repo_override and named not in ("", "..") and repo.name != named):
+    # Relocatable output (ARC-06): the output folder may have moved away from
+    # the repository. A relative path such as "../.." then resolves to some
+    # other folder, so the folder we land in must be the repository the facts
+    # were collected from (its name). If not, skip Level 4 with a model-tier
+    # warning.
+    expected = facts.get("repository")
+    if not repo.is_dir() or (not repo_override and expected and repo.name != expected):
         msg = (
             f"repository not found at {repo_rel}; re-run analyze_repository.py "
             f"or pass --repo <path> to render_c4.py"

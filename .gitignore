@@ -10,3 +10,5 @@ docs
 docs/**
 .serena
 .serena/**
+# Analyzer output when the skill is run on this repository itself
+architecture-docs/
