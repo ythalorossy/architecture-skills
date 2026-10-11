@@ -389,12 +389,13 @@ def compose_services(index):
         in_services, service_indent, current, key_indent = False, None, None, None
         section = None
         for number, line in enumerate(lines, 1):
-            stripped = line.strip()
-            if not stripped or stripped.startswith("#"):
+            # A YAML comment starts at "#" after whitespace: "api:   # backend".
+            stripped = re.sub(r"(^|\s)#.*$", "", line).strip()
+            if not stripped:
                 continue
             indent = len(line) - len(line.lstrip())
             if indent == 0:
-                in_services = line.startswith("services:")
+                in_services = stripped.startswith("services:")
                 current = None
                 continue
             if not in_services:

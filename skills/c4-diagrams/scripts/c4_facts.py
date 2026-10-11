@@ -42,7 +42,8 @@ except ImportError:
     from repo_index import RepoIndex
 
 
-SOURCE_EXTENSIONS = (".cs", ".fs", ".vb", ".py", ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".java", ".kt", ".go")
+SOURCE_EXTENSIONS = (".cs", ".fs", ".vb", ".py", ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".vue", ".svelte",
+                     ".java", ".kt", ".go")
 TEST_DIRS = {"test", "tests", "__tests__", "spec", "specs", "e2e"}
 MAX_EVIDENCE = 3
 
@@ -527,39 +528,18 @@ def _yaml_urls(text):
 
 
 def _compose_services(repo, index=None):
-    """(service, image, build context, file, line) from docker-compose files, without a YAML parser."""
-    services = []
-    if index is not None:
-        candidates = index.walk(lambda name: re.match(r"(docker-)?compose(\.[\w-]+)?\.ya?ml$", name))
-    else:
-        candidates = walk_files(repo, lambda name: re.match(r"(docker-)?compose(\.[\w-]+)?\.ya?ml$", name))
-    for file in candidates:
-        lines = _file_text(file).splitlines()
-        in_services, service_indent, current = False, None, None
-        for number, line in enumerate(lines, 1):
-            if not line.strip() or line.lstrip().startswith("#"):
-                continue
-            indent = len(line) - len(line.lstrip())
-            if indent == 0:
-                in_services = line.startswith("services:")
-                current = None
-                continue
-            if not in_services:
-                continue
-            if service_indent is None:
-                service_indent = indent
-            key, _, value = line.strip().partition(":")
-            value = value.strip().strip("'\"")
-            if indent == service_indent:
-                current = {"name": key, "image": None, "build": None, "file": file, "line": number}
-                services.append(current)
-            elif current and key == "image":
-                current["image"] = value
-            elif current and key == "build":
-                current["build"] = value or "."
-            elif current and key == "context" and current["build"] == ".":
-                current["build"] = value
-    return services
+    """(service, image, build context, file, line) from docker-compose files.
+
+    Reads them with code_facts.compose_services, the one compose parser, so
+    service names match the relationships and the deployment section.
+    """
+    if index is None:
+        index = RepoIndex.build(repo)
+    return [
+        {"name": s["name"], "image": s["image"], "build": s["build"],
+         "file": Path(repo) / s["file"], "line": s["line"]}
+        for s in code_facts.compose_services(index)
+    ]
 
 
 # ---------- main ----------
