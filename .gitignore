@@ -6,8 +6,10 @@ skills-lock.json
 .playwright-mcp/
 .coverage
 .coverage.*
-docs
-docs/**
+# Local working folders: specs, plans and audits used to improve the codebase.
+# Never committed.
+docs/
+audit/
 .serena
 .serena/**
 # Analyzer output when the skill is run on this repository itself
