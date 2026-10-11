@@ -350,7 +350,7 @@ class StructuralShapesTest(unittest.TestCase):
     `excluded[0].id`, `flows[0].steps`).
     """
 
-    def _run_one(self, model: dict) -> "scripts.model_check.ValidationResult":
+    def _run_one(self, model: dict):
         from scripts.model_check import check_structure
 
         return check_structure(model)

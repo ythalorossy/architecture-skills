@@ -244,6 +244,7 @@ class TestTolerantWalk(unittest.TestCase):
             reasons = [s["reason"] for s in collector.skipped_entries if "missing.csproj" in s["path"]]
             self.assertEqual(reasons, ["broken_symlink"], "reason must be 'broken_symlink'")
 
+    @unittest.skipUnless(os.name == "posix", "POSIX-only: chmod 000")
     def test_each_skip_recorded_once(self):
         RepoIndex = _repo_index()
         if RepoIndex is None:
@@ -385,6 +386,7 @@ class TestTolerantReader(unittest.TestCase):
             self.assertEqual(len(parse_warnings), 1)
             self.assertIn("pyproject.toml", parse_warnings[0]["file"])
 
+    @unittest.skipUnless(os.name == "posix", "POSIX-only: chmod 000")
     def test_parse_xml_permission_error_returns_none(self):
         RepoIndex = _repo_index()
         if RepoIndex is None:
