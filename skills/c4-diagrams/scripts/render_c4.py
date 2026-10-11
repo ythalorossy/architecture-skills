@@ -28,7 +28,7 @@ from scripts.cli_support import UserError, require_python, run_cli
 require_python()
 
 from scripts import svg_render as _sr
-from scripts import code_diagrams
+from scripts import c4_facts, code_diagrams
 from scripts import mermaid_syntax as _ms
 from scripts.model_check import ValidationResult, check_structure, load_model
 
@@ -707,7 +707,8 @@ def deployment_diagram(facts, model):
         element = by_fact.get(fact["id"]) if fact else None
         if element and element["name"] != service["name"]:
             name = f"{service['name']} ({element['name']})"
-        store = any(key in image.split(":")[0].lower() for key in ("postgres", "mysql", "mariadb", "mongo", "redis", "elastic", "opensearch", "rabbit", "kafka", "mssql", "minio", "memcached", "qdrant", "chroma"))
+        # The same image table the facts use, so a store is a store in every view.
+        store = any(key in image.split(":")[0].lower() for key, _ in c4_facts.COMPOSE_STORES)
         lines = [f"**{_clean(name)}**", "[Container instance]"] + [_wrap(detail)] + ([f"ports {_clean(ports)}"] if ports else [])
         label = '"`' + "\n".join(l for l in lines if l) + '`"'
         d.node(f"svc:{service['name']}", label, "container", "db" if store else "rect", indent="        ")

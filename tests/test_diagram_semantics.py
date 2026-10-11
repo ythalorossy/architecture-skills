@@ -86,6 +86,48 @@ class SplitPartsTest(unittest.TestCase):
         self.assertIn("a00 -.-> b00", mermaid)
 
 
+class ComposeTest(unittest.TestCase):
+    """docker-compose.yml is read the same way everywhere, comments included."""
+
+    COMPOSE = (
+        "services:\n"
+        "  db:   # main database\n"
+        "    image: azure-sql-edge:latest   # SQL Server for ARM\n"
+        "  app:  # backend\n"
+        "    build: ./app\n"
+        "    depends_on:\n"
+        "      - db   # wait for it\n"
+    )
+
+    def facts_and_container_diagram(self):
+        import tempfile
+        from pathlib import Path
+        from helpers import run_analyzer, write
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            write(repo, {"docker-compose.yml": self.COMPOSE, "app/main.py": "print('hi')\n"})
+            facts, _ = run_analyzer(repo, Path(tmp) / "out")
+            mermaid = (Path(tmp) / "out" / "c4-container.mmd").read_text(encoding="utf-8")
+        return facts, mermaid
+
+    def test_comments_do_not_leak_into_names_or_drop_edges(self):
+        facts, mermaid = self.facts_and_container_diagram()
+        services = [s["name"] for s in facts["deployment"]["compose"]]
+        self.assertEqual(services, ["db", "app"])
+        self.assertEqual([s["image"] for s in facts["deployment"]["compose"]][0], "azure-sql-edge:latest")
+        self.assertEqual([(r["from"], r["to"]) for r in facts["relationships"]], [("app", "db-sql-server")])
+        self.assertIn("app -->", mermaid)
+
+    def test_compose_store_is_drawn_as_a_database_in_every_view(self):
+        facts, mermaid = self.facts_and_container_diagram()
+        self.assertEqual([s["name"] for s in facts["data_stores"]], ["SQL Server"])
+        self.assertIn('db_sql_server[("', mermaid)
+        model = render_c4.facts_only_model(facts)
+        deployment = render_c4.deployment_diagram(facts, model)
+        self.assertRegex(deployment, r'svc_db\[\("`\*\*db\*\*')
+
+
 class FactsOnlyContainerDiagramTest(unittest.TestCase):
     def test_bookshop_edges_use_the_code_evidence(self):
         from helpers import run_analyzer
