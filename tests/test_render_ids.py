@@ -132,6 +132,54 @@ class FlowDiagramKeywordTest(unittest.TestCase):
         self.assertIn("box", mermaid, f"'box' participant not found in:\n{mermaid}")
 
 
+class ExactIdsTest(unittest.TestCase):
+    """Ids are readable, unique within a diagram, and never a reserved word."""
+
+    def test_flow_participant_named_box_gets_a_safe_id(self):
+        model = _make_minimal_model(
+            people=[{"id": "box", "name": "Box Person"}],
+            containers=[{"id": "svc", "name": "MyService"}],
+            flows=[{"name": "Main", "steps": [{"from": "box", "to": "svc", "description": "Request"}]}],
+        )
+        _, _, mermaid, _ = render_c4.flow_diagrams(model, {"containers": []})[0]
+        self.assertIn("actor box_2 as Box Person", mermaid)
+        self.assertIn("box_2->>svc: Request", mermaid)
+
+    def test_container_named_boundary_and_the_boundary_differ(self):
+        model = _make_minimal_model(
+            containers=[{"id": "boundary", "name": "Boundary service", "technology": "Python"}],
+        )
+        mermaid = render_c4.container_diagram(model)
+        self.assertIn('subgraph boundary["', mermaid)
+        self.assertIn('boundary_2["', mermaid)
+
+    def test_ids_that_slug_alike_stay_distinct(self):
+        model = _make_minimal_model(
+            containers=[
+                {"id": "orders-api", "name": "Orders API"},
+                {"id": "orders_api", "name": "Orders API v2"},
+            ],
+            relationships=[{"from": "orders-api", "to": "orders_api", "description": "Calls"}],
+        )
+        mermaid = render_c4.container_diagram(model)
+        self.assertIn('orders_api["', mermaid)
+        self.assertIn('orders_api_2["', mermaid)
+        self.assertIn("orders_api -->", mermaid)
+        self.assertIn(" orders_api_2\n", mermaid)
+
+    def test_backticks_in_text_cannot_end_the_label(self):
+        model = _make_minimal_model(
+            containers=[{"id": "api", "name": "API `v2`", "description": "Serves `GET /books`"}],
+        )
+        mermaid = render_c4.container_diagram(model)
+        # Every backtick is a "`…`" delimiter: none inside label text.
+        import re
+        labels = re.findall(r'"`(.*?)`"', mermaid, re.S)
+        self.assertEqual(mermaid.count("`"), 2 * len(labels), mermaid)
+        self.assertTrue(all("`" not in label for label in labels))
+        self.assertIn("Serves 'GET /books'", mermaid)
+
+
 class AdversarialCorpusTest(unittest.TestCase):
     """AC11: adversarial corpus renders with mmdc and SVG contains expected labels."""
 

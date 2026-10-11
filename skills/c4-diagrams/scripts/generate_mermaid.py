@@ -4,9 +4,9 @@ import re
 from scripts import mermaid_syntax as _ms
 
 
-def _node_ids(names):
-    """Mermaid IDs must be plain identifiers; delegates to mermaid_syntax (SPEC-04)."""
-    alloc = _ms.IdAllocator("flowchart")
+def _node_ids(names, alloc=None):
+    """Mermaid ids are plain identifiers; the real names go in the labels."""
+    alloc = alloc or _ms.IdAllocator("flowchart")
     return {name: alloc.id(name) for name in names}
 
 
@@ -32,18 +32,19 @@ def generate_mermaid(graph, groups=None):
         if target not in graph
     })
 
-    ids = _node_ids(list(graph) + external)
+    alloc = _ms.IdAllocator("flowchart")
+    ids = _node_ids(list(graph) + external, alloc)
 
     by_group = {}
 
     for name in graph:
         by_group.setdefault(groups.get(name, ""), []).append(name)
 
-    group_ids = _node_ids([
-        f"group_{group}"
+    group_ids = {
+        f"group_{group}": alloc.internal(f"group_{group}")
         for group in by_group
         if group
-    ])
+    }
 
     lines = [
         "graph TD"

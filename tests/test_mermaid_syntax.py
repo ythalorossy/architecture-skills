@@ -70,45 +70,68 @@ class SequenceKeywordTest(unittest.TestCase):
             )
 
 
-@unittest.skipUnless(_MERMAID_SYNTAX_AVAILABLE, "mermaid_syntax module not yet implemented")
-class IdUniquenessOrderTest(unittest.TestCase):
-    """AC3: distinct keys get distinct ids; order of addition doesn't matter."""
+class IdUniquenessTest(unittest.TestCase):
+    """Within one diagram, different keys never share an id, and ids stay readable."""
 
-    def test_ids_unique_and_order_independent(self):
-        # Three keys that produce the same base id must still be distinct in output.
-        keys = ["a.b", "a-b", "a_b"]
-        ids_forward = [mermaid_syntax.safe_id("flowchart", k) for k in keys]
-        ids_backward = [mermaid_syntax.safe_id("flowchart", k) for k in reversed(keys)]
-        self.assertEqual(set(ids_forward), set(ids_backward), "id set differs by order")
-        self.assertEqual(len(ids_forward), len(set(ids_forward)), "ids are not unique")
+    def test_keys_with_the_same_slug_get_distinct_ids(self):
+        alloc = mermaid_syntax.IdAllocator("flowchart")
+        keys = ["a.b", "a-b", "a_b", "a b", "a/b"]
+        ids = [alloc.id(k) for k in keys]
+        self.assertEqual(len(set(ids)), len(keys), ids)
+        self.assertEqual(ids[0], "a_b")
+        self.assertEqual(ids[1:], ["a_b_2", "a_b_3", "a_b_4", "a_b_5"])
 
-    def test_same_key_same_id_regardless_of_context(self):
-        # Adding other keys must not change the id of an existing key.
-        id_alone = mermaid_syntax.safe_id("flowchart", "my_service")
-        id_with_others = []
-        for other in ["other_service", "another_service", "yet_another_service"]:
-            id_with_others.append(mermaid_syntax.safe_id("flowchart", other))
-        id_after = mermaid_syntax.safe_id("flowchart", "my_service")
-        self.assertEqual(id_alone, id_after, "id changed when other keys were added")
+    def test_same_key_keeps_its_id(self):
+        alloc = mermaid_syntax.IdAllocator("flowchart")
+        first = alloc.id("db-sql-server")
+        for other in ("db-sql-server-2", "db_sql_server", "x"):
+            alloc.id(other)
+        self.assertEqual(alloc.id("db-sql-server"), first)
+
+    def test_ids_are_readable_slugs(self):
+        alloc = mermaid_syntax.IdAllocator("flowchart")
+        self.assertEqual(alloc.id("db-sql-server"), "db_sql_server")
+        self.assertEqual(alloc.id("ext-api.short.io"), "ext_api_short_io")
+        self.assertEqual(alloc.id("2fa-service"), "n_2fa_service")
+
+    def test_many_random_keys_are_unique_and_valid(self):
+        import random
+        rng = random.Random(7)
+        alphabet = "ab-_. /1"
+        keys = {"".join(rng.choice(alphabet) for _ in range(rng.randint(1, 4))) for _ in range(500)}
+        alloc = mermaid_syntax.IdAllocator("flowchart")
+        ids = [alloc.id(k) for k in sorted(keys)]
+        self.assertEqual(len(set(ids)), len(keys))
+        for value in ids:
+            self.assertRegex(value, r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
-@unittest.skipUnless(_MERMAID_SYNTAX_AVAILABLE, "mermaid_syntax module not yet implemented")
+class BacktickTest(unittest.TestCase):
+    """A backtick would close the "`…`" markdown string that holds a label."""
+
+    def test_backticks_never_survive_flowchart_escaping(self):
+        for kind in ("flowchart_md", "flowchart_plain"):
+            self.assertNotIn("`", mermaid_syntax.label_text(kind, "call `api` now"), kind)
+
+
 class InternalNamespaceTest(unittest.TestCase):
-    """AC4: internal nodes can't collide with model ids."""
+    """Internal nodes share the diagram's allocator, so they can't collide with model ids."""
 
-    def test_internal_system_does_not_collide_with_model_system(self):
-        internal = mermaid_syntax.internal_id("system")
-        model = mermaid_syntax.safe_id("flowchart", "__system__")
-        self.assertNotEqual(internal, model, "internal __system__ collides with model __system__")
+    def test_model_id_named_like_an_internal_node(self):
+        for internal_first in (True, False):
+            alloc = mermaid_syntax.IdAllocator("flowchart")
+            if internal_first:
+                internal, model = alloc.internal("boundary"), alloc.id("boundary")
+            else:
+                model, internal = alloc.id("boundary"), alloc.internal("boundary")
+            self.assertNotEqual(internal, model)
+            self.assertEqual({internal, model}, {"boundary", "boundary_2"})
 
-    def test_internal_boundary_does_not_collide_with_model_boundary(self):
-        internal = mermaid_syntax.internal_id("boundary")
-        model = mermaid_syntax.safe_id("flowchart", "__boundary__")
-        self.assertNotEqual(internal, model, "internal __boundary__ collides with model __boundary__")
-
-    def test_internal_id_matches_identifier_pattern(self):
-        internal = mermaid_syntax.internal_id("system")
-        self.assertRegex(internal, r"[A-Za-z_][A-Za-z0-9_]*")
+    def test_internal_key_round_trips_through_id(self):
+        alloc = mermaid_syntax.IdAllocator("flowchart")
+        key = mermaid_syntax.IdAllocator.internal_key("system")
+        self.assertEqual(alloc.id(key), alloc.internal("system"))
+        self.assertEqual(alloc.internal("system"), "system")
 
 
 @unittest.skipUnless(_MERMAID_SYNTAX_AVAILABLE, "mermaid_syntax module not yet implemented")
@@ -259,15 +282,12 @@ class ReportProseTest(unittest.TestCase):
 class DeprecatedWrapperTest(unittest.TestCase):
     """Verify _node_ids wrapper still works for backward compatibility."""
 
-    def test_node_ids_still_works(self):
+    def test_node_ids_avoids_keywords_and_collisions(self):
         from scripts.generate_mermaid import _node_ids
-        ids = _node_ids(["end", "graph", "a.b"])
-        self.assertEqual(len(ids), 3)
-        # end and graph are keywords, should be transformed
-        self.assertNotEqual(ids["end"].lower(), "end")
-        self.assertNotEqual(ids["graph"].lower(), "graph")
-        # a.b should be unique from a-b and a_b
-        self.assertNotEqual(ids["a.b"], "a_b")
+        ids = _node_ids(["end", "graph", "a.b", "a_b"])
+        self.assertEqual(ids["end"], "end_2")
+        self.assertEqual(ids["graph"], "graph_2")
+        self.assertEqual((ids["a.b"], ids["a_b"]), ("a_b", "a_b_2"))
 
     def test_label_still_works(self):
         from scripts.generate_mermaid import _label
