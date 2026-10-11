@@ -84,29 +84,6 @@ def generate_mermaid(graph, groups=None):
     return "\n".join(lines) + "\n"
 
 
-def render_svg(mermaid_file, svg_file, timeout=180):
-    """
-    Thin compatibility wrapper: calls svg_render.render() for a single stem
-    and returns True/False for backwards compatibility with callers that use it
-    as a predicate.
-
-    The timeout argument is accepted but ignored (the new pipeline uses its own
-    bounded timeouts per SPEC-05).
-    """
-    from scripts import svg_render as _sr
-
-    stem = Path(svg_file).stem
-    results = _sr.render(
-        [(stem, Path(mermaid_file))],
-        Path(svg_file).parent,
-    )
-    # Return True only if the stem succeeded
-    for r in results:
-        if r.stem == stem:
-            return r.status == "ok"
-    return False
-
-
 def save_mermaid(graph, output_file, groups=None):
     content = generate_mermaid(graph, groups)
 

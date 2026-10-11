@@ -11,7 +11,6 @@ import re
 import tempfile
 import unittest
 from pathlib import Path
-from unittest import mock
 
 from helpers import SKILL
 from scripts import analyze_repository, code_diagrams, render_c4
@@ -43,10 +42,8 @@ class ReferenceExampleTest(unittest.TestCase):
         cls._output = tempfile.TemporaryDirectory()
         cls.output = Path(cls._output.name)
         # The real analyzer, without the SVG step (it needs Node.js and the network).
-        with mock.patch.object(analyze_repository, "render_svg", return_value=False), \
-                mock.patch.object(render_c4, "render", return_value={"status": "ok", "errors": [], "drift": [], "warnings": []}), \
-                contextlib.redirect_stdout(io.StringIO()):
-            analyze_repository.RepositoryAnalyzer(str(FIXTURE), str(cls.output)).run()
+        with contextlib.redirect_stdout(io.StringIO()):
+            analyze_repository.RepositoryAnalyzer(str(FIXTURE), str(cls.output), no_svg=True).run()
         cls.facts = json.loads((cls.output / "c4-facts.json").read_text(encoding="utf-8"))
 
     @classmethod

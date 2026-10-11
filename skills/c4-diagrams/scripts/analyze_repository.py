@@ -1,7 +1,6 @@
 from pathlib import Path
 import argparse
 import json
-import os
 import sys
 
 # Allow running as a plain script from any directory, not only
@@ -19,7 +18,7 @@ require_python()
 from scripts.detect_stack import detect_stack
 from scripts.scan_repo import scan_repo
 from scripts.build_graph import build_dependency_graph, build_groups
-from scripts.generate_mermaid import generate_mermaid, render_svg
+from scripts.generate_mermaid import generate_mermaid
 from scripts.generate_docs import analyze_graph, generate_report
 from scripts.c4_facts import collect_facts
 from scripts.render_c4 import render as render_c4
@@ -31,14 +30,18 @@ from scripts.diagnostics import DiagnosticsCollector
 
 class RepositoryAnalyzer:
     def __init__(self, repo_path: str, output_path: str, no_svg: bool = False,
-                 svg: bool = True, strict: bool = False, timestamp: bool = False):
+                 strict: bool = False, timestamp: bool = False):
         self.repo_path = Path(repo_path).resolve()
         self.output_path = Path(output_path).resolve()
         self.no_svg = no_svg
-        self.svg = svg        # --svg flag: also render C4 SVGs (D3 / SPEC-05)
         self.strict = strict
         self.timestamp = timestamp
         self._collector: DiagnosticsCollector | None = None
+
+    def _render_svg(self):
+        """SVGs are rendered unless --no-svg or C4_SVG=0 turns them off."""
+        from scripts import svg_render as _sr
+        return not self.no_svg and not _sr.disabled_by_env()
 
     def run(self):
         self._validate_repository()
@@ -170,7 +173,7 @@ class RepositoryAnalyzer:
 
         self._dep_svg_result = None
 
-        if dependency_graph and not self.no_svg and os.environ.get("C4_SVG", "1") not in ("0", "false", "no"):
+        if dependency_graph and self._render_svg():
             print("Rendering diagram to SVG...")
 
             from scripts import svg_render as _sr
@@ -187,7 +190,7 @@ class RepositoryAnalyzer:
                     f"WARNING: {self._dep_svg_result.stem}: "
                     f"{self._dep_svg_result.status} — {self._dep_svg_result.message}"
                 )
-        elif self.no_svg or os.environ.get("C4_SVG", "1") in ("0", "false", "no"):
+        elif not self._render_svg():
             from scripts import svg_render as _sr
             self._dep_svg_result = _sr.Result("dependency-graph", "skipped", "rendering disabled", 0.0)
 
@@ -241,16 +244,13 @@ class RepositoryAnalyzer:
 
         print("Drawing C4 diagrams...")
 
-        # D3: analyzer default renders only dependency-graph.svg.
-        # --svg adds C4 SVGs. --no-svg renders nothing.
-        render_c4_svg = self.svg and not self.no_svg
 
         # An existing c4-model.json (written by the agent or edited by the user)
         # is kept. On drift (new facts not covered) it is rendered and the
         # unreviewed facts are listed; on invalid (unknown ids, missing
         # elements) it falls back to facts-only.  c4-model.json is never
         # modified.
-        result = render_c4(self.output_path, svg=render_c4_svg, collector=self._collector)
+        result = render_c4(self.output_path, svg=self._render_svg(), collector=self._collector)
         model_status = result["status"]
         model_errors = result["errors"]
         # render() already drew the facts-only model when the model is invalid,
@@ -479,20 +479,17 @@ def parse_arguments():
         "--no-svg",
         action="store_true",
         help=(
-            "Skip SVG rendering so the output is byte-identical without "
-            "Node.js and @mermaid-js/mermaid-cli (recommended for CI and "
-            "golden-file tests)"
+            "Skip SVG rendering; the report then shows the Mermaid source. "
+            "C4_SVG=0 in the environment does the same."
         ),
     )
 
     parser.add_argument(
         "--svg",
         action="store_true",
-        help=(
-            "Also render the C4 SVGs (container, component, deployment, etc.). "
-            "By default only the dependency-graph SVG is rendered. "
-            "C4_SVG=0 in the environment acts like --no-svg."
-        ),
+        # Accepted so scripts written for 3.3.0-3.3.2 keep working; SVGs are
+        # rendered by default again.
+        help=argparse.SUPPRESS,
     )
 
     parser.add_argument(
@@ -529,7 +526,6 @@ def main():
         repo_path=args.repository,
         output_path=args.output or default_output_path(args.repository),
         no_svg=args.no_svg,
-        svg=args.svg,
         strict=args.strict,
         timestamp=args.timestamp,
     )

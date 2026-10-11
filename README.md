@@ -110,7 +110,7 @@ If your system Python is older, install a newer one with your package manager, [
 
 ### Node.js and mermaid-cli (optional, for the SVG)
 
-The report embeds the diagrams as SVGs so they show in any Markdown viewer, including VS Code's built-in preview, which doesn't render Mermaid. The analyzer uses `mmdc` if it's on your PATH, and otherwise falls back to `npx -y @mermaid-js/mermaid-cli@10.9.1` (pinned version).
+The report embeds the diagrams as SVGs so they show in any Markdown viewer, including VS Code's built-in preview, which doesn't render Mermaid. The analyzer uses `mmdc` if it's on your PATH, and otherwise falls back to `npx -y @mermaid-js/mermaid-cli@12.0.0` (pinned version).
 
 Install mermaid-cli once, globally:
 
@@ -120,9 +120,9 @@ npm install -g @mermaid-js/mermaid-cli
 mmdc --version
 ```
 
-Installing it ahead of time is recommended. With the `npx` fallback, the first run downloads mermaid-cli and a headless Chrome (a few hundred MB), which can exceed the analyzer's timeout. The first invocation uses an offline cache attempt; if that fails with `ENOTCACHED` it retries online.
+Installing it ahead of time is recommended. With the `npx` fallback, the first run downloads mermaid-cli and a headless Chrome (a few hundred MB). Each diagram tries npm's cache first and goes online only if the package isn't cached (`ENOTCACHED`). The timeouts are 180 s per diagram and 600 s for that first download; `C4_SVG_TIMEOUT_PER_DIAGRAM` and `C4_SVG_TIMEOUT_INSTALL` change them.
 
-Each SVG render returns a status: `ok` (SVG written), `syntax-error` (bug in the diagram — fix the model), `timeout` (diagram too complex), `tool-error` (other failure), `missing-tool` (neither mmdc nor npx found), or `skipped` (skipped after an earlier failure). A degraded run (any SVG failure) exits 0 but sets `status: degraded` in `summary.json`.
+Each SVG render returns a status: `ok` (SVG written), `syntax-error` (bug in the diagram — fix the model), `timeout` (diagram too complex), `tool-error` (other failure), `missing-tool` (neither mmdc nor npx found), or `skipped` (rendering turned off, or the renderer itself failed to start or timed out on the first diagram). A degraded run (any SVG failure) exits 0 but sets `status: degraded` in `summary.json`.
 
 Use `--no-svg` or set `C4_SVG=0` in the environment to skip all SVG rendering (useful in CI or when Node.js is absent). Without Node.js the analysis still works; the report then contains only the Mermaid source, and the script prints a warning.
 
