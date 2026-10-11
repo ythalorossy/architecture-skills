@@ -104,9 +104,6 @@ class RepositoryAnalyzer:
 
         c4 = self._generate_c4(dependency_graph, index=index, discovery=discovery)
 
-        # Merge diagnostics from the collector into the c4 section
-        c4.update(self._collector.summary_dict())
-
         summary = self._generate_summary(
             stacks,
             scan_results,

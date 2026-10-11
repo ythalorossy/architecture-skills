@@ -90,93 +90,31 @@ class TestDriftOnRerun(unittest.TestCase):
 
 
 class TestInvalidModel(unittest.TestCase):
-    """AC4: unknown relationship id -> invalid, facts-only, errors listed."""
+    """An invalid model is reported in summary.json and the facts-only diagrams are drawn."""
 
     def setUp(self):
-        self.maxDiff = 0x10000
         self.tmp = Path(tempfile.mkdtemp())
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def test_unknown_relationship_id_gives_invalid(self):
-        """
-        A c4-model.json with an unknown relationship id makes model_status == "invalid"
-        and the render falls back to facts-only.
-        """
-        fixture = self.tmp / "repo"
-        shutil.copytree(BOOKSHOP, fixture)
-        model_src = fixture / "c4-model.json"
-
+    def test_unknown_relationship_id_is_invalid_in_the_summary(self):
         out = self.tmp / "out"
         out.mkdir()
-        run_analyzer(fixture, out)
-        shutil.copy(model_src, out / "c4-model.json")
+        model = json.loads((BOOKSHOP / "c4-model.json").read_text(encoding="utf-8"))
+        model["relationships"].append({"from": "bookshop-api", "to": "nonexistent-system", "description": "Calls"})
+        (out / "c4-model.json").write_text(json.dumps(model), encoding="utf-8")
 
-        # Corrupt the model: add a relationship with an unknown id
-        model_path = out / "c4-model.json"
-        model = json.loads(model_path.read_text(encoding="utf-8"))
-        model["relationships"].append({
-            "from": "bookshop-api",
-            "to": "nonexistent-system",
-            "description": "Calls a system that does not exist",
-            "technology": "HTTPS"
-        })
-        model_path.write_text(json.dumps(model, indent=2), encoding="utf-8")
+        _, summary = run_analyzer(BOOKSHOP, out)
 
-        # Re-render with render_c4 directly (analyzer's run() already happened)
-        from scripts.render_c4 import render
-        from scripts.diagnostics import DiagnosticsCollector
-
-        collector = DiagnosticsCollector()
-        result = render(out, svg=False, collector=collector)
-
-        self.assertEqual(collector.model_status(), "invalid")
-        self.assertTrue(len(collector.model_errors()) > 0)
-        # Invalid model -> collector's summary reflects facts_only via model_status
-        summary = collector.summary_dict()
-        self.assertEqual(summary.get("model_status"), "invalid")
-
-    def test_invalid_errors_listed_in_summary_after_rerender(self):
-        """
-        After re-rendering with an invalid model, summary.json contains
-        the model_errors.
-        """
-        fixture = self.tmp / "repo"
-        shutil.copytree(BOOKSHOP, fixture)
-        model_src = fixture / "c4-model.json"
-
-        out = self.tmp / "out"
-        out.mkdir()
-        run_analyzer(fixture, out)
-        shutil.copy(model_src, out / "c4-model.json")
-
-        # Corrupt the model
-        model_path = out / "c4-model.json"
-        model = json.loads(model_path.read_text(encoding="utf-8"))
-        model["relationships"].append({
-            "from": "bookshop-api",
-            "to": "unknown-id",
-            "description": "broken relationship",
-            "technology": "HTTP"
-        })
-        model_path.write_text(json.dumps(model, indent=2), encoding="utf-8")
-
-        # Re-render and update summary
-        from scripts.render_c4 import render
-        from scripts.diagnostics import DiagnosticsCollector
-
-        collector = DiagnosticsCollector()
-        result = render(out, svg=False, collector=collector)
-
-        summary_path = out / "summary.json"
-        summary = json.loads(summary_path.read_text(encoding="utf-8"))
-        summary["c4"].update(collector.summary_dict())
-        summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
-
-        summary = json.loads(summary_path.read_text(encoding="utf-8"))
-        errors = summary["c4"].get("model_errors", [])
-        self.assertTrue(len(errors) > 0, "model_errors must not be empty for invalid status")
+        self.assertEqual(summary["c4"]["model_status"], "invalid")
+        self.assertEqual(summary["c4"]["model"], "facts-only")
+        self.assertTrue(any("nonexistent-system" in e for e in summary["c4"]["model_errors"]))
+        self.assertEqual(summary["status"], "degraded")
+        self.assertTrue(any(w["kind"] == "model_error" for w in summary["warnings"]))
+        # The user's model is kept as written.
+        self.assertIn("nonexistent-system", (out / "c4-model.json").read_text(encoding="utf-8"))
+        self.assertFalse((out / "c4-context.mmd").exists(), "the System Context needs a valid model")
 
 
 if __name__ == "__main__":

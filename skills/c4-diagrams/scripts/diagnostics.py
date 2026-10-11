@@ -20,14 +20,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-def _is_invalid(diagnostic: "Diagnostic") -> bool:
-    """Legacy text rule for model_warning: 'unknown' or 'not found' about an id -> invalid."""
-    lc = diagnostic.message.lower()
-    if "was found in the code but is not in the model" in lc:
-        return False
-    return "unknown" in lc or ("not found" in lc and "type" not in lc)
-
-
 @dataclass
 class Diagnostic:
     source: str       # module / script name, e.g. "python_projects"
@@ -76,7 +68,7 @@ class DiagnosticsCollector:
         an invalid c4-model.json. Drift (facts the model doesn't cover yet)
         is the normal state after the code changes, so it isn't degraded.
         """
-        return self._degraded or self.model_status() == "invalid"
+        return self._degraded
 
     # ------------------------------------------------------------------
     # Public API – call these from detectors and scripts
@@ -152,48 +144,3 @@ class DiagnosticsCollector:
             for d in self._list
             if d.kind == "skipped"
         ]
-
-    def model_status(self) -> str:
-        """
-        One of 'ok' | 'drift' | 'invalid' based on model-tier diagnostics.
-
-        'invalid' – a model_error was recorded, or a model-tier message names an
-                    unknown id or a missing element
-        'drift'   – model-tier messages that are not invalid
-        'ok'      – no model-tier diagnostics
-
-        Callers that know the tier use model_error; model_warning messages are
-        classified by their text (legacy contract, see _is_invalid).
-        """
-        if any(d.kind == "model_error" for d in self._list):
-            return "invalid"
-        model = [d for d in self._list if d.kind == "model"]
-        if not model:
-            return "ok"
-        return "invalid" if any(_is_invalid(d) for d in model) else "drift"
-
-    def model_errors(self) -> list[str]:
-        """Model-tier error messages (invalid only)."""
-        if self.model_status() != "invalid":
-            return []
-        return [d.message for d in self._list if d.kind == "model_error" or (d.kind == "model" and _is_invalid(d))]
-
-    def drift(self) -> list[dict]:
-        """Drift entries: model-tier diagnostics that are not invalid."""
-        if self.model_status() != "drift":
-            return []
-        return [d.to_dict() for d in self._list if d.kind == "model"]
-
-    def summary_dict(self) -> dict:
-        """
-        Complete diagnostics dict for the 'c4' section of summary.json.
-        """
-        status = self.model_status()
-        result: dict = {
-            "model_status": status,
-        }
-        if status == "invalid":
-            result["model_errors"] = self.model_errors()
-        elif status == "drift":
-            result["drift"] = self.drift()
-        return result
