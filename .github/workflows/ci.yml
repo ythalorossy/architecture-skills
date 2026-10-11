@@ -95,6 +95,11 @@ jobs:
         with:
           node-version: "22"
 
+      # Ubuntu 24.04 runners block the unprivileged user namespaces that
+      # headless Chrome's sandbox needs ("Failed to launch the browser process").
+      - name: Allow Chrome's sandbox on the runner
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
       - name: Render with the real mermaid-cli
         env:
           C4_REAL_RENDER: "1"
