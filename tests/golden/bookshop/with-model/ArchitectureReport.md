@@ -325,7 +325,7 @@ No CI pipeline or hosting configuration was found in the repository.
 
 | Variable | Default | Used by | Declared in |
 |---|---|---|---|
-| `DATABASE_URL` | `postgresql://bookshop:bookshop@db:5432/bookshop` | Bookshop API | `api/bookshop/orders/service.py:27`, `docker-compose.yml:9` |
+| `DATABASE_URL` | `postgresql://bookshop:***@db:5432/bookshop` | Bookshop API | `api/bookshop/orders/service.py:27`, `docker-compose.yml:9` |
 | `PAYMENTS_URL` | `https://payments.example/v1` | — | `docker-compose.yml:9` |
 | `POSTGRES_DB` | `bookshop` | — | `docker-compose.yml:2` |
 | `POSTGRES_PASSWORD` | — | — | `docker-compose.yml:2` |

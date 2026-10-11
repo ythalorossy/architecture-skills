@@ -59,7 +59,7 @@
         "environment": {
           "POSTGRES_DB": "acme",
           "POSTGRES_USER": "acme",
-          "POSTGRES_PASSWORD": "acme"
+          "POSTGRES_PASSWORD": "***"
         },
         "file": "docker-compose.yml",
         "line": 2
@@ -75,7 +75,7 @@
           "db"
         ],
         "environment": {
-          "DATABASE_URL": "postgresql://acme:acme@db:5432/acme"
+          "DATABASE_URL": "postgresql://acme:***@db:5432/acme"
         },
         "file": "docker-compose.yml",
         "line": 9
@@ -90,7 +90,7 @@
     "variables": [
       {
         "name": "DATABASE_URL",
-        "default": "postgresql://acme:acme@db:5432/acme",
+        "default": "postgresql://acme:***@db:5432/acme",
         "sources": [
           "docker-compose.yml:9"
         ],

@@ -367,15 +367,20 @@ def _transitive_reduction(edges):
     current = {a: list(targets) for a, targets in edges.items()}
 
     def reachable(start, goal, skip):
-        seen, stack = set(), [t for t in current.get(start, []) if (start, t) != skip]
+        # The skipped edge must stay out of every step: through a cycle the
+        # search can come back to `start` and would otherwise follow it.
+        seen, stack = set(), [start]
         while stack:
             node = stack.pop()
-            if node == goal:
-                return True
             if node in seen:
                 continue
             seen.add(node)
-            stack += current.get(node, [])
+            for target in current.get(node, []):
+                if (node, target) == skip:
+                    continue
+                if target == goal:
+                    return True
+                stack.append(target)
         return False
 
     for a in sorted(current):

@@ -89,7 +89,7 @@ No CI pipeline or hosting configuration was found in the repository.
 
 | Variable | Default | Used by | Declared in |
 |---|---|---|---|
-| `DATABASE_URL` | `postgresql://acme:acme@db:5432/acme` | — | `docker-compose.yml:9` |
+| `DATABASE_URL` | `postgresql://acme:***@db:5432/acme` | — | `docker-compose.yml:9` |
 | `POSTGRES_DB` | `acme` | — | `docker-compose.yml:2` |
 | `POSTGRES_PASSWORD` | — | — | `docker-compose.yml:2` |
 | `POSTGRES_USER` | `acme` | — | `docker-compose.yml:2` |
