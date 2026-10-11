@@ -1,0 +1,15 @@
+{
+  "bookshop.main": [
+    "bookshop.orders",
+    "bookshop.search"
+  ],
+  "bookshop.orders": [
+    "bookshop.payments"
+  ],
+  "bookshop.payments": [],
+  "bookshop.search": [],
+  "web/src (files)": [
+    "web/src/api"
+  ],
+  "web/src/api": []
+}

@@ -1,0 +1,59 @@
+{
+  "repository": "bookshop",
+  "technology_stack": [
+    "Node.js",
+    "Python",
+    "React"
+  ],
+  "projects_found": 6,
+  "folders_found": 2,
+  "components_found": 6,
+  "dependencies_found": 4,
+  "test_projects": [],
+  "orphan_projects": [],
+  "duplicate_project_names": [],
+  "unresolved_references": [],
+  "cycles": [],
+  "untested_projects": [],
+  "dependency_graph_available": true,
+  "status": "ok",
+  "warnings": [],
+  "skipped_files": [],
+  "c4": {
+    "containers": 2,
+    "data_stores": 2,
+    "external_systems": 2,
+    "diagrams": [
+      "c4-container",
+      "c4-component-bookshop-api",
+      "c4-component-bookshop-web",
+      "c4-deployment"
+    ],
+    "model": "facts-only",
+    "model_errors": [],
+    "model_status": "ok",
+    "drift": [],
+    "svg": {
+      "dependency-graph": {
+        "status": "ok",
+        "message": ""
+      },
+      "c4-container": {
+        "status": "ok",
+        "message": ""
+      },
+      "c4-component-bookshop-api": {
+        "status": "ok",
+        "message": ""
+      },
+      "c4-component-bookshop-web": {
+        "status": "ok",
+        "message": ""
+      },
+      "c4-deployment": {
+        "status": "ok",
+        "message": ""
+      }
+    }
+  }
+}
