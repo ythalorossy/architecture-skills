@@ -1,0 +1,59 @@
+{
+  "solutions": [],
+  "projects": [
+    {
+      "name": "web/src (files)",
+      "path": "web/src",
+      "group": "",
+      "ecosystem": "Node.js",
+      "in_solution": null,
+      "duplicate_name": false
+    },
+    {
+      "name": "web/src/api",
+      "path": "web/src/api",
+      "group": "web",
+      "ecosystem": "Node.js",
+      "in_solution": null,
+      "duplicate_name": false
+    },
+    {
+      "name": "bookshop.main",
+      "path": "api/bookshop/main.py",
+      "group": "api",
+      "ecosystem": "Python",
+      "in_solution": null,
+      "duplicate_name": false
+    },
+    {
+      "name": "bookshop.orders",
+      "path": "api/bookshop/orders",
+      "group": "api",
+      "ecosystem": "Python",
+      "in_solution": null,
+      "duplicate_name": false
+    },
+    {
+      "name": "bookshop.payments",
+      "path": "api/bookshop/payments",
+      "group": "api",
+      "ecosystem": "Python",
+      "in_solution": null,
+      "duplicate_name": false
+    },
+    {
+      "name": "bookshop.search",
+      "path": "api/bookshop/search",
+      "group": "api",
+      "ecosystem": "Python",
+      "in_solution": null,
+      "duplicate_name": false
+    }
+  ],
+  "orphan_projects": [],
+  "duplicate_project_names": [],
+  "folders": [
+    "api",
+    "web"
+  ]
+}

@@ -1,0 +1,328 @@
+{
+  "repository": "bookshop",
+  "containers": [
+    {
+      "id": "bookshop-api",
+      "name": "bookshop-api",
+      "kind": "web-api",
+      "technology": "Python, FastAPI",
+      "path": "api",
+      "evidence": [
+        "api/pyproject.toml: FastAPI",
+        "docker-compose.yml:9 (compose service api)"
+      ],
+      "components": {
+        "nodes": {
+          "bookshop.main": {
+            "path": "api/bookshop/main.py",
+            "group": "api"
+          },
+          "bookshop.orders": {
+            "path": "api/bookshop/orders",
+            "group": "api"
+          },
+          "bookshop.payments": {
+            "path": "api/bookshop/payments",
+            "group": "api"
+          },
+          "bookshop.search": {
+            "path": "api/bookshop/search",
+            "group": "api"
+          }
+        },
+        "edges": {
+          "bookshop.main": [
+            "bookshop.orders",
+            "bookshop.search"
+          ],
+          "bookshop.orders": [
+            "bookshop.payments"
+          ],
+          "bookshop.payments": [],
+          "bookshop.search": []
+        }
+      },
+      "code_components": null,
+      "inventory": [
+        "Python >=3.11",
+        "fastapi>=0.110",
+        "uvicorn>=0.29",
+        "psycopg>=3.1",
+        "elasticsearch>=8.12",
+        "httpx>=0.27"
+      ],
+      "compose_services": [
+        "api"
+      ]
+    },
+    {
+      "id": "bookshop-web",
+      "name": "bookshop-web",
+      "kind": "web-app",
+      "technology": "React",
+      "path": "web",
+      "evidence": [
+        "web/package.json: React",
+        "docker-compose.yml:20 (compose service web)"
+      ],
+      "components": {
+        "nodes": {
+          "web/src (files)": {
+            "path": "web/src",
+            "group": ""
+          },
+          "web/src/api": {
+            "path": "web/src/api",
+            "group": "web"
+          }
+        },
+        "edges": {
+          "web/src (files)": [
+            "web/src/api"
+          ],
+          "web/src/api": []
+        }
+      },
+      "code_components": null,
+      "inventory": [
+        "react ^18.3.1",
+        "react-dom ^18.3.1",
+        "vite ^5.4.0"
+      ],
+      "compose_services": [
+        "web"
+      ]
+    }
+  ],
+  "data_stores": [
+    {
+      "id": "db-elasticsearch",
+      "name": "Elasticsearch",
+      "technology": "Elasticsearch",
+      "evidence": [
+        "api/bookshop/search/index.py:2"
+      ],
+      "used_by": [
+        "bookshop-api"
+      ],
+      "used_by_components": {
+        "bookshop-api": [
+          "bookshop.search"
+        ]
+      },
+      "used_by_code": {}
+    },
+    {
+      "id": "db-postgresql",
+      "name": "PostgreSQL",
+      "technology": "PostgreSQL",
+      "evidence": [
+        "api/bookshop/orders/service.py:2",
+        "docker-compose.yml:2"
+      ],
+      "used_by": [
+        "bookshop-api"
+      ],
+      "used_by_components": {
+        "bookshop-api": [
+          "bookshop.orders"
+        ]
+      },
+      "used_by_code": {}
+    }
+  ],
+  "external_systems": [
+    {
+      "id": "ext-covers-example",
+      "name": "covers.example",
+      "technology": "covers.example",
+      "evidence": [
+        "api/tools/import_covers.py:6"
+      ],
+      "used_by": [
+        "bookshop-api"
+      ],
+      "used_by_components": {},
+      "used_by_code": {}
+    },
+    {
+      "id": "ext-payments-example",
+      "name": "payments.example",
+      "technology": "payments.example",
+      "evidence": [
+        "api/bookshop/payments/client.py:3"
+      ],
+      "used_by": [
+        "bookshop-api"
+      ],
+      "used_by_components": {
+        "bookshop-api": [
+          "bookshop.payments"
+        ]
+      },
+      "used_by_code": {}
+    }
+  ],
+  "relationships": [
+    {
+      "from": "bookshop-api",
+      "to": "db-postgresql",
+      "description": "Depends on",
+      "technology": "",
+      "evidence": [
+        "docker-compose.yml:9"
+      ],
+      "source": "compose depends_on"
+    },
+    {
+      "from": "bookshop-web",
+      "to": "bookshop-api",
+      "description": "Depends on",
+      "technology": "",
+      "evidence": [
+        "docker-compose.yml:20"
+      ],
+      "source": "compose depends_on"
+    },
+    {
+      "from": "bookshop-web",
+      "to": "bookshop-api",
+      "description": "Calls /api (dev-server proxy to http://localhost:8000)",
+      "technology": "HTTP",
+      "evidence": [
+        "web/vite.config.ts:8"
+      ],
+      "source": "dev proxy"
+    }
+  ],
+  "endpoints": [
+    {
+      "method": "GET",
+      "path": "/api/books",
+      "file": "api/bookshop/main.py",
+      "line": 11,
+      "container": "bookshop-api"
+    },
+    {
+      "method": "POST",
+      "path": "/api/orders",
+      "file": "api/bookshop/main.py",
+      "line": 16,
+      "container": "bookshop-api"
+    }
+  ],
+  "deployment": {
+    "compose": [
+      {
+        "name": "db",
+        "image": "postgres:16",
+        "build": null,
+        "ports": [],
+        "depends_on": [],
+        "environment": {
+          "POSTGRES_DB": "bookshop",
+          "POSTGRES_USER": "bookshop",
+          "POSTGRES_PASSWORD": "***"
+        },
+        "file": "docker-compose.yml",
+        "line": 2
+      },
+      {
+        "name": "api",
+        "image": null,
+        "build": "./api",
+        "ports": [
+          "8000:8000"
+        ],
+        "depends_on": [
+          "db"
+        ],
+        "environment": {
+          "DATABASE_URL": "postgresql://bookshop:***@db:5432/bookshop",
+          "SEARCH_URL": "https://search.catalog.example",
+          "PAYMENTS_URL": "https://payments.example/v1"
+        },
+        "file": "docker-compose.yml",
+        "line": 9
+      },
+      {
+        "name": "web",
+        "image": null,
+        "build": "./web",
+        "ports": [
+          "5173:5173"
+        ],
+        "depends_on": [
+          "api"
+        ],
+        "environment": {},
+        "file": "docker-compose.yml",
+        "line": 20
+      }
+    ],
+    "dockerfiles": [],
+    "kubernetes": [],
+    "ci": [],
+    "platforms": []
+  },
+  "configuration": {
+    "variables": [
+      {
+        "name": "DATABASE_URL",
+        "default": "postgresql://bookshop:***@db:5432/bookshop",
+        "sources": [
+          "api/bookshop/orders/service.py:27",
+          "docker-compose.yml:9"
+        ],
+        "containers": [
+          "bookshop-api"
+        ]
+      },
+      {
+        "name": "PAYMENTS_URL",
+        "default": "https://payments.example/v1",
+        "sources": [
+          "docker-compose.yml:9"
+        ],
+        "containers": []
+      },
+      {
+        "name": "POSTGRES_DB",
+        "default": "bookshop",
+        "sources": [
+          "docker-compose.yml:2"
+        ],
+        "containers": []
+      },
+      {
+        "name": "POSTGRES_PASSWORD",
+        "default": null,
+        "sources": [
+          "docker-compose.yml:2"
+        ],
+        "containers": []
+      },
+      {
+        "name": "POSTGRES_USER",
+        "default": "bookshop",
+        "sources": [
+          "docker-compose.yml:2"
+        ],
+        "containers": []
+      },
+      {
+        "name": "SEARCH_URL",
+        "default": "https://search.catalog.example",
+        "sources": [
+          "api/bookshop/search/index.py:10",
+          "docker-compose.yml:9"
+        ],
+        "containers": [
+          "bookshop-api"
+        ]
+      }
+    ],
+    "files": []
+  },
+  "repository_root": "../../tests/fixtures/repos/bookshop"
+}
