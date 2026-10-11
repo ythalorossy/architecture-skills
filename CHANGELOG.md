@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **The agent's analysis is kept in the report.** `c4-model.json` takes an optional `summary` (`overview`, `findings`, `recommendations`), written into `ArchitectureReport.md` as an "Architecture overview" right after the Executive Summary. Before, the skill's findings only lived in the chat.
+- **Model checks suggest fixes.** Unknown ids suggest the closest real one (`did you mean 'bookshop-web'?`); evidence pointing at a file that doesn't exist, or past its end, is a warning; an empty name is invalid; misspelled keys and types, a fact covered twice, and an excluded entry without a reason are warnings.
+
+### Changed
+
+- SKILL.md: the description names flow, deployment and API requests and says what the skill is not for; a step asks what the script missed and to add it with evidence; `python` / `py -3` fallback; the degraded-run instructions are shorter.
+
 ## 3.3.4 — 2026-10-11
 
 ### Fixed

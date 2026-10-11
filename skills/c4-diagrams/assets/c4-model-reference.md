@@ -77,7 +77,19 @@ This is the complete model of Bookshop, a small synthetic sample system: a React
   ],
   "excluded": [
     { "id": "ext-covers-example", "reason": "Called only by a one-off import script run by hand, not by the running system" }
-  ]
+  ],
+  "summary": {
+    "overview": "Bookshop sells books online. A React web app calls a FastAPI service, which keeps orders in its own PostgreSQL database, searches a catalogue index that the catalogue team runs, and charges cards through an external payment provider.",
+    "findings": [
+      "The card is charged before the order is stored (`api/bookshop/orders/service.py:31-32`): if the insert fails, the reader has paid and no order exists.",
+      "The charge is sent without an idempotency key (`api/bookshop/payments/client.py:10`), so a retried request can charge the card twice.",
+      "Search goes straight to another team's index (`api/bookshop/search/index.py:13`), with no fallback when it is unavailable."
+    ],
+    "recommendations": [
+      "Store the order as pending before charging, then mark it paid; refund when the update fails.",
+      "Send an idempotency key with each charge so the request can be retried safely."
+    ]
+  }
 }
 ```
 
@@ -91,6 +103,7 @@ This is the complete model of Bookshop, a small synthetic sample system: a React
 - **`components`** gives a one-line description per component, keyed by container id and then a component id from `c4-facts.json`: a module (`containers[].components.nodes`) or a package/namespace inside one (`containers[].code_components.nodes`, ids like `module::package`). Describe the important ones; the nodes and edges themselves come from the code and can't be changed in the model.
 - **`flows`** are the key request paths, drawn as sequence diagrams. Each has an `id`, a `name`, an optional `description` and ordered `steps`. A step's `from`/`to` is a person, container or external system id, or a component id (module or `module::package`) when the step happens inside a container. Optional per step: `technology`, `"reply": true` (dashed return arrow), `"async": true`, and `note`. Trace real code paths: 1–3 flows of 4–10 steps each, starting from an endpoint, UI action, CLI command or scheduled job you can point to.
 - **`code`** (Level 4) lists the 2–5 key components to draw as class diagrams. Each entry has `container` (a model container id), `component` (a module or `module::package` id from `c4-facts.json`), an optional `description`, and optional `types` to center the diagram on (they are drawn with their direct neighbours). Without `types` the most connected types are drawn, at most 12. Type names must exist in that component's code: `render_c4.py` fails and suggests close names otherwise. Pick components with behaviour, not model or DTO folders.
+- **`summary`** is your own analysis, written into `ArchitectureReport.md` as an "Architecture overview" right after the Executive Summary: an `overview` paragraph (what the system does and how it is built), `findings` (what matters for the team: risks, coupling, missing pieces, each with a `file:line`), and `recommendations` (each backed by a finding). All three are optional; leave out what you have nothing evidence-based to say about.
 - **Ids** are short kebab-case strings, unique across people, containers and external systems. Keep fact ids as they are so re-runs line up.
 
 ## Re-running
