@@ -1,0 +1,15 @@
+graph TD
+    web_src__files["web/src (files)"]
+    subgraph group_api["api"]
+        bookshop_main["bookshop.main"]
+        bookshop_orders["bookshop.orders"]
+        bookshop_payments["bookshop.payments"]
+        bookshop_search["bookshop.search"]
+    end
+    subgraph group_web["web"]
+        web_src_api["web/src/api"]
+    end
+    bookshop_main --> bookshop_orders
+    bookshop_main --> bookshop_search
+    bookshop_orders --> bookshop_payments
+    web_src__files --> web_src_api
