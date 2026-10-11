@@ -356,16 +356,41 @@ def _python_imports(files):
     return names
 
 
+def _requirements_services(repo, index, packaged):
+    """
+    Folders with their own requirements*.txt and no pyproject.toml/setup.py:
+    small services often have only that. One candidate each; folders inside
+    a packaged distribution, tests and docs are skipped.
+    """
+    def wanted(name):
+        return re.match(r"requirements.*\.txt$", name)
+
+    files = index.walk(wanted) if index is not None else walk_files(repo, wanted)
+    folders = set()
+    for file in files:
+        folder = file.parent.resolve()
+        parts = [p.lower() for p in folder.relative_to(repo).parts]
+        if any(p in TEST_DIRS or p in ("docs", "doc") for p in parts):
+            continue
+        if any(folder == d or folder.is_relative_to(d) for d in packaged):
+            continue
+        folders.add(folder)
+    return [
+        {"name": folder.name if folder != repo else repo.name, "directory": folder, "file": None, "requirements": []}
+        for folder in sorted(folders)
+    ]
+
+
 def _python_containers(repo, index):
+    repo = Path(repo).resolve()
     distributions = _distributions(repo, index)
-    if not distributions:
-        if not any(index.walk(lambda name: re.match(r"requirements.*\.txt$", name)) if index else walk_files(repo, lambda name: re.match(r"requirements.*\.txt$", name))):
-            return []
-        distributions = [{"name": repo.name, "directory": repo, "file": None, "requirements": []}]
+    distributions += _requirements_services(repo, index, [d["directory"] for d in distributions])
 
     containers = []
     for dist in distributions:
         directory = dist["directory"]
+        # A service inside this folder scans its own code, not this one's.
+        nested = [d["directory"] for d in distributions if d["directory"] != directory and d["directory"].is_relative_to(directory)]
         requirements = set(dist["requirements"])
         for req_file in directory.glob("requirements*.txt"):
             for line in _file_text(req_file).splitlines():
@@ -373,7 +398,11 @@ def _python_containers(repo, index):
                 if match:
                     requirements.add(normalize(match.group(1)))
 
-        code = [f for f in _python_files(directory, index) if not any(p in TEST_DIRS for p in f.relative_to(directory).parts[:-1])]
+        code = [
+            f for f in _python_files(directory, index)
+            if not any(p in TEST_DIRS for p in f.relative_to(directory).parts[:-1])
+            and not any(f.is_relative_to(n) for n in nested)
+        ]
         imports = _python_imports(code)
         names = {normalize(n) for n in requirements} | {normalize(n) for n in imports}
         kinds = _signal_match(names, [(normalize(n), k, t) for n, k, t in PYTHON_CONTAINER_SIGNALS])

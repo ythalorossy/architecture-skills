@@ -60,6 +60,7 @@ python3 "<skill>/scripts/analyze_repository.py" "<repository_path>"
 - **`parse`** / **`skipped`** (also listed in `skipped_files`): files that could not be parsed or read. Tell the user which and why.
 - **`render`**: a diagram failed to render. A `syntax-error` is a bug in the diagram, often a label in the model: fix it and re-run `render_c4.py`. Report `timeout` and `tool-error` to the user.
 - **`model_error`** (`c4.model_status: "invalid"`): the model fell back to facts-only. Fix the listed errors and re-run `render_c4.py`.
+- **`detection`** (not degraded): nothing runnable was found, so the whole repository is one box. Find the runnable parts in the code and describe them in the model.
 
 `c4.model_status: "drift"` (not degraded) means new facts aren't in the model yet: add them, or list them in `excluded` with a reason, and re-run `render_c4.py`. With `--strict` a degraded run exits 2; otherwise 0.
 
