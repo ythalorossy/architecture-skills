@@ -3,7 +3,7 @@
 Each test reads `build_dependency_graph(fixture)` and asserts the project
 names AND the dependency edges it observes. These are *characterisation*
 tests: they pin the current behaviour of the detectors so that any change
-to a detector's output shows up here. Per AC2, multi-module structure must
+to a detector's output shows up here. Multi-module structure must
 be asserted, not just membership, so each fixture has at least one
 producer and one consumer, and the consumer's edge list is checked.
 """

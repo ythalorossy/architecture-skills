@@ -1,33 +1,24 @@
 # Dev-tool configuration only.
 #
-# This repository is NOT a pip package and is never installed: the skill is run
-# as plain scripts from skills/c4-diagrams/scripts/. Deliberately no [project]
-# table, no build-system and no dependency declarations, so nothing here can be
-# mistaken for runtime metadata. The runtime stays stdlib-only (SPEC-02 D6);
-# coverage and ruff are dev-only and are installed in .github/workflows/ci.yml.
-#
-# SPEC-15 extends this rule set (F401, F811, F841, F601, E501, I) together with
-# the reformat that goes with it. Until then the selection is the minimal
-# "would this file even parse / does it reference a name that does not exist"
-# set from the ruff docs, chosen so it stays green on the current codebase.
+# This repository is not a pip package and is never installed: the skill runs
+# as plain scripts from skills/c4-diagrams/scripts/. There is deliberately no
+# [project] table, build-system or dependency list, so nothing here can be
+# mistaken for runtime metadata. The runtime is stdlib-only; coverage and ruff
+# are dev tools, installed in .github/workflows/ci.yml.
 
 [tool.ruff]
-# The floor this skill supports (SPEC-02 D1). Also stops ruff suggesting
-# rewrites into syntax that older interpreters cannot run.
+# The oldest Python the skill supports. Also stops ruff suggesting syntax
+# that older interpreters can't run.
 target-version = "py311"
-
-# Not enforced by the current selection; set ahead of SPEC-15, which turns on
-# E501 at this width.
 line-length = 120
 
-# SPEC-02 ships two trees that are NOT first-party code:
-#   * tests/fixtures/** — minimal third-party repositories used as analyzer
-#     input; SPEC-02 deliberately makes some of them malformed (non-UTF-8
-#     files, unreadable directories, symlinks). Ruff findings there would be
-#     about the fixture, not about us.
-#   * tests/golden/**   — generated JSON snapshots, never hand-edited.
-# Excluding the *directories* (not `tests/` as a whole) keeps
-# tests/test_*.py under lint coverage.
+# Not first-party code:
+#   * tests/fixtures/** — small third-party repositories used as analyzer
+#     input, some deliberately malformed. Findings there would be about the
+#     fixture, not about us.
+#   * tests/golden/**   — generated snapshots, never hand-edited.
+# Excluding these directories (not `tests/` as a whole) keeps tests/test_*.py
+# under lint.
 extend-exclude = ["tests/fixtures", "tests/golden"]
 
 [tool.ruff.lint]

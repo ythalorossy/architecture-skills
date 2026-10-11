@@ -1,22 +1,20 @@
 """
-Tests for safe Mermaid rendering with adversarial identifiers (SPEC-04).
+Tests for safe Mermaid rendering with adversarial identifiers.
 
 tests/test_render_ids.py verifies:
-- AC4: person named __system__ keeps both nodes
-- AC4: container named __boundary__ is drawn
-- AC11: adversarial corpus parses with mmdc (optional, skipped without mmdc)
+- person named __system__ keeps both nodes
+- container named __boundary__ is drawn
+- adversarial corpus parses with mmdc (optional, skipped without mmdc)
 
 The module under test is the existing render_c4 module, which will call mermaid_syntax
 once implemented.
 """
-import json
 import shutil
 import tempfile
 import unittest
 from pathlib import Path
 
-from helpers import write
-
+import helpers  # noqa: F401  (puts the skill on sys.path)
 
 # Module under test
 from scripts import render_c4
@@ -43,7 +41,7 @@ def _make_minimal_model(**overrides):
 
 
 class PersonNamedSystemTest(unittest.TestCase):
-    """AC4: a person with id __system__ must not collide with the internal __system__ node."""
+    """A person with id __system__ must not collide with the internal __system__ node."""
 
     def test_person_named_system_keeps_both_nodes(self):
         model = _make_minimal_model(
@@ -67,7 +65,7 @@ class PersonNamedSystemTest(unittest.TestCase):
 
 
 class ContainerNamedBoundaryTest(unittest.TestCase):
-    """AC4: a container with id __boundary__ must not collide with the internal boundary node."""
+    """A container with id __boundary__ must not collide with the internal boundary node."""
 
     def test_container_named_boundary_is_drawn(self):
         model = _make_minimal_model(
@@ -181,7 +179,7 @@ class ExactIdsTest(unittest.TestCase):
 
 
 class AdversarialCorpusTest(unittest.TestCase):
-    """AC11: adversarial corpus renders with mmdc and SVG contains expected labels."""
+    """Adversarial corpus renders with mmdc and SVG contains expected labels."""
 
     def test_adversarial_corpus_parses_with_mmdc(self):
         if shutil.which("mmdc") is None:
@@ -237,8 +235,8 @@ class AdversarialCorpusTest(unittest.TestCase):
 
                 svg_text = mmd_file.with_suffix(".svg").read_text(encoding="utf-8")
                 # Verify the labels are actually in the SVG
-                self.assertIn("box", svg_text, f"label 'box' missing from SVG")
-                self.assertIn("retry", svg_text, f"label 'retry' missing from SVG")
+                self.assertIn("box", svg_text, "label 'box' missing from SVG")
+                self.assertIn("retry", svg_text, "label 'retry' missing from SVG")
 
 
 if __name__ == "__main__":

@@ -1,5 +1,4 @@
 from pathlib import Path
-import json
 
 try:
     from scripts.repo_index import RepoIndex

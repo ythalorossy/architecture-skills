@@ -8,15 +8,12 @@ AC7  — no rglob, no def _read, no dotnet_projects imports outside dotnet_proje
 AC9  — discover_all returns updated results after fixture change (no stale cache)
 """
 import os
-import subprocess
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
 from helpers import REPO_ROOT, SKILL  # noqa: F401  -- sets up sys.path so `scripts` is importable
-from scripts import repo_index
 from scripts.analyze_repository import RepositoryAnalyzer
 
 
@@ -95,12 +92,12 @@ class TestNoRglobOrReadCopies(unittest.TestCase):
 
         self.assertEqual(
             rglob_matches, [],
-            f"rglob found in scripts/:\n" +
+            "rglob found in scripts/:\n" +
             "\n".join(f"  {p}:{n}: {line}" for p, n, line in rglob_matches),
         )
         self.assertEqual(
             def_read_matches, [],
-            f"'def _read' found in scripts/:\n" +
+            "'def _read' found in scripts/:\n" +
             "\n".join(f"  {p}:{n}: {line}" for p, n, line in def_read_matches),
         )
 
@@ -125,7 +122,7 @@ class TestNoRglobOrReadCopies(unittest.TestCase):
 
         self.assertEqual(
             bad_imports, [],
-            f"Bad dotnet_projects imports found:\n" +
+            "Bad dotnet_projects imports found:\n" +
             "\n".join(f"  {p}:{n}: {line}" for p, n, line in bad_imports),
         )
 
@@ -156,7 +153,7 @@ class TestSingleSizeCap(unittest.TestCase):
         )
         self.assertLessEqual(
             definition_count, 1,
-            f"Multiple size-cap definitions found:\n" +
+            "Multiple size-cap definitions found:\n" +
             "\n".join(f"  {p}:{n}: {line}" for p, n, line in cap_lines),
         )
 

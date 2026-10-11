@@ -41,7 +41,7 @@ BLOCK_START = "[//]: # (c4:start)"
 BLOCK_END = "[//]: # (c4:end)"
 OLD_MARKERS = ("<!-- c4:start -->", "<!-- c4:end -->")
 
-# C4 palette driven by mermaid_syntax (SPEC-04 AC9)
+# C4 colours, defined once in mermaid_syntax.
 STYLES = _ms.flowchart_classdef_lines()
 
 
@@ -135,7 +135,7 @@ def validate(model, facts, result=None, repo=None):
     `result` (optional) is a ValidationResult from `check_structure`; we
     append to its lists. A new result is created when `result is None`.
 
-    Routing per SPEC-06:
+    Tiers:
       - unknown relationship/flow ids and duplicate ids -> errors (invalid)
       - facts not covered by the model and not in `excluded` -> drift
       - evidence / assumption missing -> warnings
@@ -737,7 +737,6 @@ def flow_diagrams(model, facts):
     participants = _participants(model, facts)
     results = []
     for index, flow in enumerate(model.get("flows") or [], 1):
-        ids = {}
         used = []
         for step in flow["steps"]:
             for end in (step["from"], step["to"]):
@@ -937,7 +936,7 @@ def _summary_section(model):
 
 
 def _unreviewed_facts_section(facts, drift):
-    """Render the `### Unreviewed facts` subsection for drift runs (SPEC-06 AC3)."""
+    """The `### Unreviewed facts` subsection: facts the model doesn't cover yet."""
     if not drift:
         return []
     by_id = {}
@@ -1128,7 +1127,7 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
     if assumptions:
         block += ["### Assumptions", "", "Not backed by code evidence; confirm with the team:", ""] + assumptions + [""]
 
-    # Unreviewed facts section for drift renders (SPEC-06 AC3 / REVIEW FOCUS 5).
+    # On drift, list the facts the model doesn't cover yet.
     block += _unreviewed_facts_section(facts, result.drift)
 
     block += ["### C4 files", ""] + [f"- [{stem}.mmd]({stem}.mmd)" for stem in diagrams]
@@ -1148,7 +1147,7 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
         else:
             result.warnings.append("ArchitectureReport.md has no C4 block; re-run analyze_repository.py")
 
-    # Per-stem SVG status for summary.json (SPEC-05 AC8)
+    # Per-diagram SVG status for summary.json.
     svg_status = {}
     for r in render_results:
         svg_status[r.stem] = {"status": r.status, "message": r.message}

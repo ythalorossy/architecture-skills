@@ -1,4 +1,4 @@
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 
 
 def build_dependency_graph(repo_path, include_orphans=False, index=None, discovery=None):

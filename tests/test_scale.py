@@ -20,7 +20,7 @@ from scripts import c4_facts
 
 
 def _chain(root, packages, files):
-    """npm workspace: package i depends on package i-1; each file uses pg and an HTTP API."""
+    """Npm workspace: package i depends on package i-1; each file uses pg and an HTTP API."""
     tree = {"package.json": json.dumps({"name": "chain", "private": True, "workspaces": ["packages/*"]})}
     for i in range(packages):
         deps = {"express": "4", "pg": "8", "axios": "1"}

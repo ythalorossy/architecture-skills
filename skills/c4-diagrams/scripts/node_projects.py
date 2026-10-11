@@ -1,6 +1,4 @@
-import json
 import re
-import sys
 from fnmatch import fnmatch
 from pathlib import Path, PurePosixPath
 

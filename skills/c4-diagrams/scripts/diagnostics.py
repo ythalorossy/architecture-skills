@@ -1,5 +1,5 @@
 """
-Run-scoped diagnostics collector for SPEC-08.
+Run-scoped diagnostics collector.
 
 Collects warnings and skipped-file events from every detector and script
 during one analysis run, deduplicates them, and serialises them for

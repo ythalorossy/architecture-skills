@@ -26,7 +26,6 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 try:
-    from scripts.repo_index import is_ignored_dir
     from scripts.paths import TEST_DIRS, local_tag
     from scripts.projects import discover_all
     from scripts.python_projects import _distributions, normalize, _python_files
@@ -35,7 +34,6 @@ try:
     from scripts.repo_index import RepoIndex, MAX_TEXT_BYTES
 except ImportError:
     import code_facts, go_projects
-    from repo_index import is_ignored_dir
     from paths import TEST_DIRS, local_tag
     from projects import discover_all
     from python_projects import _distributions, normalize, _python_files
@@ -122,7 +120,7 @@ IMPORT_SIGNALS = {
     "pg": ("store", "PostgreSQL"), "postgres": ("store", "PostgreSQL"), "mysql": ("store", "MySQL"),
     "mysql2": ("store", "MySQL"), "mssql": ("store", "SQL Server"), "tedious": ("store", "SQL Server"),
     "mongodb": ("store", "MongoDB"), "mongoose": ("store", "MongoDB"), "ioredis": ("store", "Redis"),
-    "sqlite3": ("store", "SQLite"), "better-sqlite3": ("store", "SQLite"),
+    "better-sqlite3": ("store", "SQLite"),  # "sqlite3" is listed with Python above
     "@elastic/elasticsearch": ("store", "Elasticsearch"), "kafkajs": ("store", "Kafka"), "amqplib": ("store", "RabbitMQ"),
     "@anthropic-ai/sdk": ("external", "Anthropic API"), "@google/generative-ai": ("external", "Google Gemini API"),
     "@aws-sdk": ("external", "AWS"), "aws-sdk": ("external", "AWS"), "@sendgrid/mail": ("external", "SendGrid"),

@@ -2,7 +2,7 @@
 The worked example in assets/c4-model-reference.md is the model of the
 synthetic fixture in tests/fixtures/repos/bookshop. These tests keep the two
 identical, and keep the example valid against facts freshly generated from the
-fixture, so an example can only come from a committed fixture (SPEC-01).
+fixture, so an example can only come from a committed fixture.
 """
 import contextlib
 import io

@@ -1,5 +1,4 @@
 from pathlib import Path
-import re
 
 from scripts import mermaid_syntax as _ms
 
@@ -11,7 +10,7 @@ def _node_ids(names, alloc=None):
 
 
 def _label(text):
-    """Escape text for a flowchart label string (``["label"]``); delegates to mermaid_syntax (SPEC-04)."""
+    """Escape text for a flowchart label string (``["label"]``)."""
     return _ms.label_text("flowchart_md", text)
 
 

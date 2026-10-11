@@ -1,13 +1,13 @@
 """
-Validator contract cases (AC4 / PE-11 Tier 0).
+Validator contract cases.
 
-Each shape asserts two things per AC4:
+Each shape asserts two things:
   1. render() returns a dict whose `errors` list is non-empty and contains the
      expected per-case substring (e.g. "containers" for the string-section
      shape).
-  2. No "Traceback" appears in the captured output — REVIEW FOCUS 4.
+  2. No "Traceback" appears in the captured output.
 
-Under SPEC-06 the seven crashing shapes return tiered `invalid` errors and
+The seven shapes that used to crash return tiered `invalid` errors and
 the eighth (unknown facts id) returns `drift`. All eight are plain passing
 tests (the former `@unittest.expectedFailure` markers are removed).
 
@@ -88,7 +88,7 @@ def _call_render(output):
 # ---------- per-case models ----------
 
 def _cases(facts, container_id, container_name):
-    """Return the AC4 case table plus the unknown_facts_id passing case."""
+    """The malformed-model case table plus the unknown_facts_id passing case."""
 
     base_model = {
         "system": {"name": "Demo", "description": ""},
@@ -108,7 +108,7 @@ def _cases(facts, container_id, container_name):
         (
             "malformed_json",
             lambda f, c, n: None,  # signals raw-bytes write below
-            "json",  # any SPEC-06 message naming the JSON parser will contain 'json'
+            "json",  # a message naming the JSON parser contains 'json'
             True,    # write c4-model.json as raw bytes, not json.dumps
         ),
         (
@@ -162,7 +162,7 @@ def _cases(facts, container_id, container_name):
 # ---------- tests ----------
 
 class ValidateContractTest(unittest.TestCase):
-    """The eight AC4 shapes, plus the unknown_facts_id passing case."""
+    """The eight malformed-model shapes, plus the unknown_facts_id passing case."""
 
     def _setup_case(self, case, facts, container_id, container_name):
         """Lay out facts+c4-model.json for one case in a fresh tmpdir."""
@@ -201,7 +201,7 @@ class ValidateContractTest(unittest.TestCase):
                 yield label, substring, _call_render(out)
 
     def test_malformed_model_reports_error_not_traceback(self):
-        """The seven crashing shapes today; SPEC-06 makes them return errors."""
+        """The seven shapes that used to crash now return errors."""
         for label, substring, (result, exc, captured) in self._run_table():
             if label == "unknown_facts_id":
                 # This case is tested separately as a passing case below; skip here
@@ -234,9 +234,9 @@ class ValidateContractTest(unittest.TestCase):
                 )
 
     def test_unknown_facts_id_returns_drift(self):
-        """The eighth AC4 shape — a facts id not covered by the model.
+        """The eighth shape — a facts id not covered by the model.
 
-        Under SPEC-06 this is drift (not invalid): the model is structurally
+        This is drift (not invalid): the model is structurally
         well-typed, it just hasn't been updated since the code added a new
         data store. The drift list carries the diagnostic, render() still
         draws the model, and the Unreviewed facts section is appended.
@@ -258,7 +258,7 @@ class ValidateContractTest(unittest.TestCase):
                 self.assertIn(substring, joined, drift)
 
     def test_error_path_return_lacks_success_keys(self):
-        """Per A-3 + SPEC-06: the error path returns the full tiered shape.
+        """The error path returns the full tiered shape.
         Consumers that read result["diagrams"] must be safe even on invalid
         (render() still produces a facts-only model)."""
         for label, _substring, (result, exc, _captured) in self._run_table():
@@ -277,7 +277,7 @@ class ValidateContractTest(unittest.TestCase):
                     self.assertTrue(result["facts_only"])
 
 
-# ---------- SPEC-06: ValidationResult + safe loader (Task 1) ----------
+# ---------- ValidationResult + safe loader (Task 1) ----------
 
 class LoaderResultTest(unittest.TestCase):
     """Task 1: ValidationResult status derivation and safe loader errors.
@@ -295,7 +295,7 @@ class LoaderResultTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             model_path = Path(tmp) / "c4-model.json"
             # A trailing comma after a closing bracket is the canonical
-            # malformed-JSON case. AC2 requires the message to name the line
+            # malformed-JSON case. The message must name the line
             # and column of the trailing comma (line 3 here), not the EOF
             # position the stdlib parser reports.
             model_path.write_text(
@@ -340,10 +340,10 @@ class LoaderResultTest(unittest.TestCase):
         self.assertEqual(result.warnings, [])
 
 
-# ---------- SPEC-06: Structural pre-check (Task 2) ----------
+# ---------- Structural pre-check (Task 2) ----------
 
 class StructuralShapesTest(unittest.TestCase):
-    """Task 2: check_structure catches every REL-04 shape with JSON paths.
+    """Check_structure catches every malformed shape with a JSON path.
 
     Each shape must produce `status == "invalid"` and an error message that
     names the JSON path of the offending value (e.g. `containers[3]`,
