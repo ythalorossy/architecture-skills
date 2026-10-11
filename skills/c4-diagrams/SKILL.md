@@ -46,7 +46,7 @@ python3 scripts/analyze_repository.py <repository_path>
 - Run it from the user's current working directory. By default the files go to `./architecture-docs/<repository name>/` there, so the user can keep, commit or delete them. Pass `--output <directory>` only if the user named another location. Never write into the skill folder.
 - It writes `c4-facts.json`, facts-only C4 diagrams (`c4-container.*`, `c4-component-*.*`), `ArchitectureReport.md`, `dependency-graph.*`, `repository-scan.json` and `summary.json`.
 - Requires Python 3.11+ (checked at startup) to read `pyproject.toml`.
-- SVGs are rendered with `mmdc` or `npx @mermaid-js/mermaid-cli` and embedded in the report as images, so they show in any Markdown viewer. Without Node.js the report keeps only the Mermaid blocks. Tell the user if that happened.
+- SVGs are rendered with `mmdc` or `npx @mermaid-js/mermaid-cli@10.9.1` (pinned) and embedded in the report as images, so they show in any Markdown viewer. Each render returns a status: `ok` (SVG written), `syntax-error` (a bug in the diagram — report it), `timeout` (diagram too complex), `tool-error` (other failure), `missing-tool` (neither mmdc nor npx found), or `skipped` (circuit breaker tripped). A degraded run exits 0 but sets `status: degraded` in `summary.json`. Use `--no-svg` or set `C4_SVG=0` in the environment to skip all SVG rendering (useful in CI or when Node.js is absent).
 
 ### Check for degraded runs
 
@@ -94,7 +94,7 @@ Then run:
 python3 scripts/render_c4.py <output folder>
 ```
 
-If it exits with errors, fix the model and run it again. It rewrites the C4 section of `ArchitectureReport.md` and the `c4-*.mmd`/`.svg` files.
+If it exits with errors, fix the model and run it again. It prints a status line per SVG (`ok`, `syntax-error`, `timeout`, `tool-error`, `missing-tool`). A `syntax-error` is a bug in the diagram — fix the model. Use `--no-svg` or `C4_SVG=0` to skip SVG rendering. It rewrites the C4 section of `ArchitectureReport.md` and the `c4-*.mmd`/`.svg` files.
 
 If `c4-model.json` already exists from an earlier run, it was kept (and maybe edited by the user). Update it rather than rewriting it from scratch, and keep the user's wording.
 
