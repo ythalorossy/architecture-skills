@@ -341,5 +341,109 @@ class LoaderResultTest(unittest.TestCase):
         self.assertEqual(result.warnings, [])
 
 
+# ---------- SPEC-06: Structural pre-check (Task 2) ----------
+
+class StructuralShapesTest(unittest.TestCase):
+    """Task 2: check_structure catches every REL-04 shape with JSON paths.
+
+    Each shape must produce `status == "invalid"` and an error message that
+    names the JSON path of the offending value (e.g. `containers[3]`,
+    `excluded[0].id`, `flows[0].steps`).
+    """
+
+    def _run_one(self, model: dict) -> "scripts.model_check.ValidationResult":
+        from scripts.model_check import check_structure
+
+        return check_structure(model)
+
+    def test_containers_str_reports_path(self):
+        result = self._run_one({"system": {"name": "Demo"}, "containers": "oops"})
+        self.assertEqual(result.status, "invalid")
+        joined = "\n".join(result.errors)
+        self.assertIn("containers", joined)
+
+    def test_system_str_reports_path(self):
+        result = self._run_one({"system": "not a dict"})
+        self.assertEqual(result.status, "invalid")
+        joined = "\n".join(result.errors)
+        self.assertIn("system", joined)
+
+    def test_element_str_reports_index(self):
+        result = self._run_one({
+            "system": {"name": "Demo"},
+            "containers": [{"id": "a", "name": "A"}, "oops", {"id": "c", "name": "C"}],
+        })
+        self.assertEqual(result.status, "invalid")
+        joined = "\n".join(result.errors)
+        self.assertIn("containers[1]", joined)
+
+    def test_excluded_no_id_reports_path(self):
+        result = self._run_one({
+            "system": {"name": "Demo"},
+            "excluded": [{"reason": "missing id"}],
+        })
+        self.assertEqual(result.status, "invalid")
+        joined = "\n".join(result.errors)
+        self.assertIn("excluded[0]", joined)
+        self.assertIn("id", joined)
+
+    def test_flow_steps_str_reports_path(self):
+        result = self._run_one({
+            "system": {"name": "Demo"},
+            "flows": [{"name": "Flow 1", "steps": "should be a list"}],
+        })
+        self.assertEqual(result.status, "invalid")
+        joined = "\n".join(result.errors)
+        self.assertIn("flows[0].steps", joined)
+
+    def test_components_list_reports_path(self):
+        result = self._run_one({
+            "system": {"name": "Demo"},
+            "components": ["not", "a", "dict"],
+        })
+        self.assertEqual(result.status, "invalid")
+        joined = "\n".join(result.errors)
+        self.assertIn("components", joined)
+
+    def test_components_description_str_reports_path(self):
+        result = self._run_one({
+            "system": {"name": "Demo"},
+            "components": {"c1": "should be a list"},
+        })
+        self.assertEqual(result.status, "invalid")
+        joined = "\n".join(result.errors)
+        self.assertIn("components", joined)
+        self.assertIn("c1", joined)
+
+    def test_relationship_not_object_reports_index(self):
+        result = self._run_one({
+            "system": {"name": "Demo"},
+            "relationships": [{"from": "a", "to": "b"}, "oops"],
+        })
+        self.assertEqual(result.status, "invalid")
+        joined = "\n".join(result.errors)
+        self.assertIn("relationships[1]", joined)
+
+    def test_missing_system_name_reports_path(self):
+        result = self._run_one({"system": {}})
+        self.assertEqual(result.status, "invalid")
+        joined = "\n".join(result.errors)
+        self.assertIn("system.name", joined)
+
+    def test_well_typed_object_returns_ok(self):
+        result = self._run_one({
+            "system": {"name": "Demo"},
+            "people": [],
+            "containers": [{"id": "c1", "name": "C"}],
+            "external_systems": [],
+            "relationships": [{"from": "c1", "to": "c1", "description": ""}],
+            "components": {"c1": []},
+            "flows": [],
+            "excluded": [],
+        })
+        self.assertEqual(result.status, "ok")
+        self.assertEqual(result.errors, [])
+
+
 if __name__ == "__main__":
     unittest.main()
