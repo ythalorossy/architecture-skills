@@ -99,6 +99,7 @@ def _covers(element):
 
 ELEMENT_KEYS = ("id", "name", "description", "technology", "type", "evidence", "assumption", "external", "facts")
 ELEMENT_TYPES = ("container", "database", "queue")
+SUMMARY_KEYS = ("overview", "findings", "recommendations")
 
 
 def _did_you_mean(value, candidates):
@@ -256,6 +257,10 @@ def validate(model, facts, result=None, repo=None):
                         f"{number}: unknown {end} {step.get(end)!r}{_did_you_mean(step.get(end), known)} "
                         "(use a person, container or external system id, or a component id from c4-facts.json)"
                     )
+
+    for key in (model.get("summary") or {}):
+        if key not in SUMMARY_KEYS:
+            warnings.append(f"summary: unknown key {key!r}{_did_you_mean(key, SUMMARY_KEYS)}; it is ignored")
 
     # Links the code or config declares should appear in the model.
     mapped = {}
@@ -916,6 +921,21 @@ def _inventory_section(facts, model):
             "| Container | Declared |", "|---|---|"] + rows + [""]
 
 
+def _summary_section(model):
+    """The agent's overview, findings and recommendations from c4-model.json `summary`."""
+    summary = model.get("summary") or {}
+    if model.get("_facts_only") or not summary:
+        return []
+    lines = ["## Architecture overview", ""]
+    if summary.get("overview"):
+        lines += [summary["overview"].strip(), ""]
+    for key, title in (("findings", "Findings"), ("recommendations", "Recommendations")):
+        items = [item.strip() for item in summary.get(key) or [] if item.strip()]
+        if items:
+            lines += [f"### {title}", ""] + [f"- {item}" for item in items] + [""]
+    return lines
+
+
 def _unreviewed_facts_section(facts, drift):
     """Render the `### Unreviewed facts` subsection for drift runs (SPEC-06 AC3)."""
     if not drift:
@@ -1060,7 +1080,7 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
         for r in render_results:
             rendered[r.stem] = r.status == "ok"
 
-    block = [BLOCK_START, "", "## Architecture (C4 model)", ""]
+    block = [BLOCK_START, ""] + _summary_section(use_model) + ["## Architecture (C4 model)", ""]
     if use_model.get("_facts_only"):
         block += [
             "> Drawn from code facts only: no `c4-model.json` yet, so people, external purposes, "
