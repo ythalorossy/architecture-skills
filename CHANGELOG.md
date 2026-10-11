@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `summary.json` no longer reports a valid model as `invalid` (and the run as degraded) because of a note such as Level 4's "repository not found … pass --repo". Model status now comes only from `render_c4.py`.
+
+### Development
+
+- One code path through the repository index: about 28 `index`/no-index branches, duplicated helpers (`local_tag` ×3, `walk_files` ×2, `TEST_DIRS` ×4) and unused index API removed. Production code is 368 lines shorter; output is byte-identical on every fixture and on three real repositories.
+- Comments and tests describe behaviour instead of citing spec ids from a folder nobody else has.
+- Tests that passed for the wrong reason were rewritten (re-run, relocation, grep-based budget checks, the adversarial render corpus).
+- ruff runs all pyflakes rules and is pinned in CI; a new CI job renders with the real mermaid-cli.
+
 ## 3.3.6 — 2026-10-11
 
 ### Fixed
