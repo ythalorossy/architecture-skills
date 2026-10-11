@@ -1,22 +1,21 @@
 """
-Tests for safe Mermaid rendering with adversarial identifiers (SPEC-04).
+Tests for safe Mermaid rendering with adversarial identifiers.
 
 tests/test_render_ids.py verifies:
-- AC4: person named __system__ keeps both nodes
-- AC4: container named __boundary__ is drawn
-- AC11: adversarial corpus parses with mmdc (optional, skipped without mmdc)
+- person named __system__ keeps both nodes
+- container named __boundary__ is drawn
+- adversarial corpus parses with mmdc (optional, skipped without mmdc)
 
 The module under test is the existing render_c4 module, which will call mermaid_syntax
 once implemented.
 """
-import json
-import shutil
+import os
+import re
 import tempfile
 import unittest
 from pathlib import Path
 
-from helpers import write
-
+import helpers  # noqa: F401  (puts the skill on sys.path)
 
 # Module under test
 from scripts import render_c4
@@ -43,7 +42,7 @@ def _make_minimal_model(**overrides):
 
 
 class PersonNamedSystemTest(unittest.TestCase):
-    """AC4: a person with id __system__ must not collide with the internal __system__ node."""
+    """A person with id __system__ must not collide with the internal __system__ node."""
 
     def test_person_named_system_keeps_both_nodes(self):
         model = _make_minimal_model(
@@ -67,7 +66,7 @@ class PersonNamedSystemTest(unittest.TestCase):
 
 
 class ContainerNamedBoundaryTest(unittest.TestCase):
-    """AC4: a container with id __boundary__ must not collide with the internal boundary node."""
+    """A container with id __boundary__ must not collide with the internal boundary node."""
 
     def test_container_named_boundary_is_drawn(self):
         model = _make_minimal_model(
@@ -180,66 +179,56 @@ class ExactIdsTest(unittest.TestCase):
         self.assertIn("Serves 'GET /books'", mermaid)
 
 
+@unittest.skipUnless(os.environ.get("C4_REAL_RENDER") == "1",
+                     "set C4_REAL_RENDER=1 to render with the real mermaid-cli")
 class AdversarialCorpusTest(unittest.TestCase):
-    """AC11: adversarial corpus renders with mmdc and SVG contains expected labels."""
+    """Reserved words, separators and special characters render with the real, pinned mermaid-cli."""
 
-    def test_adversarial_corpus_parses_with_mmdc(self):
-        if shutil.which("mmdc") is None:
-            self.skipTest("mmdc not available")
+    def test_adversarial_corpus_renders(self):
+        from scripts import svg_render
 
-        # Build a model with every problematic identifier.
         model = _make_minimal_model(
-            people=[
-                {"id": "box", "name": "Box Person"},
-                {"id": "note", "name": "Note User"},
-            ],
+            people=[{"id": "box", "name": "Box Person"}, {"id": "note", "name": "Note User"}],
             containers=[
                 {"id": "end", "name": "End Service", "technology": "Python"},
-                {"id": "graph", "name": "Graph Service", "technology": "Node.js"},
+                {"id": "graph", "name": "Graph \"Service\"", "technology": "Node.js"},
+                {"id": "graph-api", "name": "Graph API `v2`", "technology": "Go"},
             ],
-            external_systems=[
-                {"id": "style", "name": "Style Ext", "technology": ""},
-            ],
+            external_systems=[{"id": "style", "name": "Style <Ext>", "technology": ""}],
             relationships=[
                 {"from": "box", "to": "end", "description": "retry #3; ok"},
                 {"from": "note", "to": "graph", "description": "Uses *special* text"},
+                {"from": "end", "to": "graph-api", "description": "Calls"},
             ],
-            flows=[{
-                "name": "Adversarial flow",
-                "steps": [
-                    {"from": "box", "to": "end", "description": "retry #3; ok"},
-                    {"from": "end", "to": "graph", "description": "Orders; API"},
-                ]
-            }],
+            flows=[{"name": "Adversarial flow", "steps": [
+                {"from": "box", "to": "end", "description": "retry #3; ok"},
+                {"from": "end", "to": "graph", "description": "Orders; API"},
+            ]}],
         )
-
         with tempfile.TemporaryDirectory() as tmp:
-            output = Path(tmp)
+            out = Path(tmp)
+            diagrams = {
+                "c4-context": render_c4.context_diagram(model),
+                "c4-container": render_c4.container_diagram(model),
+            }
+            stem, _, flow, _ = render_c4.flow_diagrams(model, {"containers": []})[0]
+            diagrams[stem] = flow
+            for name, text in diagrams.items():
+                (out / f"{name}.mmd").write_text(text, encoding="utf-8")
+            results = svg_render.render([(name, out / f"{name}.mmd") for name in diagrams], out)
+            self.assertEqual({r.stem: r.status for r in results}, {name: "ok" for name in diagrams},
+                             [r for r in results if r.status != "ok"])
+            container = _visible_text(out / "c4-container.svg")
+            flow_text = _visible_text(out / f"{stem}.svg")
+        for label in ("End Service", "Graph “Service”", "Graph API 'v2'", "Style &lt;Ext&gt;"):
+            self.assertIn(label, container)
+        self.assertIn("retry #3; ok", flow_text)
 
-            # Render context diagram
-            ctx = render_c4.context_diagram(model)
-            (output / "c4-context.mmd").write_text(ctx, encoding="utf-8")
 
-            # Render flow diagram
-            flows = render_c4.flow_diagrams(model, {})
-            self.assertGreater(len(flows), 0)
-            stem, _, flow_mmd, _ = flows[0]
-            (output / f"{stem}.mmd").write_text(flow_mmd, encoding="utf-8")
-
-            import subprocess
-            for mmd_file in output.glob("*.mmd"):
-                result = subprocess.run(
-                    ["mmdc", "-i", str(mmd_file), "-o", str(mmd_file.with_suffix(".svg"))],
-                    capture_output=True, timeout=30
-                )
-                self.assertEqual(result.returncode, 0,
-                    f"mmdc failed on {mmd_file.name}:\n{result.stderr.decode()}")
-
-                svg_text = mmd_file.with_suffix(".svg").read_text(encoding="utf-8")
-                # Verify the labels are actually in the SVG
-                self.assertIn("box", svg_text, f"label 'box' missing from SVG")
-                self.assertIn("retry", svg_text, f"label 'retry' missing from SVG")
-
+def _visible_text(svg):
+    """The SVG's text nodes joined with spaces (labels are split into one tspan per word)."""
+    words = re.findall(r">([^<>]+)<", Path(svg).read_text(encoding="utf-8"))
+    return " ".join(" ".join(w.split()) for w in words if w.strip())
 
 if __name__ == "__main__":
     unittest.main()

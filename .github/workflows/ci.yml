@@ -1,9 +1,9 @@
-# SPEC-02 AC5: the suite runs on push and pull request across Python 3.11-3.13
-# on ubuntu and windows, plus a lint job and a version-guard job.
+# The test suite on Python 3.11-3.13, Linux and Windows, plus lint, coverage
+# and a check that the CLIs refuse Python 3.10 with a clear message.
 #
-# The whole runtime is stdlib-only (SPEC-02 D6): the `test` matrix installs
-# nothing. `coverage` and `ruff` are dev-only and are installed in their own
-# jobs. Nothing here needs network access at test time, Node.js or mmdc.
+# The skill's runtime is stdlib-only, so the `test` jobs install nothing.
+# `coverage` and `ruff` are dev tools, installed in their own jobs. The suite
+# needs no network, Node.js or mmdc (tests/helpers.py sets C4_SVG=0).
 name: CI
 
 on:
@@ -20,7 +20,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       # Report every leg: a Windows-only path bug should not hide behind a
-      # Linux failure, and vice versa (SPEC-02 Risk: Windows CI is intentional).
+      # Linux failure, and vice versa.
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
@@ -35,10 +35,8 @@ jobs:
       - name: Run the test suite
         run: python -m unittest discover -s tests
 
-  # AC2 asks that coverage be *reported*; it does not mandate a threshold, so
-  # this job never fails the build on a coverage number. It is a visibility
-  # job: the report lands in the run summary next to the checks. SPEC-15 owns
-  # any future --fail-under budget.
+  # Coverage is reported in the run summary; there is no threshold, so this
+  # job never fails the build on a coverage number.
   coverage:
     name: coverage (ubuntu, py3.12)
     runs-on: ubuntu-latest
@@ -49,7 +47,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install coverage (dev-only, SPEC-02 D6)
+      - name: Install coverage (dev tool)
         run: python -m pip install coverage
 
       - name: Measure coverage of the skill scripts
@@ -72,21 +70,44 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install ruff (dev-only, SPEC-02 D6)
-        run: python -m pip install ruff
+      - name: Install ruff (dev tool, pinned so a ruff release can't turn CI red)
+        run: python -m pip install ruff==0.17.0
 
-      # Pinned by pyproject.toml [tool.ruff], not on the command line, so a
-      # local `ruff check skills tests` behaves identically. SPEC-15 widens the
-      # rule set there.
+      # The rules live in pyproject.toml [tool.ruff], so a local
+      # `ruff check skills tests` behaves identically.
       - name: Run ruff
         run: ruff check skills tests
 
-  # AC6's CI half: on an interpreter below the 3.11 floor (D1) both CLIs must
-  # exit 1 and say why, rather than crashing or silently degrading.
-  #
-  # NOTE: this job cannot pass until skills/c4-diagrams/scripts/cli_support.py
-  # and the require_python() calls land (SPEC-02 plan Task 6). Until then it is
-  # expected to fail with "expected exit 1 ... got 0".
+  # The renderer tests against the real, pinned mermaid-cli (the rest of the
+  # suite uses a fake). Not a required check: it downloads mermaid-cli and a
+  # headless Chrome, so a network hiccup shouldn't block a merge.
+  real-render:
+    name: real render (ubuntu, mermaid-cli)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # Ubuntu 24.04 runners block the unprivileged user namespaces that
+      # headless Chrome's sandbox needs ("Failed to launch the browser process").
+      - name: Allow Chrome's sandbox on the runner
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Render with the real mermaid-cli
+        env:
+          C4_REAL_RENDER: "1"
+          C4_SVG_TIMEOUT_INSTALL: "900"
+        run: python -m unittest discover -s tests -p "test_*.py" -k Real -k Adversarial -v
+
+  # Below the 3.11 floor both CLIs must exit 1 and say why, rather than
+  # crashing on a syntax or import error.
   guard:
     name: version guard (py3.10 fails fast)
     runs-on: ubuntu-latest

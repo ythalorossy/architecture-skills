@@ -1,5 +1,5 @@
 """
-Single safe Mermaid emitter (SPEC-04): owns all Mermaid syntax concerns —
+Mermaid syntax in one place:
 id allocation per diagram kind, text escaping per diagram kind, and the C4 palette.
 """
 import re

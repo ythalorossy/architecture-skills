@@ -1,12 +1,12 @@
 """
-Tests for the single safe Mermaid emitter (SPEC-04).
+Tests for the single safe Mermaid emitter.
 
 These tests verify:
-- AC1/AC2: keyword guards per diagram kind
-- AC3: uniqueness and order independence
-- AC4: reserved internal namespace
-- AC5/AC6/AC7: escaping round-trips
-- AC9: palette single source
+- keyword guards per diagram kind
+- uniqueness and order independence
+- reserved internal namespace
+- escaping round-trips
+- palette single source
 """
 import unittest
 import sys
@@ -38,7 +38,7 @@ SEQUENCE_KEYWORDS = [
 
 @unittest.skipUnless(_MERMAID_SYNTAX_AVAILABLE, "mermaid_syntax module not yet implemented")
 class FlowchartKeywordTest(unittest.TestCase):
-    """AC1: flowchart keywords never reach the parser as ids."""
+    """Flowchart keywords never reach the parser as ids."""
 
     def test_flowchart_keywords_never_emitted_as_ids(self):
         for keyword in FLOWCHART_KEYWORDS:
@@ -55,7 +55,7 @@ class FlowchartKeywordTest(unittest.TestCase):
 
 @unittest.skipUnless(_MERMAID_SYNTAX_AVAILABLE, "mermaid_syntax module not yet implemented")
 class SequenceKeywordTest(unittest.TestCase):
-    """AC2: sequence keywords never reach the parser as ids."""
+    """Sequence keywords never reach the parser as ids."""
 
     def test_sequence_keywords_never_emitted_as_ids(self):
         for keyword in SEQUENCE_KEYWORDS:
@@ -136,7 +136,7 @@ class InternalNamespaceTest(unittest.TestCase):
 
 @unittest.skipUnless(_MERMAID_SYNTAX_AVAILABLE, "mermaid_syntax module not yet implemented")
 class MarkdownEscaperTest(unittest.TestCase):
-    """AC5: flowchart markdown labels escape MD metacharacters and round-trip."""
+    """Flowchart markdown labels escape MD metacharacters and round-trip."""
 
     def test_markdown_label_escapes_md_metachars(self):
         # These inputs must survive the escaper and render literally.
@@ -173,7 +173,7 @@ class MarkdownEscaperTest(unittest.TestCase):
 
 @unittest.skipUnless(_MERMAID_SYNTAX_AVAILABLE, "mermaid_syntax module not yet implemented")
 class SequenceTextEscaperTest(unittest.TestCase):
-    """AC6: sequence messages escape # and ; in a single pass."""
+    """Sequence messages escape # and ; in a single pass."""
 
     def test_sequence_text_single_pass(self):
         # The bug was double-escaping: '#' -> '#35;' and then ';' -> '#59;'
@@ -219,7 +219,7 @@ class EntityCodesTest(unittest.TestCase):
 
 @unittest.skipUnless(_MERMAID_SYNTAX_AVAILABLE, "mermaid_syntax module not yet implemented")
 class PaletteTest(unittest.TestCase):
-    """AC9: one palette table drives both classDef and per-box style lines."""
+    """One palette table drives both classDef and per-box style lines."""
 
     def test_palette_single_source(self):
         palette = mermaid_syntax.C4_PALETTE
@@ -245,7 +245,7 @@ class PaletteTest(unittest.TestCase):
 
 @unittest.skipUnless(_MERMAID_SYNTAX_AVAILABLE, "mermaid_syntax module not yet implemented")
 class Level4StableIdsTest(unittest.TestCase):
-    """AC8: Level 4 generated ids are derived from type name, not position."""
+    """Level 4 generated ids are derived from type name, not position."""
 
     def test_level4_ids_stable_when_type_added(self):
         """Adding an unsafe-named type must not change existing type ids."""
@@ -264,19 +264,18 @@ class Level4StableIdsTest(unittest.TestCase):
 
 @unittest.skipUnless(_MERMAID_SYNTAX_AVAILABLE, "mermaid_syntax module not yet implemented")
 class ReportProseTest(unittest.TestCase):
-    """AC7: report prose containing <beta> must appear verbatim outside Mermaid blocks."""
+    """Report prose containing <beta> must appear verbatim outside Mermaid blocks."""
 
     def test_entity_codes_not_emitted_in_report_prose(self):
         """Text passed to _section intro must not be Mermaid-escaped."""
         # The intro text goes through _section -> _clean -> label_text("flowchart_plain", ...)
         # which converts < > to #lt; / #gt; — but report prose should be raw text.
-        # AC7 is satisfied by NOT passing report prose through the Mermaid escaper at all.
+        # Report prose must not go through the Mermaid escaper at all.
         # This test documents that label_text("flowchart_plain", ...) produces entity codes.
         result = mermaid_syntax.label_text("flowchart_plain", "<beta>")
         self.assertIn("#lt;", result)
         self.assertIn("#gt;", result)
-        # The actual AC7 compliance is in render_c4._section which should NOT call
-        # _clean on the intro text — confirmed by not changing _section's implementation
+        # render_c4._section keeps the intro text out of _clean.
 
 
 @unittest.skipUnless(_MERMAID_SYNTAX_AVAILABLE, "mermaid_syntax module not yet implemented")

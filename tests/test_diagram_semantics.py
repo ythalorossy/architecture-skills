@@ -102,7 +102,7 @@ class ComposeTest(unittest.TestCase):
     def facts_and_container_diagram(self):
         import tempfile
         from pathlib import Path
-        from helpers import run_analyzer, write
+        from helpers import run_analyzer
 
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp) / "repo"

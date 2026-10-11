@@ -1,5 +1,5 @@
 """
-SPEC-06: tiered validation for c4-model.json.
+Loading and structural checks for c4-model.json.
 
 `ValidationResult` is the typed result object that replaces the ad-hoc
 `{"errors", "warnings"}` dict. `status` is derived: errors -> "invalid",
@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Iterable
 
 
 @dataclass
@@ -154,7 +154,7 @@ def check_structure(model: dict) -> ValidationResult:
 
     `model` is the parsed dict from `load_model`. `check_structure` does not
     inspect semantic relationships; it only confirms types match
-    `c4-model-reference.md`. Later checks (SPEC-07) can assume well-typed
+    `c4-model-reference.md`. Later checks (render_c4.validate) can assume well-typed
     input.
     """
     errors: list[str] = []

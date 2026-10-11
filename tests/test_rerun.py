@@ -1,10 +1,10 @@
-"""Tests for SPEC-08 re-run semantics – AC3, AC4.
+"""Re-runs: drift keeps the model; an invalid model falls back to facts-only.
 
-AC3: Re-run with one new fact -> model_status == "drift", report contains Level 1,
+Re-run with one new fact -> model_status == "drift", report contains Level 1,
 flows and Level 4, plus "### Unreviewed facts" listing the new fact.
 c4-model.json is byte-unchanged.
 
-AC4: A model with an unknown relationship id gives model_status == "invalid",
+A model with an unknown relationship id gives model_status == "invalid",
 facts-only render, and errors listed in summary.json.
 """
 import json
@@ -20,163 +20,63 @@ BOOKSHOP = FIXTURES_ROOT / "bookshop"
 
 
 class TestDriftOnRerun(unittest.TestCase):
-    """AC3: one new fact triggers drift, not invalid."""
+    """Re-running the analyzer after the code changed keeps the model and reports drift."""
 
     def setUp(self):
-        self.maxDiff = 0x10000
         self.tmp = Path(tempfile.mkdtemp())
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def test_model_file_unchanged_after_drift_rerun(self):
-        """
-        c4-model.json is never modified by analyze_repository.py.
-        Run 1 and Run 2 produce the same model file bytes.
-        """
-        fixture = self.tmp / "repo"
-        shutil.copytree(BOOKSHOP, fixture)
+    def test_new_store_in_the_code_is_drift_and_the_model_is_kept(self):
+        repo = self.tmp / "repo"
+        shutil.copytree(BOOKSHOP, repo)
+        out = self.tmp / "out"
+        out.mkdir()
+        shutil.copy(BOOKSHOP / "c4-model.json", out / "c4-model.json")
+        run_analyzer(repo, out)
+        model_before = (out / "c4-model.json").read_bytes()
 
-        out1 = self.tmp / "run1"
-        out1.mkdir()
-        run_analyzer(fixture, out1)
+        # The code gains a Redis cache the model doesn't know about.
+        (repo / "api" / "bookshop" / "cache.py").write_text("import redis\nclient = redis.Redis()\n", encoding="utf-8")
+        _, summary = run_analyzer(repo, out)
 
-        # Copy model from repo to output (agent may have placed it there)
-        model_src = fixture / "c4-model.json"
-        if model_src.exists():
-            shutil.copy(model_src, out1 / "c4-model.json")
-
-        # Re-run (simulate: add a file, then run again)
-        new_file = fixture / "api" / "extra.py"
-        new_file.write_text("# new module\n", encoding="utf-8")
-
-        out2 = self.tmp / "run2"
-        out2.mkdir()
-        run_analyzer(fixture, out2)
-        if model_src.exists():
-            shutil.copy(model_src, out2 / "c4-model.json")
-
-        model1 = (out1 / "c4-model.json").read_bytes()
-        model2 = (out2 / "c4-model.json").read_bytes()
-        self.assertEqual(model1, model2, "c4-model.json must not be modified by analyze_repository.py")
-
-    def test_drift_status_after_new_fact(self):
-        """
-        Adding a new file that introduces an unreviewed fact makes
-        model_status == "drift" after re-render.
-        """
-        fixture = self.tmp / "repo"
-        shutil.copytree(BOOKSHOP, fixture)
-        model_src = fixture / "c4-model.json"
-
-        out1 = self.tmp / "run1"
-        out1.mkdir()
-        run_analyzer(fixture, out1)
-        if model_src.exists():
-            shutil.copy(model_src, out1 / "c4-model.json")
-
-        # Add new file
-        new_file = fixture / "api" / "new_service.py"
-        new_file.write_text("import httpx\n", encoding="utf-8")
-
-        out2 = self.tmp / "run2"
-        out2.mkdir()
-        run_analyzer(fixture, out2)
-
-        summary = json.loads((out2 / "summary.json").read_text(encoding="utf-8"))
-        # model_status should be drift (or ok if the new file doesn't change facts)
-        # The key assertion is: it should NOT be invalid
-        self.assertNotEqual(summary["c4"]["model_status"], "invalid")
+        self.assertEqual((out / "c4-model.json").read_bytes(), model_before, "the analyzer must never rewrite the model")
+        self.assertEqual(summary["c4"]["model_status"], "drift")
+        self.assertTrue(any("db-redis" in d["message"] for d in summary["c4"]["drift"]), summary["c4"]["drift"])
+        report = (out / "ArchitectureReport.md").read_text(encoding="utf-8")
+        self.assertIn("### Unreviewed facts", report)
+        # Drift still draws the model: the System Context and the key flow are there.
+        self.assertTrue((out / "c4-context.mmd").exists())
+        self.assertTrue((out / "c4-flow-place-order.mmd").exists())
 
 
 class TestInvalidModel(unittest.TestCase):
-    """AC4: unknown relationship id -> invalid, facts-only, errors listed."""
+    """An invalid model is reported in summary.json and the facts-only diagrams are drawn."""
 
     def setUp(self):
-        self.maxDiff = 0x10000
         self.tmp = Path(tempfile.mkdtemp())
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def test_unknown_relationship_id_gives_invalid(self):
-        """
-        A c4-model.json with an unknown relationship id makes model_status == "invalid"
-        and the render falls back to facts-only.
-        """
-        fixture = self.tmp / "repo"
-        shutil.copytree(BOOKSHOP, fixture)
-        model_src = fixture / "c4-model.json"
-
+    def test_unknown_relationship_id_is_invalid_in_the_summary(self):
         out = self.tmp / "out"
         out.mkdir()
-        run_analyzer(fixture, out)
-        shutil.copy(model_src, out / "c4-model.json")
+        model = json.loads((BOOKSHOP / "c4-model.json").read_text(encoding="utf-8"))
+        model["relationships"].append({"from": "bookshop-api", "to": "nonexistent-system", "description": "Calls"})
+        (out / "c4-model.json").write_text(json.dumps(model), encoding="utf-8")
 
-        # Corrupt the model: add a relationship with an unknown id
-        model_path = out / "c4-model.json"
-        model = json.loads(model_path.read_text(encoding="utf-8"))
-        model["relationships"].append({
-            "from": "bookshop-api",
-            "to": "nonexistent-system",
-            "description": "Calls a system that does not exist",
-            "technology": "HTTPS"
-        })
-        model_path.write_text(json.dumps(model, indent=2), encoding="utf-8")
+        _, summary = run_analyzer(BOOKSHOP, out)
 
-        # Re-render with render_c4 directly (analyzer's run() already happened)
-        from scripts.render_c4 import render
-        from scripts.diagnostics import DiagnosticsCollector
-
-        collector = DiagnosticsCollector()
-        result = render(out, svg=False, collector=collector)
-
-        self.assertEqual(collector.model_status(), "invalid")
-        self.assertTrue(len(collector.model_errors()) > 0)
-        # Invalid model -> collector's summary reflects facts_only via model_status
-        summary = collector.summary_dict()
-        self.assertEqual(summary.get("model_status"), "invalid")
-
-    def test_invalid_errors_listed_in_summary_after_rerender(self):
-        """
-        After re-rendering with an invalid model, summary.json contains
-        the model_errors.
-        """
-        fixture = self.tmp / "repo"
-        shutil.copytree(BOOKSHOP, fixture)
-        model_src = fixture / "c4-model.json"
-
-        out = self.tmp / "out"
-        out.mkdir()
-        run_analyzer(fixture, out)
-        shutil.copy(model_src, out / "c4-model.json")
-
-        # Corrupt the model
-        model_path = out / "c4-model.json"
-        model = json.loads(model_path.read_text(encoding="utf-8"))
-        model["relationships"].append({
-            "from": "bookshop-api",
-            "to": "unknown-id",
-            "description": "broken relationship",
-            "technology": "HTTP"
-        })
-        model_path.write_text(json.dumps(model, indent=2), encoding="utf-8")
-
-        # Re-render and update summary
-        from scripts.render_c4 import render
-        from scripts.diagnostics import DiagnosticsCollector
-
-        collector = DiagnosticsCollector()
-        result = render(out, svg=False, collector=collector)
-
-        summary_path = out / "summary.json"
-        summary = json.loads(summary_path.read_text(encoding="utf-8"))
-        summary["c4"].update(collector.summary_dict())
-        summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
-
-        summary = json.loads(summary_path.read_text(encoding="utf-8"))
-        errors = summary["c4"].get("model_errors", [])
-        self.assertTrue(len(errors) > 0, "model_errors must not be empty for invalid status")
+        self.assertEqual(summary["c4"]["model_status"], "invalid")
+        self.assertEqual(summary["c4"]["model"], "facts-only")
+        self.assertTrue(any("nonexistent-system" in e for e in summary["c4"]["model_errors"]))
+        self.assertEqual(summary["status"], "degraded")
+        self.assertTrue(any(w["kind"] == "model_error" for w in summary["warnings"]))
+        # The user's model is kept as written.
+        self.assertIn("nonexistent-system", (out / "c4-model.json").read_text(encoding="utf-8"))
+        self.assertFalse((out / "c4-context.mmd").exists(), "the System Context needs a valid model")
 
 
 if __name__ == "__main__":

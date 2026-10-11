@@ -1,13 +1,12 @@
 import re
-import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 try:
-    from scripts.repo_index import walk_files
+    from scripts.repo_index import RepoIndex
     from scripts.paths import local_tag, project_group
 except ImportError:
-    from repo_index import walk_files
+    from repo_index import RepoIndex
     from paths import local_tag, project_group
 
 
@@ -67,11 +66,7 @@ def _parse_pom(file, collector=None):
 
 def _maven(repo, index=None, collector=None):
     poms = {}
-    if index is not None:
-        candidates = index.walk(lambda name: name == "pom.xml")
-    else:
-        candidates = walk_files(repo, lambda name: name == "pom.xml")
-    for file in candidates:
+    for file in RepoIndex.ensure(index, repo, collector).walk(lambda name: name == "pom.xml"):
         pom = _parse_pom(file, collector)
         if pom:
             poms[file.resolve()] = pom
@@ -181,10 +176,7 @@ def _gradle_build(repo, settings, collector=None):
 
 
 def _gradle(repo, index=None, collector=None):
-    if index is not None:
-        settings_files = list(index.walk(lambda name: name in GRADLE_SETTINGS))
-    else:
-        settings_files = list(walk_files(repo, lambda name: name in GRADLE_SETTINGS))
+    settings_files = list(RepoIndex.ensure(index, repo, collector).walk(lambda name: name in GRADLE_SETTINGS))
     projects = []
     for settings in settings_files:
         projects += _gradle_build(repo, settings, collector)

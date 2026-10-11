@@ -25,7 +25,7 @@ FIXTURES_ROOT = Path(__file__).resolve().parent / "fixtures" / "repos"
 GOLDEN_ROOT = Path(__file__).resolve().parent / "golden"
 ANALYZER = Path(__file__).resolve().parent.parent / "skills" / "c4-diagrams" / "scripts" / "analyze_repository.py"
 
-# One entry per AC3 ecosystem. Listed in a fixed order so the subTest
+# One entry per ecosystem. Listed in a fixed order so the subTest
 # iterations and the golden directory layout stay in lockstep.
 FIXTURES = [
     "dotnet_sln",
@@ -48,7 +48,7 @@ def _golden_pair(fixture_name):
 
 
 class TestDegradedAndStrictExits(unittest.TestCase):
-    """AC1 and AC2: degraded exits, --strict flag."""
+    """Degraded exits and the --strict flag."""
 
     def setUp(self):
         self.maxDiff = 0x10000
@@ -59,7 +59,7 @@ class TestDegradedAndStrictExits(unittest.TestCase):
 
     def test_malformed_pyproject_exits_0_degraded(self):
         """
-        AC1: A fixture with a malformed pyproject.toml exits 0.
+        A fixture with a malformed pyproject.toml exits 0.
         summary.json has status == "degraded" and exactly one parse warning.
         stdout ends with a DEGRADED: line.
         """
@@ -100,7 +100,7 @@ class TestDegradedAndStrictExits(unittest.TestCase):
 
     def test_malformed_pyproject_strict_exits_2(self):
         """
-        AC2: The same fixture with --strict exits 2.
+        The same fixture with --strict exits 2.
         """
         fixture = self.tmp / "repo"
         shutil.copytree(FIXTURES_ROOT / "python_dist", fixture)
@@ -122,7 +122,7 @@ class TestDegradedAndStrictExits(unittest.TestCase):
 
     def test_clean_fixture_exits_0_ok(self):
         """
-        AC2: A clean fixture exits 0 with status == "ok" and no DEGRADED: line.
+        A clean fixture exits 0 with status == "ok" and no DEGRADED: line.
         """
         fixture = FIXTURES_ROOT / "python_dist"
 
@@ -148,7 +148,7 @@ class TestDegradedAndStrictExits(unittest.TestCase):
 
 
 class TestByteIdenticalRerun(unittest.TestCase):
-    """AC6: two runs on unchanged fixture produce byte-identical artifacts."""
+    """Two runs on unchanged fixture produce byte-identical artifacts."""
 
     def test_summary_json_identical_between_runs(self):
         """
@@ -211,7 +211,7 @@ class TestByteIdenticalRerun(unittest.TestCase):
 
 
 class DeploymentFalsePositiveTest(unittest.TestCase):
-    """AC4: .venv/.tox/node_modules never appear in deployment facts."""
+    """.venv/.tox/node_modules never appear in deployment facts."""
 
     def test_venv_tox_not_in_deployment(self):
         """Files from .venv, .tox and node_modules are NOT in deployment facts."""
