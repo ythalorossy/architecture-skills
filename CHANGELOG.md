@@ -6,6 +6,12 @@
 
 - **Dense diagrams no longer drop real dependencies in import cycles.** Hiding an edge A → C because a longer path shows it could follow a path through a cycle back to A and then use A → C itself, so a dependency with no other path disappeared. On a real 218-dependency solution, 17 dependencies were missing.
 - **Passwords are never copied into `ArchitectureReport.md` or `c4-facts.json`.** A password inside a URL (`postgresql://user:password@db/…`) or a connection string (`Password=…`) is shown as `***`, whatever the variable is called, and secret-named compose variables (`POSTGRES_PASSWORD`) are stored as `***` in `c4-facts.json`.
+- **Edge labels say what the code shows.** When several facts link the same two elements, the most specific description wins over a generic one, so compose's "Depends on" no longer hides "Reads/writes" or "Calls /api … [HTTP]" (2 of 5 container edges on the bookshop example were mislabelled), and technologies are combined.
+- **Split component diagrams keep dependencies on other parts.** The target is drawn outside the container as a dashed stub saying where it is ("in part 2"). A real .NET solution had 19 such dependencies missing.
+- **Shared components are found in dense graphs.** A component used by most others was missed when hiding shortcut edges had removed most of its incoming edges.
+- **docker-compose comments** (`api:   # backend`) no longer end up in service names and drop edges; compose is read by one parser.
+- **Data stores look the same in every view.** The deployment diagram used its own image list, so `azure-sql-edge` was a database in one diagram and a box in another.
+- **Double quotes in labels** show as “…” instead of `&quot;`.
 
 ## 3.3.3 — 2026-10-11
 
