@@ -1,7 +1,5 @@
 import ast
-import configparser
 import re
-import sys
 from pathlib import Path
 
 try:
@@ -10,17 +8,19 @@ except ImportError:  # Python < 3.11
     tomllib = None
 
 try:
-    from scripts.repo_index import is_ignored_dir, walk_files
+    from scripts.repo_index import is_ignored_dir, RepoIndex
     from scripts.paths import project_group
 except ImportError:
-    from repo_index import is_ignored_dir, walk_files
+    from repo_index import is_ignored_dir, RepoIndex
     from paths import project_group
 
 
 MANIFESTS = ("pyproject.toml", "setup.py", "setup.cfg")
 REQUIREMENT_NAME = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
 SETUP_PY_NAME = re.compile(r"""\bname\s*=\s*['"]([^'"]+)['"]""")
-TEST_DIRS = {"test", "tests"}
+# Top-level test packages next to the production code, probed as packages
+# of their own (narrower than paths.TEST_DIRS on purpose).
+TEST_PACKAGES = ("test", "tests")
 
 
 def normalize(name):
@@ -68,38 +68,19 @@ def _parse_pyproject(file, collector=None, index=None):
 
 
 def _parse_setup_cfg(file, collector=None, index=None):
-    """Parse setup.cfg. Uses index.read_ini() for tolerant I/O when index is available."""
-    if index is not None:
-        data = index.read_ini(file)
-        if data is not None:
-            req_raw = data.get("options", {}).get("install_requires", "")
-            return data.get("metadata", {}).get("name"), _requirement_names(req_raw.splitlines())
+    """Name and install_requires from setup.cfg, read through the index (tolerant I/O)."""
+    data = RepoIndex.ensure(index, file.parent, collector).read_ini(file)
+    if data is None:
         return None, []
-    # Fallback: direct read (bypasses index — only for legacy callers without index)
-    try:
-        text = file.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
-        text = file.read_text(encoding="utf-8", errors="replace")
-        if collector is not None:
-            collector.parse_error("python_projects", str(file), f"non-UTF-8 bytes in {file.name}")
-    except OSError:
-        return None, []
-    parser = configparser.ConfigParser()
-    try:
-        parser.read_string(text)
-    except configparser.Error:
-        return None, []
-    requirements = parser.get("options", "install_requires", fallback="").splitlines()
-    return parser.get("metadata", "name", fallback=None), _requirement_names(requirements)
+    req_raw = data.get("options", {}).get("install_requires", "")
+    return data.get("metadata", {}).get("name"), _requirement_names(req_raw.splitlines())
 
 
 def _parse_setup_py(file, collector=None, index=None):
-    """Parse setup.py for the package name. Uses index.read_text() when available."""
-    text = None
-    if index is not None:
-        text = index.read_text(file)
+    """The package name from setup.py, read through the index (tolerant I/O)."""
+    text = RepoIndex.ensure(index, file.parent, collector).read_text(file)
     if text is None:
-        text = file.read_text(encoding="utf-8", errors="replace")
+        return None, []
     match = SETUP_PY_NAME.search(text)
     return (match.group(1) if match else None), []
 
@@ -115,11 +96,8 @@ def _distributions(repo, index=None, collector=None):
     """One entry per directory holding a Python package manifest."""
     by_dir = {}
 
-    if index is not None:
-        candidates = index.walk(lambda name: name in MANIFESTS)
-    else:
-        candidates = walk_files(repo, lambda name: name in MANIFESTS)
-    for file in candidates:
+    index = RepoIndex.ensure(index, repo, collector)
+    for file in index.walk(lambda name: name in MANIFESTS):
         name, requirements = READERS[file.name](file, collector, index)
         # A pyproject.toml without a name only holds tool config (ruff, a uv
         # workspace root, ...); it does not make its folder a package.
@@ -160,9 +138,7 @@ def _distribution_projects(repo, distributions):
 def _python_files(path, index=None):
     if path.is_file():
         return [path]
-    if index is not None:
-        return list(index.walk(lambda name: name.endswith(".py"), under=path))
-    return list(walk_files(path, lambda name: name.endswith(".py")))
+    return list(RepoIndex.ensure(index, path).walk(lambda name: name.endswith(".py"), under=path))
 
 
 def _module_name(file, import_root):
@@ -217,7 +193,7 @@ def _module_nodes(base):
 
     production = sorted(
         path for path in import_root.iterdir()
-        if _is_package(path) and path.name not in TEST_DIRS
+        if _is_package(path) and path.name not in TEST_PACKAGES
     )
 
     if not production:
@@ -236,7 +212,7 @@ def _module_nodes(base):
     nodes = {_module_name(path, import_root): (path, import_root) for path in production}
 
     for folder in {import_root, base}:
-        for name in TEST_DIRS:
+        for name in TEST_PACKAGES:
             tests = folder / name
             if tests.is_dir() and _python_files(tests):
                 nodes.setdefault(name, (tests, folder))
@@ -290,18 +266,13 @@ def discover_projects(repo_path, index=None, collector=None):
     Otherwise nodes are packages/modules and edges come from import statements.
     Nothing is returned unless the repository has a Python manifest.
 
-    The `index` parameter is accepted for API compatibility but not yet used.
+    Uses `index` (a RepoIndex) for discovery and reads; one is built when none is passed.
     Pass a DiagnosticsCollector to route warnings through the diagnostics channel.
     """
     repo = Path(repo_path).resolve()
 
-    if index is not None:
-        has_manifest = any(index.walk(lambda name: name in MANIFESTS or re.match(r"requirements.*\.txt$", name)))
-    else:
-        has_manifest = any(walk_files(
-            repo,
-            lambda name: name in MANIFESTS or re.match(r"requirements.*\.txt$", name)
-        ))
+    index = RepoIndex.ensure(index, repo, collector)
+    has_manifest = any(index.walk(lambda name: name in MANIFESTS or re.match(r"requirements.*\.txt$", name)))
     if not has_manifest:
         return {"solutions": [], "projects": []}
 

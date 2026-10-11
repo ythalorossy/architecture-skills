@@ -1,5 +1,5 @@
 """
-SPEC-06: tiered semantic checks (`tests/test_render_tiers.py`).
+Tiered model checks: ok, drift and invalid.
 
 `validate()` in `scripts/render_c4` is now responsible for tier routing:
   - coverage gaps (facts not in the model and not in `excluded`) -> drift
@@ -293,7 +293,7 @@ class CliExitCodeTest(unittest.TestCase):
 
 
 class ErrorPrefixTest(unittest.TestCase):
-    """AC1/AC6: every invalid-tier message starts `c4-model.json:` and names a JSON path."""
+    """Every invalid-tier message starts `c4-model.json:` and names a JSON path."""
 
     def test_every_invalid_shape_message_is_prefixed(self):
         from scripts.render_c4 import render

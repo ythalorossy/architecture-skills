@@ -107,7 +107,7 @@ def select_types(types, wanted=(), limit=MAX_TYPES):
 
 
 # One `style` line per box: mermaid-cli accepts classDef/cssClass in class diagrams but emits no CSS for them.
-# Palette driven by mermaid_syntax (SPEC-04 AC9)
+# C4 colours, defined once in mermaid_syntax.
 COMPONENT_STYLE = _ms.component_style()
 SHARED_STYLE = _ms.shared_style()
 STEREOTYPES = {"interface", "abstract", "enum", "record", "struct"}
@@ -124,7 +124,7 @@ def _member(method):
 
 
 def _ids(names):
-    """Mermaid id per name using mermaid_syntax (SPEC-04)."""
+    """Unique Mermaid id per name."""
     alloc = _ms.IdAllocator("class")
     return {name: alloc.id(name) for name in names}
 
@@ -224,7 +224,7 @@ def prepare(model, facts, output, collector=None, repo_override=None):
         return ["code: c4-facts.json has no repository_root; re-run analyze_repository.py"], warnings, []
     repo_rel = repo_override if repo_override else facts.get("repository_root", "")
     repo = (Path(output) / repo_rel).resolve() if repo_override else (Path(output) / facts["repository_root"]).resolve()
-    # Relocatable output (ARC-06): the output folder may have moved away from
+    # Relocatable output: the output folder may have moved away from
     # the repository. A relative path such as "../.." then resolves to some
     # other folder, so the folder we land in must be the repository the facts
     # were collected from (its name). If not, skip Level 4 with a model-tier
