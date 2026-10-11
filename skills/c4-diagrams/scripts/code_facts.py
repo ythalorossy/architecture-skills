@@ -439,7 +439,12 @@ def compose_services(index):
                     key, _, value = item.partition("=")
                 else:
                     key, _, value = item.partition(":")
-                current["environment"][key.strip().strip("'\"")] = value.strip().strip("'\"")
+                key = key.strip().strip("'\"")
+                value = value.strip().strip("'\"")
+                # c4-facts.json is committed and shared: keep the key, never the secret.
+                current["environment"][key] = (
+                    REDACTED if value and SECRET_NAME.search(key) else redact_value(value)
+                )
     return services
 
 
@@ -535,10 +540,23 @@ ENV_PATTERNS = [
 SECRET_NAME = re.compile(r"PASS|PWD|SECRET|TOKEN|KEY|CREDENTIAL|PRIVATE|AUTH|CONN|DSN|SALT|CERT", re.IGNORECASE)
 
 
+# A password inside a URL (scheme://user:password@host) or a connection
+# string (Password=...; pwd=...) is masked whatever the variable is called.
+URL_PASSWORD = re.compile(r"(\b[A-Za-z][A-Za-z0-9+.-]*://[^\s/:@]*):[^\s/@]+@")
+PAIR_PASSWORD = re.compile(r"(\b(?:password|pwd)\s*=\s*)[^;&\s]+", re.IGNORECASE)
+REDACTED = "***"
+
+
+def redact_value(value):
+    """value with any embedded password replaced by ***."""
+    value = URL_PASSWORD.sub(rf"\1:{REDACTED}@", value)
+    return PAIR_PASSWORD.sub(rf"\g<1>{REDACTED}", value)
+
+
 def _safe_default(name, value):
     if value in (None, "") or SECRET_NAME.search(name):
         return None
-    return value
+    return redact_value(value)
 
 
 PLACEHOLDER = re.compile(r"\$\{([A-Z][A-Z0-9_]+)(?::-?([^}]*))?\}")
