@@ -50,4 +50,4 @@ class RenderLevel4Test(unittest.TestCase):
             self.assertIn("The workflow engine", report)
             self.assertIn("> Sources: IWorkflowConductor → `Api/Workflow/Workflow.cs:2`, WorkflowConductor → `Api/Workflow/Workflow.cs:3`", report)
             self.assertIn("code structure", report)
-            self.assertTrue((output / f"c4-code-{container}-api-workflow.mmd").read_text().startswith("---\nconfig:"))
+            self.assertTrue((output / f"c4-code-{container}-api-workflow.mmd").read_text(encoding="utf-8").startswith("---\nconfig:"))

@@ -83,7 +83,7 @@ class TestDriftOnRerun(unittest.TestCase):
         out2.mkdir()
         run_analyzer(fixture, out2)
 
-        summary = json.loads((out2 / "summary.json").read_text())
+        summary = json.loads((out2 / "summary.json").read_text(encoding="utf-8"))
         # model_status should be drift (or ok if the new file doesn't change facts)
         # The key assertion is: it should NOT be invalid
         self.assertNotEqual(summary["c4"]["model_status"], "invalid")
@@ -115,7 +115,7 @@ class TestInvalidModel(unittest.TestCase):
 
         # Corrupt the model: add a relationship with an unknown id
         model_path = out / "c4-model.json"
-        model = json.loads(model_path.read_text())
+        model = json.loads(model_path.read_text(encoding="utf-8"))
         model["relationships"].append({
             "from": "bookshop-api",
             "to": "nonexistent-system",
@@ -153,7 +153,7 @@ class TestInvalidModel(unittest.TestCase):
 
         # Corrupt the model
         model_path = out / "c4-model.json"
-        model = json.loads(model_path.read_text())
+        model = json.loads(model_path.read_text(encoding="utf-8"))
         model["relationships"].append({
             "from": "bookshop-api",
             "to": "unknown-id",
@@ -170,11 +170,11 @@ class TestInvalidModel(unittest.TestCase):
         result = render(out, svg=False, collector=collector)
 
         summary_path = out / "summary.json"
-        summary = json.loads(summary_path.read_text())
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
         summary["c4"].update(collector.summary_dict())
         summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
-        summary = json.loads(summary_path.read_text())
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
         errors = summary["c4"].get("model_errors", [])
         self.assertTrue(len(errors) > 0, "model_errors must not be empty for invalid status")
 
