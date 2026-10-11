@@ -1,0 +1,4 @@
+#!/bin/bash
+# Fake mmdc that fails with a parse error on line 9
+echo "Error: Parse error on line 9: Unexpected token" >&2
+exit 1

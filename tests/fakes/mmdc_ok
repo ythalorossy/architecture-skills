@@ -1,0 +1,39 @@
+#!/bin/bash
+# Fake mmdc that succeeds and writes expected SVG files to the output directory
+# The output path is passed via -o
+
+OUTPUT_DIR=""
+INPUT_FILE=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -i)
+            INPUT_FILE="$2"
+            shift 2
+            ;;
+        -o)
+            OUTPUT_DIR="$2"
+            shift 2
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
+if [[ -z "$OUTPUT_DIR" ]]; then
+    # Batch mode: extract stems from %%=~=~ markers and write to cwd
+    if [[ -n "$INPUT_FILE" && -f "$INPUT_FILE" ]]; then
+        for stem in $(grep -oP '%%=~=~\K[^=]+(?==~=~%%)' "$INPUT_FILE" 2>/dev/null || echo ""); do
+            echo "fake svg for $stem" > "${stem}.svg"
+        done
+    fi
+else
+    # Per-diagram mode: derive stem from input filename
+    if [[ -n "$INPUT_FILE" ]]; then
+        stem=$(basename "$INPUT_FILE" .mmd)
+        echo "fake svg for $stem" > "${OUTPUT_DIR}/${stem}.svg"
+    fi
+fi
+
+exit 0
