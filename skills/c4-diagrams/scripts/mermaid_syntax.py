@@ -137,10 +137,26 @@ def _escape_leading_special_chars(text: str) -> str:
     return "\n".join(result)
 
 
+def _curly_quotes(text: str) -> str:
+    """
+    Straight double quotes as “…”. In flowchart labels mermaid shows #quot;
+    literally (as &quot;) and a raw " ends the label, so typographic quotes
+    are the only way to show quotation marks there.
+    """
+    out, opening = [], True
+    for c in text:
+        if c == '"':
+            out.append("“" if opening else "”")
+            opening = not opening
+        else:
+            out.append(c)
+    return "".join(out)
+
+
 def _escape_md_metachars(text: str) -> str:
     """Escape * ~ " < > to Mermaid-interpretable form (character-by-character)."""
     out = []
-    for c in text:
+    for c in _curly_quotes(text):
         if c == "*":
             out.append(r"\*")
         elif c == "~":
@@ -149,8 +165,6 @@ def _escape_md_metachars(text: str) -> str:
             out.append("#lt;")
         elif c == ">":
             out.append("#gt;")
-        elif c == '"':
-            out.append("#quot;")
         elif c == "`":
             # A backtick would end the "`…`" markdown string, and mermaid
             # shows #96; literally there, so use an apostrophe.
@@ -160,9 +174,8 @@ def _escape_md_metachars(text: str) -> str:
     return "".join(out)
 
 
-# flowchart plain: just entity codes for " < >
+# flowchart plain: entity codes for < >, typographic quotes for "
 _FLOWCHART_PLAIN_TABLE = str.maketrans({
-    '"': "#quot;",
     '<': "#lt;",
     '>': "#gt;",
     # Plain text is also placed inside "`…`" strings (titles, edge labels).
@@ -170,8 +183,8 @@ _FLOWCHART_PLAIN_TABLE = str.maketrans({
 })
 
 def flowchart_plain_escape(text: str) -> str:
-    """Escape " < > to Mermaid entity codes in a plain (non-markdown) label."""
-    return text.translate(_FLOWCHART_PLAIN_TABLE)
+    """Escape " < > for a plain (non-markdown) flowchart label."""
+    return _curly_quotes(text).translate(_FLOWCHART_PLAIN_TABLE)
 
 
 # sequence message: escape # and ; in a single pass (no double-escaping)
