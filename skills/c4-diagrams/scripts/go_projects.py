@@ -2,11 +2,11 @@ import re
 from pathlib import Path
 
 try:
-    from scripts.repo_index import walk_files
+    from scripts.repo_index import RepoIndex
     from scripts.paths import project_group
     from scripts.code_facts import go_imports
 except ImportError:
-    from repo_index import walk_files
+    from repo_index import RepoIndex
     from paths import project_group
     from code_facts import go_imports
 
@@ -25,10 +25,8 @@ def _go_file_text(path):
 
 def _go_files(directory, index=None):
     directory = Path(directory).resolve()
-    if index is not None:
-        return [f for f in index.walk(lambda n: n.endswith(".go") and not n.endswith("_test.go"))
-                if f.parent.resolve().is_relative_to(directory)]
-    return [f for f in walk_files(directory, lambda n: n.endswith(".go") and not n.endswith("_test.go"))]
+    index = RepoIndex.ensure(index, directory)
+    return list(index.walk(lambda n: n.endswith(".go") and not n.endswith("_test.go"), under=directory))
 
 
 def _package_group(relative_dir):
@@ -43,11 +41,7 @@ def _package_group(relative_dir):
 
 def _modules(repo, index=None):
     modules = []
-    if index is not None:
-        candidates = index.walk(lambda n: n == "go.mod")
-    else:
-        candidates = walk_files(repo, lambda n: n == "go.mod")
-    for go_mod in candidates:
+    for go_mod in RepoIndex.ensure(index, repo).walk(lambda n: n == "go.mod"):
         match = MODULE.search(_go_file_text(go_mod))
         if match:
             modules.append({"path": match.group(1), "dir": go_mod.parent.resolve(), "file": go_mod.resolve()})

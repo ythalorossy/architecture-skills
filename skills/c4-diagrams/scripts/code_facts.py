@@ -17,10 +17,10 @@ import re
 from pathlib import Path
 
 try:
-    from scripts.repo_index import walk_files
+    from scripts.repo_index import RepoIndex, walk_files
     from scripts.paths import TEST_DIRS, local_tag
 except ImportError:
-    from repo_index import walk_files
+    from repo_index import RepoIndex, walk_files
     from paths import TEST_DIRS, local_tag
 import xml.etree.ElementTree as ET
 
@@ -81,10 +81,7 @@ def _go_module_path(directory):
 def _module_packages(module_dir, index=None):
     """{file: (language, package, [imports])} for the JVM/C#/Go code of one module, tests excluded."""
     files = {}
-    if index is not None:
-        candidates = list(index.walk(lambda name: Path(name).suffix in CODE_EXTENSIONS, under=module_dir))
-    else:
-        candidates = walk_files(module_dir, lambda name: Path(name).suffix in CODE_EXTENSIONS)
+    candidates = RepoIndex.ensure(index, module_dir).walk(lambda name: Path(name).suffix in CODE_EXTENSIONS, under=module_dir)
     for file in candidates:
         if _is_test(file, module_dir):
             continue
@@ -585,10 +582,7 @@ def configuration(repo, files, owner_of, services, index=None):
                 add(m.group(1), _rel(repo, file), _line_of(text, m.start()), container=owner_of(file))
 
     config_files = []
-    if index is not None:
-        config_candidates = index.walk(lambda name: CONFIG_FILE.match(name) is not None)
-    else:
-        config_candidates = walk_files(repo, lambda name: CONFIG_FILE.match(name) is not None)
+    config_candidates = RepoIndex.ensure(index, repo).walk(lambda name: CONFIG_FILE.match(name) is not None)
     for file in config_candidates:
         if _is_test(file, repo):
             continue
@@ -665,12 +659,9 @@ def inventory(repo, container, module_paths, index=None):
     for manifest in dict.fromkeys(manifests):
         name = manifest.name
         if name == "package.json":
-            data = index.read_json(manifest) if index is not None else None
+            data = RepoIndex.ensure(index, repo).read_json(manifest)
             if data is None:
-                try:
-                    data = json.loads(_file_text(manifest))
-                except ValueError:
-                    continue
+                continue
             for field in ("dependencies", "devDependencies"):
                 for dep, version in (data.get(field) or {}).items():
                     if field == "dependencies" or dep in ("typescript", "vite", "webpack", "jest", "vitest", "eslint", "tailwindcss", "@playwright/test"):
@@ -735,12 +726,9 @@ DEV_PROXY = [
 def dev_proxies(repo, index=None):
     """[(prefix, target url, file, line)] from front-end dev-server configs and package.json "proxy"."""
     found = []
-    if index is not None:
-        config_candidates = index.walk(lambda n: re.match(r"(vite|webpack|next|vue|angular)\.config\.\w+$|^proxy\.conf\.json$|^setupProxy\.js$", n))
-        pkg_candidates = index.walk(lambda n: n == "package.json")
-    else:
-        config_candidates = walk_files(repo, lambda n: re.match(r"(vite|webpack|next|vue|angular)\.config\.\w+$|^proxy\.conf\.json$|^setupProxy\.js$", n))
-        pkg_candidates = walk_files(repo, lambda n: n == "package.json")
+    index = RepoIndex.ensure(index, repo)
+    config_candidates = index.walk(lambda n: re.match(r"(vite|webpack|next|vue|angular)\.config\.\w+$|^proxy\.conf\.json$|^setupProxy\.js$", n))
+    pkg_candidates = index.walk(lambda n: n == "package.json")
     for file in config_candidates:
         text = _file_text(file)
         if "proxy" not in text and "rewrites" not in text:
@@ -750,11 +738,8 @@ def dev_proxies(repo, index=None):
                 if "localhost" in m.group(2) or "127.0.0.1" in m.group(2) or re.search(r"://[\w-]+:\d+", m.group(2)):
                     found.append((m.group(1), m.group(2), file.resolve(), _line_of(text, m.start())))
     for file in pkg_candidates:
-        if index is not None:
-            data = index.read_json(file)
-            text = json.dumps(data) if data else ""
-        else:
-            text = _file_text(file)
+        data = index.read_json(file)
+        text = json.dumps(data) if data else ""
         m = re.search(r'"proxy"\s*:\s*"(https?://[^"]+)"', text)
         if m:
             found.append(("/", m.group(1), file.resolve(), _line_of(text, m.start())))

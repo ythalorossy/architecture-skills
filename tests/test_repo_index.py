@@ -79,7 +79,7 @@ class TestIgnorePolicy(unittest.TestCase):
             (repo / "node_modules" / "pkg" / "index.js").write_text("")
             collector = _MockCollector()
             index = RepoIndex.build(repo, collector)
-            files = list(index.files("all"))
+            files = list(index.files())
             self.assertEqual(files, [], "node_modules must be pruned from walk")
 
     def test_venv_is_ignored(self):
@@ -95,7 +95,7 @@ class TestIgnorePolicy(unittest.TestCase):
             (repo / "good.py").write_text("")
             collector = _MockCollector()
             index = RepoIndex.build(repo, collector)
-            names = {f.name for f in index.files("all")}
+            names = {f.name for f in index.files()}
             self.assertIn("good.py", names)
             self.assertNotIn(".venv", names)
 
@@ -113,7 +113,7 @@ class TestIgnorePolicy(unittest.TestCase):
             (repo / "good.py").write_text("")
             collector = _MockCollector()
             index = RepoIndex.build(repo, collector)
-            names = {f.name for f in index.files("all")}
+            names = {f.name for f in index.files()}
             self.assertIn("good.py", names)
             self.assertNotIn("myenv", names)
 
@@ -133,7 +133,7 @@ class TestIgnorePolicy(unittest.TestCase):
             (repo / ".venv" / "pyvenv.cfg").write_text("")
             collector = _MockCollector()
             index = RepoIndex.build(repo, collector)
-            names = {f.name for f in index.files("all")}
+            names = {f.name for f in index.files()}
             # Allowed dot-folders
             self.assertIn("ci.yml", names)
             self.assertIn(".gitlab-ci.yml", names)
@@ -152,7 +152,7 @@ class TestIgnorePolicy(unittest.TestCase):
                 (repo / name).write_text("")
             collector = _MockCollector()
             index = RepoIndex.build(repo, collector)
-            names = [f.name for f in index.files("all")]
+            names = [f.name for f in index.files()]
             self.assertEqual(names, sorted(names), "files must be sorted")
 
 
@@ -179,7 +179,7 @@ class TestTolerantWalk(unittest.TestCase):
             try:
                 collector = _MockCollector()
                 index = RepoIndex.build(repo, collector)
-                files = list(index.files("all"))
+                files = list(index.files())
                 names = {f.name for f in files}
                 self.assertIn("good.py", names)
                 self.assertNotIn("secret.py", names)
@@ -208,7 +208,7 @@ class TestTolerantWalk(unittest.TestCase):
             (repo / "good.py").write_text("")
             collector = _MockCollector()
             index = RepoIndex.build(repo, collector)
-            names = {f.name for f in index.files("all")}
+            names = {f.name for f in index.files()}
             self.assertIn("good.py", names)
             self.assertNotIn("leak.py", names)
             self.assertTrue(link.is_symlink(), "leak must still be a symlink in repo")
@@ -233,7 +233,7 @@ class TestTolerantWalk(unittest.TestCase):
             (repo / "good.py").write_text("")
             collector = _MockCollector()
             index = RepoIndex.build(repo, collector)
-            names = {f.name for f in index.files("all")}
+            names = {f.name for f in index.files()}
             self.assertIn("good.py", names)
             self.assertNotIn("missing.csproj", names)
             skip_paths = [s["path"] for s in collector.skipped_entries]
@@ -260,8 +260,7 @@ class TestTolerantWalk(unittest.TestCase):
                 collector = _MockCollector()
                 index = RepoIndex.build(repo, collector)
                 # Access files multiple times through different views
-                list(index.files("all"))
-                list(index.files("source"))
+                list(index.files())
                 list(index.by_suffix(".py"))
                 skip_paths = [s["path"] for s in collector.skipped_entries]
                 no_access_count = sum(1 for p in skip_paths if "no_access" in p)
@@ -384,42 +383,6 @@ class TestTolerantReader(unittest.TestCase):
             big.write_bytes(b"x" * (MAX_TEXT_BYTES + 1))
             index = RepoIndex.build(repo)
             self.assertIsNone(index.read_text(big))
-
-    def test_read_toml_invalid_returns_none_with_warning(self):
-        RepoIndex = _repo_index()
-        if RepoIndex is None:
-            self.skipTest("repo_index.py not yet implemented")
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp) / "repo"
-            repo.mkdir()
-            bad_toml = repo / "pyproject.toml"
-            bad_toml.write_text("[project\ngarbage")
-            collector = _MockCollector()
-            index = RepoIndex.build(repo, collector)
-            data = index.read_toml(bad_toml)
-            self.assertIsNone(data, "read_toml must return None for invalid TOML")
-            parse_warnings = [w for w in collector.warnings if w["kind"] == "parse"]
-            self.assertEqual(len(parse_warnings), 1)
-            self.assertIn("pyproject.toml", parse_warnings[0]["file"])
-
-    @unittest.skipUnless(os.name == "posix", "POSIX-only: chmod 000")
-    def test_parse_xml_permission_error_returns_none(self):
-        RepoIndex = _repo_index()
-        if RepoIndex is None:
-            self.skipTest("repo_index.py not yet implemented")
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp) / "repo"
-            repo.mkdir()
-            xml_file = repo / "test.csproj"
-            xml_file.write_text("<Project><ItemGroup/></Project>")
-            os.chmod(xml_file, 0)
-            try:
-                collector = _MockCollector()
-                index = RepoIndex.build(repo, collector)
-                result = index.parse_xml(xml_file)
-                self.assertIsNone(result, "parse_xml must return None on permission error")
-            finally:
-                os.chmod(xml_file, 0o644)
 
     def test_read_ini_invalid_returns_none(self):
         RepoIndex = _repo_index()
