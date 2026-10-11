@@ -213,13 +213,16 @@ class TestRealRenderer(unittest.TestCase):
                 "---\nconfig:\n  layout: elk\n---\nflowchart TB\n"
                 '    subgraph boundary["`**Shop** [Software System]`"]\n'
                 '        api["`**API**\n[Container]`"]\n    end\n'
-                '    user["`**User**`"] -->|"`Uses`"| api\n',
+                '    user["`**User** “quoted” #lt;b#gt;`"] -->|"`Uses`"| api\n',
                 encoding="utf-8",
             )
             results = sr.render([("c4", mmd)], Path(tmp))
             self.assertEqual(results[0].status, "ok", results[0])
             svg = (Path(tmp) / "c4.svg").read_text(encoding="utf-8")
         self.assertNotIn("@font-face", svg)
+        self.assertIn("“quoted”", svg)
+        self.assertIn("&lt;b&gt;", svg)
+        self.assertNotIn("&amp;", svg)
         self.assertLess(len(svg.encode("utf-8")), 100_000)
 
 
