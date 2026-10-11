@@ -1,0 +1,35 @@
+{
+  "repository": "maven_layered",
+  "technology_stack": [
+    "Java"
+  ],
+  "projects_found": 4,
+  "folders_found": 1,
+  "components_found": 4,
+  "dependencies_found": 4,
+  "test_projects": [],
+  "orphan_projects": [],
+  "duplicate_project_names": [],
+  "unresolved_references": [],
+  "cycles": [],
+  "untested_projects": [],
+  "dependency_graph_available": true,
+  "status": "ok",
+  "warnings": [],
+  "skipped_files": [],
+  "c4": {
+    "containers": 1,
+    "data_stores": 1,
+    "external_systems": 0,
+    "diagrams": [
+      "c4-container",
+      "c4-component-shop-api",
+      "c4-structure-shop-api"
+    ],
+    "model": "facts-only",
+    "model_errors": [],
+    "model_status": "ok",
+    "drift": [],
+    "svg": {}
+  }
+}

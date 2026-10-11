@@ -30,6 +30,7 @@ ANALYZER = Path(__file__).resolve().parent.parent / "skills" / "c4-diagrams" / "
 FIXTURES = [
     "dotnet_sln",
     "maven_multi",
+    "maven_layered",
     "gradle_kts",
     "go_mod",
     "node_workspace",
