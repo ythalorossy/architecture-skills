@@ -1,0 +1,143 @@
+{
+  "repository": "maven_layered",
+  "containers": [
+    {
+      "id": "shop-api",
+      "name": "shop-api",
+      "kind": "web-api",
+      "technology": "Spring Boot",
+      "path": "backend/shop-api",
+      "evidence": [
+        "backend/shop-api/pom.xml: Spring Boot"
+      ],
+      "components": {
+        "nodes": {
+          "shop-api": {
+            "path": "backend/shop-api/pom.xml",
+            "group": "backend"
+          },
+          "shop-application": {
+            "path": "backend/shop-application/pom.xml",
+            "group": "backend"
+          },
+          "shop-domain": {
+            "path": "backend/shop-domain/pom.xml",
+            "group": "backend"
+          },
+          "shop-infrastructure": {
+            "path": "backend/shop-infrastructure/pom.xml",
+            "group": "backend"
+          }
+        },
+        "edges": {
+          "shop-api": [
+            "shop-application",
+            "shop-infrastructure"
+          ],
+          "shop-application": [
+            "shop-domain"
+          ],
+          "shop-domain": [],
+          "shop-infrastructure": [
+            "shop-application"
+          ]
+        }
+      },
+      "code_components": {
+        "nodes": {
+          "shop-api::api": {
+            "module": "shop-api",
+            "group": "shop-api",
+            "label": "api",
+            "language": "jvm",
+            "path": "com.example.shop.api",
+            "files": 2
+          },
+          "shop-application::application": {
+            "module": "shop-application",
+            "group": "shop-application",
+            "label": "application",
+            "language": "jvm",
+            "path": "com.example.shop.application",
+            "files": 1
+          },
+          "shop-domain::domain": {
+            "module": "shop-domain",
+            "group": "shop-domain",
+            "label": "domain",
+            "language": "jvm",
+            "path": "com.example.shop.domain",
+            "files": 1
+          },
+          "shop-infrastructure::infrastructure": {
+            "module": "shop-infrastructure",
+            "group": "shop-infrastructure",
+            "label": "infrastructure",
+            "language": "jvm",
+            "path": "com.example.shop.infrastructure",
+            "files": 1
+          }
+        },
+        "edges": {
+          "shop-api::api": [
+            "shop-application::application"
+          ],
+          "shop-application::application": [
+            "shop-domain::domain"
+          ],
+          "shop-domain::domain": [],
+          "shop-infrastructure::infrastructure": [
+            "shop-domain::domain"
+          ]
+        }
+      },
+      "inventory": [
+        "spring-boot-starter-web",
+        "spring-boot-starter-data-redis"
+      ],
+      "compose_services": null
+    }
+  ],
+  "data_stores": [
+    {
+      "id": "db-redis",
+      "name": "Redis",
+      "technology": "Redis",
+      "evidence": [
+        "backend/shop-infrastructure/pom.xml:18"
+      ],
+      "used_by": [
+        "shop-api"
+      ],
+      "used_by_components": {
+        "shop-api": [
+          "shop-infrastructure"
+        ]
+      },
+      "used_by_code": {}
+    }
+  ],
+  "external_systems": [],
+  "relationships": [],
+  "endpoints": [
+    {
+      "method": "POST",
+      "path": "<abs-path>",
+      "file": "backend/shop-api/src/main/java/com/example/shop/api/OrderController.java",
+      "line": 11,
+      "container": "shop-api"
+    }
+  ],
+  "deployment": {
+    "compose": [],
+    "dockerfiles": [],
+    "kubernetes": [],
+    "ci": [],
+    "platforms": []
+  },
+  "configuration": {
+    "variables": [],
+    "files": []
+  },
+  "repository_root": "<abs-path>"
+}

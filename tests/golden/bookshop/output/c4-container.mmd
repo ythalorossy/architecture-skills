@@ -1,0 +1,35 @@
+---
+config:
+  layout: elk
+---
+flowchart TB
+    subgraph boundary["`**bookshop** [Software System]`"]
+        bookshop_api["`**bookshop-api**
+[Container: Python, FastAPI]
+web api`"]
+        bookshop_web["`**bookshop-web**
+[Container: React]
+web app`"]
+        db_elasticsearch[("`**Elasticsearch**
+[Container: Elasticsearch]`")]
+        db_postgresql[("`**PostgreSQL**
+[Container: PostgreSQL]`")]
+    end
+    ext_covers_example["`**covers.example**
+[Software System]`"]
+    ext_payments_example["`**payments.example**
+[Software System]`"]
+    bookshop_api -->|"`Depends on`"| db_postgresql
+    bookshop_web -->|"`Depends on`"| bookshop_api
+    bookshop_api -->|"`Reads/writes`"| db_elasticsearch
+    bookshop_api -->|"`Calls`"| ext_covers_example
+    bookshop_api -->|"`Calls`"| ext_payments_example
+    classDef person fill:#08427b,stroke:#052e56,color:#ffffff
+    classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
+    classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff
+    classDef component fill:#85bbf0,stroke:#5d82a8,color:#000000
+    classDef external fill:#999999,stroke:#6b6b6b,color:#ffffff
+    classDef shared fill:#dbe9f6,stroke:#5d82a8,color:#000000,stroke-dasharray:4 3
+    class bookshop_api,bookshop_web,db_elasticsearch,db_postgresql container
+    class ext_covers_example,ext_payments_example external
+    style boundary fill:none,stroke:#444444,stroke-dasharray:6 4

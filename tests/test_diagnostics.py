@@ -50,10 +50,17 @@ class TestDiagnosticKinds(unittest.TestCase):
         c.file_skipped("repo_index", "path/to/file", "permission denied")
         self.assertTrue(c.degraded)
 
-    def test_render_warning_not_degraded(self):
+    def test_render_warning_marks_degraded(self):
+        # A diagram that failed to render is listed in warnings and degrades the run.
         c = DiagnosticsCollector()
-        c.render_warning("render_c4", "SVG rendering failed")
-        self.assertFalse(c.degraded)
+        c.render_warning("svg_render", "c4-container: syntax-error — Parse error on line 9")
+        self.assertTrue(c.degraded)
+        self.assertEqual(c.warnings()[0]["kind"], "render")
+
+    def test_invalid_model_marks_degraded(self):
+        c = DiagnosticsCollector()
+        c.model_error("render_c4", "relationships[0]: unknown from id 'ghost'")
+        self.assertTrue(c.degraded)
 
     def test_model_warning_not_degraded(self):
         c = DiagnosticsCollector()

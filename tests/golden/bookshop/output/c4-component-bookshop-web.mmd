@@ -1,0 +1,20 @@
+---
+config:
+  layout: elk
+---
+flowchart TB
+    subgraph boundary["`**bookshop-web** [Container]`"]
+        web_src__files["`**src (root files)**
+[Component]`"]
+        web_src_api["`**src/api**
+[Component]`"]
+    end
+    web_src__files --> web_src_api
+    classDef person fill:#08427b,stroke:#052e56,color:#ffffff
+    classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
+    classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff
+    classDef component fill:#85bbf0,stroke:#5d82a8,color:#000000
+    classDef external fill:#999999,stroke:#6b6b6b,color:#ffffff
+    classDef shared fill:#dbe9f6,stroke:#5d82a8,color:#000000,stroke-dasharray:4 3
+    class web_src__files,web_src_api component
+    style boundary fill:none,stroke:#444444,stroke-dasharray:6 4

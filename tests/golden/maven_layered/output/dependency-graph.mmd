@@ -1,0 +1,11 @@
+graph TD
+    subgraph group_backend["backend"]
+        shop_api["shop-api"]
+        shop_application["shop-application"]
+        shop_domain["shop-domain"]
+        shop_infrastructure["shop-infrastructure"]
+    end
+    shop_api --> shop_application
+    shop_api --> shop_infrastructure
+    shop_application --> shop_domain
+    shop_infrastructure --> shop_application

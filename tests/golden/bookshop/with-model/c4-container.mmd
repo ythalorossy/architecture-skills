@@ -1,0 +1,52 @@
+---
+config:
+  layout: elk
+---
+flowchart TB
+    reader("`**Reader**
+[Person]
+Searches the catalogue and buys
+books`")
+    subgraph boundary["`**Bookshop** [Software System]`"]
+        bookshop_web["`**Web app**
+[Container: React, Vite]
+Search and checkout pages in the
+browser`"]
+        bookshop_api["`**Bookshop API**
+[Container: Python, FastAPI]
+Searches the catalogue and places
+orders`"]
+        db_postgresql[("`**Orders database**
+[Container: PostgreSQL 16]
+Orders and their payment
+references`")]
+    end
+    db_elasticsearch["`**Catalogue index**
+[Software System]
+Book catalogue search index, run
+and filled by the catalogue team`"]
+    ext_payments_example["`**Payment provider**
+[Software System]
+Charges the reader's card for an
+order`"]
+    reader -->|"`Finds and buys books using
+[HTTPS]`"| bookshop_web
+    bookshop_web -->|"`Searches books and places
+orders through
+[JSON/HTTPS]`"| bookshop_api
+    bookshop_api -->|"`Stores orders in
+[psycopg]`"| db_postgresql
+    bookshop_api -->|"`Searches the catalogue in
+[Elasticsearch client]`"| db_elasticsearch
+    bookshop_api -->|"`Charges cards with
+[HTTPS, httpx]`"| ext_payments_example
+    classDef person fill:#08427b,stroke:#052e56,color:#ffffff
+    classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
+    classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff
+    classDef component fill:#85bbf0,stroke:#5d82a8,color:#000000
+    classDef external fill:#999999,stroke:#6b6b6b,color:#ffffff
+    classDef shared fill:#dbe9f6,stroke:#5d82a8,color:#000000,stroke-dasharray:4 3
+    class reader person
+    class bookshop_web,bookshop_api,db_postgresql container
+    class db_elasticsearch,ext_payments_example external
+    style boundary fill:none,stroke:#444444,stroke-dasharray:6 4

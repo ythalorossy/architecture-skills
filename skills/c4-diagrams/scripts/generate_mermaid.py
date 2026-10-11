@@ -4,9 +4,9 @@ import re
 from scripts import mermaid_syntax as _ms
 
 
-def _node_ids(names):
-    """Mermaid IDs must be plain identifiers; delegates to mermaid_syntax (SPEC-04)."""
-    alloc = _ms.IdAllocator("flowchart")
+def _node_ids(names, alloc=None):
+    """Mermaid ids are plain identifiers; the real names go in the labels."""
+    alloc = alloc or _ms.IdAllocator("flowchart")
     return {name: alloc.id(name) for name in names}
 
 
@@ -32,18 +32,19 @@ def generate_mermaid(graph, groups=None):
         if target not in graph
     })
 
-    ids = _node_ids(list(graph) + external)
+    alloc = _ms.IdAllocator("flowchart")
+    ids = _node_ids(list(graph) + external, alloc)
 
     by_group = {}
 
     for name in graph:
         by_group.setdefault(groups.get(name, ""), []).append(name)
 
-    group_ids = _node_ids([
-        f"group_{group}"
+    group_ids = {
+        f"group_{group}": alloc.internal(f"group_{group}")
         for group in by_group
         if group
-    ])
+    }
 
     lines = [
         "graph TD"
@@ -82,29 +83,6 @@ def generate_mermaid(graph, groups=None):
         )
 
     return "\n".join(lines) + "\n"
-
-
-def render_svg(mermaid_file, svg_file, timeout=180):
-    """
-    Thin compatibility wrapper: calls svg_render.render() for a single stem
-    and returns True/False for backwards compatibility with callers that use it
-    as a predicate.
-
-    The timeout argument is accepted but ignored (the new pipeline uses its own
-    bounded timeouts per SPEC-05).
-    """
-    from scripts import svg_render as _sr
-
-    stem = Path(svg_file).stem
-    results = _sr.render(
-        [(stem, Path(mermaid_file))],
-        Path(svg_file).parent,
-    )
-    # Return True only if the stem succeeded
-    for r in results:
-        if r.stem == stem:
-            return r.status == "ok"
-    return False
 
 
 def save_mermaid(graph, output_file, groups=None):

@@ -1,0 +1,16 @@
+---
+config:
+  class:
+    hideEmptyMembersBox: true
+---
+classDiagram
+    direction TB
+    class OrderService {
+        +place(book_id, quantity, card_token) dict
+    }
+    class OrderRepository {
+        +save(book_id, quantity, charge_id) int
+    }
+    OrderService ..> OrderRepository
+    style OrderService fill:#85bbf0,stroke:#5d82a8,color:#000000
+    style OrderRepository fill:#85bbf0,stroke:#5d82a8,color:#000000
