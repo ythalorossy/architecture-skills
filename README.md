@@ -21,6 +21,8 @@ The report also has sections built straight from the code:
 | Configuration | environment variables the code reads or compose sets, with defaults, and the config files found |
 | Technology inventory | runtime, frameworks and key libraries with versions, per container |
 
+**See it:** [`examples/bookshop/ArchitectureReport.md`](examples/bookshop/ArchitectureReport.md) is a complete report for a small synthetic shop (web app, API, database, a search index another team runs, a payment provider).
+
 Each level is its own diagram, so no single picture has to show everything. Diagrams with more than 20 components are split by module or folder, and in dense graphs shortcut edges are hidden.
 
 The full dependency graph stays in an appendix:
@@ -160,6 +162,87 @@ python3 skills/c4-diagrams/scripts/render_c4.py ./architecture-docs/<repo name>
 ```
 
 The model format is described in [`assets/c4-model-reference.md`](skills/c4-diagrams/assets/c4-model-reference.md).
+
+This is the Container level of the [example](examples/bookshop/ArchitectureReport.md):
+
+![Bookshop containers](examples/bookshop/c4-container.svg)
+
+## Command reference
+
+### `analyze_repository.py`
+
+```bash
+python3 skills/c4-diagrams/scripts/analyze_repository.py <repository> [options]
+```
+
+Scans the repository and writes the facts, the facts-only diagrams and the report. An existing `c4-model.json` in the output folder is kept and used.
+
+| Option | Effect |
+|---|---|
+| `--output <folder>` | Where to write (default `./architecture-docs/<repository name>/` in the current directory). Refused inside the skill folder |
+| `--no-svg` | Don't render SVGs; the report shows the Mermaid source |
+| `--strict` | Exit 2 when the run is degraded |
+| `--timestamp` | Add a "Generated On" time to the report (off by default so re-runs are byte-identical) |
+| `--debug` | Show the full traceback of an unexpected error |
+
+### `render_c4.py`
+
+```bash
+python3 skills/c4-diagrams/scripts/render_c4.py <output folder> [options]
+```
+
+Checks `c4-model.json` against `c4-facts.json` and redraws every C4 diagram and the report's C4 section.
+
+| Option | Effect |
+|---|---|
+| `--no-svg` | Don't render SVGs |
+| `--facts-only` | Ignore `c4-model.json` and draw from the facts alone |
+| `--repo <path>` | Where the repository is, when the output folder was moved away from it (needed for Level 4 and evidence checks) |
+| `--strict` | Exit 2 when the model drifts from the code |
+| `--debug` | Show the full traceback of an unexpected error |
+
+### Environment
+
+| Variable | Effect |
+|---|---|
+| `C4_SVG=0` | Same as `--no-svg`, for both scripts |
+| `C4_SVG_TIMEOUT_PER_DIAGRAM` | Seconds per diagram before the renderer is stopped (default 180) |
+| `C4_SVG_TIMEOUT_INSTALL` | Seconds for the first `npx` run, which downloads mermaid-cli and Chrome (default 600) |
+
+### Exit codes and status
+
+| | `analyze_repository.py` | `render_c4.py` |
+|---|---|---|
+| 0 | done (`summary.json` `status` is `ok` or `degraded`) | the model is `ok`, or `drift` |
+| 1 | could not run: bad path, Python older than 3.11, unexpected error | the model is `invalid` (facts-only diagrams were drawn), or could not run |
+| 2 | degraded, with `--strict` | drift, with `--strict` |
+
+`summary.json` `status` is `degraded` when a file couldn't be read or parsed, a diagram failed to render, or `c4-model.json` is invalid; each cause is in `warnings`. A missing Node.js is not degraded. `c4.model_status` is `ok`, `drift` (facts the model doesn't cover yet) or `invalid`.
+
+## Troubleshooting
+
+| You see | What to do |
+|---|---|
+| `python3: command not found` (often on Windows) | Use `python` or `py -3`, or install Python 3.11+ |
+| `ERROR: Python 3.11+ is required (found 3.x)` | Install a newer Python (`uv python install 3.12`, python.org, or your package manager) |
+| `NOTE: SVGs not rendered: neither mmdc nor npx is on PATH` | Install Node.js 22.13+ (and ideally `npm install -g @mermaid-js/mermaid-cli`). The analysis itself is complete |
+| The first run hangs or ends with `timeout` on every diagram | The first `npx` run downloads mermaid-cli and Chrome. Install mermaid-cli globally, or raise `C4_SVG_TIMEOUT_INSTALL` |
+| `tool-error` with `error while loading shared libraries: libnss3.so` (Linux, WSL) | Headless Chrome needs system libraries; see [Puppeteer's troubleshooting guide](https://pptr.dev/troubleshooting#chrome-doesnt-launch-on-linux) |
+| `WARNING: c4-container: syntax-error — …` | A label in `c4-model.json` breaks Mermaid; fix that text and re-run `render_c4.py`. Without a model, please open an issue with the `.mmd` file |
+| `DRIFT: … was found in the code but is not in the model` | The code changed. Add the fact to `c4-model.json`, or list it in `excluded` with a reason |
+| `c4-model.json does not match c4-facts.json:` and exit 1 | The model is invalid; the listed errors name the JSON path and often suggest the right id (`did you mean …?`) |
+| `WARNING: no container detected` | Nothing with an entry point, a known framework or a compose service was found. Describe the runnable parts in `c4-model.json` yourself |
+| `WARNING: No supported projects found` | The stack isn't one the analyzer reads; see Limitations |
+| `repository not found at …; re-run analyze_repository.py or pass --repo <path>` | The output folder moved. Pass `--repo <path to the repository>` to `render_c4.py` |
+| `the output folder is inside the skill folder` | Run from your repository's folder, or pass `--output` |
+
+## Limitations
+
+- **Detection is pattern-based.** Containers, stores and external systems are found from manifests, framework imports, client libraries, URLs and docker-compose. Something reached only through an in-house wrapper, reflection, or configuration the analyzer doesn't read can be missed. The skill asks the agent to add what it finds in the code, with evidence.
+- **Languages:** .NET (C#, F#, VB), Java/Kotlin (Maven, Gradle), Go, Node.js/TypeScript and Python. Other languages are not analyzed (the agent can still model them by hand).
+- **Not read:** Terraform and other infrastructure-as-code, runtime behaviour, traffic, and anything outside the repository.
+- **Dense graphs hide shortcuts:** when A → B → C is drawn, a direct A → C is left out of component diagrams (the full list stays in `c4-facts.json` and the appendix). Diagrams with more than 20 components are split into parts.
+- **Secrets are masked by pattern:** passwords in URLs and connection strings, and values of secret-looking variables, are shown as `***`; other secrets in unusual formats are not detected. Review the report before publishing it.
 
 ## Running the tests
 
