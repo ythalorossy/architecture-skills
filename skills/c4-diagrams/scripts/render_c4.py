@@ -799,7 +799,8 @@ def _unreviewed_facts_section(facts, drift):
     by_id = {}
     for kind in ("containers", "data_stores", "external_systems"):
         for fact in facts[kind]:
-            by_id[fact["id"]] = (kind.rstrip("_systems"), fact)
+            by_id[fact["id"]] = ({"containers": "container", "data_stores": "data store",
+                                  "external_systems": "external system"}[kind], fact)
     rows = ["| id | name | kind | evidence |", "|---|---|---|---|"]
     for message in drift:
         first_token = message.split(" ", 1)[0]
