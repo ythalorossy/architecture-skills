@@ -10,6 +10,7 @@
 ### Added
 
 - When nothing runnable is found and the repository is drawn as one box, `summary.json` gets a `detection` warning instead of reporting a clean run.
+- **Docs:** a command reference for both scripts (options, environment variables, exit codes, statuses), a troubleshooting table for the messages you can see, a limitations section, and a complete example report in `examples/bookshop/`.
 
 ## 3.3.5 — 2026-10-11
 
