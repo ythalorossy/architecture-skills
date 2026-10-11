@@ -1,5 +1,6 @@
 import copy
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -8,6 +9,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SKILL = REPO_ROOT / "skills" / "c4-diagrams"
 if str(SKILL) not in sys.path:
     sys.path.insert(0, str(SKILL))
+
+# No test starts the real mermaid-cli: it needs Node.js and, on a cold npm
+# cache, the network. Analyzer runs and CLI subprocesses inherit this.
+# Tests that exercise rendering use tests/fakes/fake_mmdc.py and switch it
+# back on locally; C4_REAL_RENDER=1 runs the one real-renderer test.
+os.environ.setdefault("C4_SVG", "0")
 
 
 ABS_PATH_PLACEHOLDER = "<abs-path>"

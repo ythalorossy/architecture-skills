@@ -1,9 +1,13 @@
 """
-Tests for svg_render.py (SPEC-05 Tasks 1-3).
-Uses fake renderer executables and internal mocking so no real Node.js needed.
+Tests for svg_render.py.
+
+The renderer is driven through its public render() function with a fake
+mermaid-cli (tests/fakes/fake_mmdc.py) started as a real subprocess, so the
+argument passing, timeouts and status classification are exercised end to
+end on every platform without Node.js.
 """
+import json
 import os
-import subprocess
 import sys
 import tempfile
 import time
@@ -13,275 +17,211 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 SKILL = ROOT / "skills" / "c4-diagrams"
-FAKES = ROOT / "tests" / "fakes"
+FAKE_MMDC = ROOT / "tests" / "fakes" / "fake_mmdc.py"
 
 if str(SKILL) not in sys.path:
     sys.path.insert(0, str(SKILL))
 
-
-def _patch_path(path: str):
-    return mock.patch.dict(os.environ, {"PATH": path})
+from scripts import svg_render as sr  # noqa: E402
 
 
-class TestMissingToolStatus(unittest.TestCase):
-    """AC1: missing tool within 1s, all stems missing-tool."""
+class RenderTestCase(unittest.TestCase):
+    """Temp dir with N diagrams and a fake renderer selected by mode."""
 
-    def test_missing_tool_within_1s(self):
-        """With no mmdc/npx on PATH every stem is missing-tool within 1 second."""
-        empty_path = os.pathsep.join(["/nonexistent", "/usr/bin", "/bin"])
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.out = self.tmp / "out"
+        self.log = self.tmp / "calls.jsonl"
 
-        with _patch_path(empty_path):
-            from scripts import svg_render as sr
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
 
-            with tempfile.TemporaryDirectory() as tmp:
-                out = Path(tmp) / "out"
-                out.mkdir()
+    def stems(self, count):
+        result = []
+        for i in range(count):
+            path = self.tmp / f"stem{i}.mmd"
+            path.write_text("flowchart TB\n    a --> b\n", encoding="utf-8")
+            result.append((f"stem{i}", path))
+        return result
 
-                stems = [(f"stem{i}", Path(tmp) / f"stem{i}.mmd") for i in range(3)]
-                for _, p in stems:
-                    p.write_text("graph TD\n    A-->B\n", encoding="utf-8")
+    def render(self, stems, mode="ok", kind="mmdc", extra_env=None):
+        env = {"FAKE_MMDC_MODE": mode, "FAKE_MMDC_LOG": str(self.log)}
+        env.update(extra_env or {})
+        command = [sys.executable, str(FAKE_MMDC)]
+        with mock.patch.object(sr, "_resolve", return_value=(kind, command)), \
+                mock.patch.dict(os.environ, env):
+            return sr.render(stems, self.out)
 
-                t0 = time.monotonic()
-                results = sr.render(stems, out, svg_flag=True, env_disabled=False)
-                elapsed = time.monotonic() - t0
-
-                self.assertLess(elapsed, 1.0, f"missing-tool must be fast, took {elapsed:.1f}s")
-                for r in results:
-                    self.assertEqual(r.status, "missing-tool", r)
-
-
-class TestSyntaxErrorStatus(unittest.TestCase):
-    """AC3: syntax error carries mmdc parse message, not 'needs Node.js'."""
-
-    def test_syntax_error_carries_parse_message(self):
-        """A fake syntax-error mmdc gives status=syntax-error with parse message."""
-        from scripts import svg_render as sr
-
-        original = sr._render_one
-
-        def fake_parse_error(cmd, mmd_path, output_svg, timeout, offline=True):
-            return 1, "", "Error: Parse error on line 9: Unexpected token"
-
-        sr._render_one = fake_parse_error
-
-        try:
-            with tempfile.TemporaryDirectory() as tmp:
-                out = Path(tmp) / "out"
-                out.mkdir()
-
-                stem_path = Path(tmp) / "c4-context.mmd"
-                stem_path.write_text("graph TD\n    A-->B\n", encoding="utf-8")
-
-                results = sr.render(
-                    [("c4-context", stem_path)], out,
-                    svg_flag=True, env_disabled=False,
-                )
-
-                self.assertEqual(len(results), 1)
-                r = results[0]
-                self.assertEqual(r.status, "syntax-error",
-                                 f"expected syntax-error, got {r.status}: {r.message}")
-                self.assertIn("Parse error", r.message)
-                self.assertNotIn("needs Node.js", r.message)
-        finally:
-            sr._render_one = original
+    def calls(self):
+        if not self.log.exists():
+            return []
+        return [json.loads(line) for line in self.log.read_text(encoding="utf-8").splitlines()]
 
 
-class TestTimeoutKillsProcessGroup(unittest.TestCase):
-    """AC2: timeout kills process group, no orphans."""
+class TestOk(RenderTestCase):
+    def test_every_diagram_rendered_once(self):
+        results = self.render(self.stems(5))
 
-    @unittest.skip("TimeoutExpired propagates through mock unexpectedly; real implementation catches it")
-    def test_timeout_kills_pgid(self):
-        """With hanging fake, status is timeout."""
-        pass  # implementation works with real subprocess but mock bypasses internal exception handling
+        self.assertEqual([r.stem for r in results], [f"stem{i}" for i in range(5)])
+        self.assertEqual({r.status for r in results}, {"ok"})
+        for i in range(5):
+            self.assertTrue((self.out / f"stem{i}.svg").is_file())
+        # One process per diagram, each told to write its own .svg file.
+        calls = self.calls()
+        self.assertEqual(len(calls), 5)
+        self.assertEqual(sorted(Path(c["output"]).name for c in calls),
+                         [f"stem{i}.svg" for i in range(5)])
 
+    def test_exit_0_without_svg_is_a_tool_error(self):
+        results = self.render(self.stems(1), mode="no-output")
+        self.assertEqual(results[0].status, "tool-error")
 
-class TestSvgFlag(unittest.TestCase):
-    """AC7: svg_flag=False skips all rendering."""
-
-    def test_svg_flag_false_skips_all(self):
-        """With svg_flag=False, all stems get status=skipped."""
-        from scripts import svg_render as sr
-
-        with tempfile.TemporaryDirectory() as tmp:
-            out = Path(tmp) / "out"
-            out.mkdir()
-            stems = [(f"stem{i}", Path(tmp) / f"stem{i}.mmd") for i in range(3)]
-            for _, p in stems:
-                p.write_text("graph TD\n    A-->B\n", encoding="utf-8")
-
-            results = sr.render(stems, out, svg_flag=False)
-
-            self.assertEqual(len(results), 3)
-            for r in results:
-                self.assertEqual(r.status, "skipped", r)
-
-    def test_env_disabled_skips_all(self):
-        """With env_disabled=True, all stems get status=skipped."""
-        from scripts import svg_render as sr
-
-        with tempfile.TemporaryDirectory() as tmp:
-            out = Path(tmp) / "out"
-            out.mkdir()
-            stems = [(f"stem{i}", Path(tmp) / f"stem{i}.mmd") for i in range(2)]
-            for _, p in stems:
-                p.write_text("graph TD\n    A-->B\n", encoding="utf-8")
-
-            results = sr.render(stems, out, svg_flag=True, env_disabled=True)
-
-            self.assertEqual(len(results), 2)
-            for r in results:
-                self.assertEqual(r.status, "skipped", r)
+    def test_no_stems(self):
+        self.assertEqual(self.render([]), [])
 
 
-class TestCircuitBreaker(unittest.TestCase):
-    """AC2: after first timeout/missing-tool, remaining stems are skipped."""
+class TestSyntaxError(RenderTestCase):
+    def test_parse_error_is_reported_per_diagram(self):
+        results = self.render(self.stems(3), mode="syntax")
 
-    @unittest.skip("TimeoutExpired propagates through mock unexpectedly; real implementation catches it")
-    def test_timeout_skips_remaining(self):
-        """With hanging renderer and N stems, remaining stems are skipped."""
-        pass  # implementation works with real subprocess but mock bypasses internal exception handling
+        self.assertEqual({r.status for r in results}, {"syntax-error"})
+        self.assertIn("Parse error on line 9", results[0].message)
+        # A syntax error is the diagram's fault, not the renderer's: every
+        # diagram is still tried.
+        self.assertEqual(len(self.calls()), 3)
 
 
-class TestOkRenderer(unittest.TestCase):
-    """Tests using the OK fake renderer."""
+class TestTimeout(RenderTestCase):
+    def test_hang_times_out_and_skips_the_rest(self):
+        pid_file = self.tmp / "child.pid"
+        with mock.patch.object(sr, "_TIMEOUT_PER_DIAGRAM", 2):
+            start = time.monotonic()
+            results = self.render(self.stems(4), mode="hang",
+                                  extra_env={"FAKE_MMDC_PID_FILE": str(pid_file)})
+            elapsed = time.monotonic() - start
 
-    def test_ok_renders_successfully(self):
-        """mmdc_ok writes SVG and returns status=ok."""
-        with _patch_path(str(FAKES) + os.pathsep + "/usr/bin:/bin"):
-            from scripts import svg_render as sr
+        self.assertEqual(results[0].status, "timeout")
+        self.assertIn("timed out", results[0].message)
+        self.assertEqual([r.status for r in results[1:]], ["skipped"] * 3)
+        self.assertLess(elapsed, 15, "remaining diagrams must not each wait out a timeout")
+        self.assertEqual(len(self.calls()), 1)
 
-            original_resolve = sr._resolve
-            sr._resolve = lambda: ("mmdc", [str(FAKES / "mmdc_ok")])
+    @unittest.skipIf(os.name == "nt", "process-group check uses POSIX signals")
+    def test_timeout_kills_the_whole_process_tree(self):
+        pid_file = self.tmp / "child.pid"
+        with mock.patch.object(sr, "_TIMEOUT_PER_DIAGRAM", 2):
+            self.render(self.stems(1), mode="hang",
+                        extra_env={"FAKE_MMDC_PID_FILE": str(pid_file)})
 
+        child = int(pid_file.read_text(encoding="utf-8"))
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
             try:
-                with tempfile.TemporaryDirectory() as tmp:
-                    out = Path(tmp) / "out"
-                    out.mkdir()
-                    stems = [(f"stem{i}", Path(tmp) / f"stem{i}.mmd") for i in range(2)]
-                    for _, p in stems:
-                        p.write_text("graph TD\n    A-->B\n", encoding="utf-8")
+                os.kill(child, 0)
+            except ProcessLookupError:
+                return
+            # A killed child that hasn't been reaped yet shows as a zombie.
+            try:
+                with open(f"/proc/{child}/stat", encoding="utf-8") as fh:
+                    if fh.read().split()[2] == "Z":
+                        return
+            except OSError:
+                pass
+            time.sleep(0.1)
+        self.fail(f"grandchild {child} survived the timeout")
 
-                    results = sr.render(stems, out)
-            finally:
-                sr._resolve = original_resolve
 
-            ok = [r for r in results if r.status == "ok"]
-            self.assertEqual(len(ok), 2,
-                              f"expected all 2 ok, got statuses: {[r.status for r in results]}")
+class TestStartFailure(RenderTestCase):
+    def test_renderer_that_cannot_start_skips_the_rest(self):
+        missing = self.tmp / "no-such-renderer"
+        with mock.patch.object(sr, "_resolve", return_value=("mmdc", [str(missing)])):
+            results = sr.render(self.stems(3), self.out)
 
-    def test_batch_renders_in_one_invocation(self):
-        """AC5: with N valid stems, renderer process starts exactly once."""
-        from scripts import svg_render as sr
+        self.assertEqual(results[0].status, "tool-error")
+        self.assertIn("could not start", results[0].message)
+        self.assertEqual([r.status for r in results[1:]], ["skipped"] * 2)
 
-        original_batch = sr._render_batch
-        invocation_count = [0]
 
-        def counting_batch(cmd, stems_mmd, output_dir, timeout, offline=True):
-            invocation_count[0] += 1
-            # Simulate success: mark all SVGs as existing
-            for stem, _ in stems_mmd:
-                (output_dir / f"{stem}.svg").write_text("fake", encoding="utf-8")
-            return 0, "", "", [(stem, "ok") for stem, _ in stems_mmd]
+class TestNpxCache(RenderTestCase):
+    def test_enotcached_retries_online_once_then_uses_the_cache(self):
+        results = self.render(self.stems(3), mode="enotcached", kind="npx")
 
-        sr._render_batch = counting_batch
+        self.assertEqual({r.status for r in results}, {"ok"})
+        offline_flags = [c["offline"] for c in self.calls()]
+        # Each diagram tries the cache first; this fake never fills the
+        # cache, so each gets exactly one online retry.
+        self.assertEqual(offline_flags.count(False), 3)
+        self.assertEqual(offline_flags.count(True), 3)
 
+    def test_mmdc_never_runs_offline(self):
+        self.render(self.stems(2), mode="enotcached", kind="mmdc")
+        self.assertEqual([c["offline"] for c in self.calls()], [False, False])
+
+
+class TestResolve(unittest.TestCase):
+    def test_missing_tool_is_immediate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mmd = Path(tmp) / "a.mmd"
+            mmd.write_text("flowchart TB\n", encoding="utf-8")
+            with mock.patch.object(sr.shutil, "which", return_value=None):
+                start = time.monotonic()
+                results = sr.render([("a", mmd), ("b", mmd)], Path(tmp) / "out")
+        self.assertLess(time.monotonic() - start, 1.0)
+        self.assertEqual({r.status for r in results}, {"missing-tool"})
+
+    def test_prefers_mmdc(self):
+        with mock.patch.object(sr.shutil, "which", side_effect=lambda name: f"/bin/{name}"):
+            self.assertEqual(sr._resolve(), ("mmdc", ["/bin/mmdc"]))
+
+    def test_npx_uses_the_pinned_version(self):
+        with mock.patch.object(sr.shutil, "which",
+                               side_effect=lambda name: "/bin/npx" if name == "npx" else None):
+            kind, command = sr._resolve()
+        self.assertEqual(kind, "npx")
+        self.assertEqual(command, ["/bin/npx", "-y", f"@mermaid-js/mermaid-cli@{sr.MERMAID_CLI_VERSION}"])
+
+
+class TestDisabled(unittest.TestCase):
+    def test_svg_flag_false_and_env_disabled_skip_everything(self):
+        stems = [("a", Path("a.mmd")), ("b", Path("b.mmd"))]
+        for kwargs in ({"svg_flag": False}, {"env_disabled": True}):
+            results = sr.render(stems, Path("unused"), **kwargs)
+            self.assertEqual({r.status for r in results}, {"skipped"}, kwargs)
+
+
+class TestConfig(unittest.TestCase):
+    def test_config_uses_a_system_font_and_plain_text_labels(self):
+        path = sr._write_config()
         try:
-            with tempfile.TemporaryDirectory() as tmp:
-                out = Path(tmp) / "out"
-                out.mkdir()
-                stems = [(f"stem{i}", Path(tmp) / f"stem{i}.mmd") for i in range(5)]
-                for _, p in stems:
-                    p.write_text("graph TD\n    A-->B\n", encoding="utf-8")
-
-                results = sr.render(stems, out)
+            config = json.loads(path.read_text(encoding="utf-8"))
         finally:
-            sr._render_batch = original_batch
-
-        self.assertEqual(invocation_count[0], 1,
-                         f"expected exactly 1 batch invocation, got {invocation_count[0]}")
-        self.assertEqual(len(results), 5)
-        for r in results:
-            self.assertEqual(r.status, "ok", f"expected ok for {r.stem}, got {r.status}")
+            path.unlink()
+        self.assertFalse(config["htmlLabels"])
+        self.assertFalse(config["flowchart"]["htmlLabels"])
+        self.assertIn("arial", config["themeVariables"]["fontFamily"])
 
 
-class TestNpxPinnedVersion(unittest.TestCase):
-    """AC4: npx uses pinned version."""
+@unittest.skipUnless(os.environ.get("C4_REAL_RENDER") == "1",
+                     "set C4_REAL_RENDER=1 to render with the real mermaid-cli")
+class TestRealRenderer(unittest.TestCase):
+    """Opt-in: the pinned mermaid-cli renders a C4-style flowchart."""
 
-    def test_npx_command_uses_pinned_version(self):
-        """The npx command includes @mermaid-js/mermaid-cli@<version>."""
-        from scripts import svg_render as sr
-        kind, cmd = sr._resolve()
-        if kind == "missing":
-            self.skipTest("no mmdc or npx on this machine")
-        if kind == "mmdc":
-            self.skipTest("mmdc is on PATH, not testing npx")
-
-        self.assertIn(f"@mermaid-js/mermaid-cli@{sr.MERMAID_CLI_VERSION}", cmd)
-
-
-class TestEnotcachedOnlineRetry(unittest.TestCase):
-    """AC4: ENOTCACHED triggers exactly one online attempt."""
-
-    def test_enotcached_triggers_online(self):
-        """Fake ENOTCACHED triggers exactly one online (non-offline) attempt."""
-        from scripts import svg_render as sr
-
-        original_batch = sr._render_batch
-        invocations = []
-
-        def tracking_batch(cmd, stems_mmd, output_dir, timeout, offline=True):
-            invocations.append({"offline": offline})
-            if len(invocations) == 1:
-                # First call: ENOTCACHED error
-                return 1, "", "npm: ENOTCACHED dependency not cached", []
-            return 0, "", "", [(stem, "ok") for stem, _ in stems_mmd]
-
-        sr._render_batch = tracking_batch
-
-        try:
-            with tempfile.TemporaryDirectory() as tmp:
-                out = Path(tmp) / "out"
-                out.mkdir()
-                stem_path = Path(tmp) / "c4-context.mmd"
-                stem_path.write_text("graph TD\n    A-->B\n", encoding="utf-8")
-
-                results = sr.render([("c4-context", stem_path)], out)
-        finally:
-            sr._render_batch = original_batch
-
-        self.assertEqual(len(invocations), 2, f"expected 2 calls, got {len(invocations)}: {invocations}")
-        self.assertTrue(invocations[0]["offline"], "first call should be offline")
-        self.assertFalse(invocations[1]["offline"], "second call should be online")
-
-
-class TestMissingToolFast(unittest.TestCase):
-    """AC1: missing tool is fast (no timeout wait)."""
-
-    def test_missing_tool_no_timeout_wait(self):
-        """missing-tool returns fast without waiting for timeout."""
-        from scripts import svg_render as sr
-
-        original_resolve = sr._resolve
-        sr._resolve = lambda: ("missing", [])
-
-        try:
-            with tempfile.TemporaryDirectory() as tmp:
-                out = Path(tmp) / "out"
-                out.mkdir()
-                stems = [(f"stem{i}", Path(tmp) / f"stem{i}.mmd") for i in range(3)]
-                for _, p in stems:
-                    p.write_text("graph TD\n    A-->B\n", encoding="utf-8")
-
-                t0 = time.monotonic()
-                results = sr.render(stems, out)
-                elapsed = time.monotonic() - t0
-        finally:
-            sr._resolve = original_resolve
-
-        self.assertLess(elapsed, 0.5, f"missing-tool must be fast, took {elapsed:.1f}s")
-        for r in results:
-            self.assertEqual(r.status, "missing-tool", r)
+    def test_real_mermaid_cli(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mmd = Path(tmp) / "c4.mmd"
+            mmd.write_text(
+                "---\nconfig:\n  layout: elk\n---\nflowchart TB\n"
+                '    subgraph boundary["`**Shop** [Software System]`"]\n'
+                '        api["`**API**\n[Container]`"]\n    end\n'
+                '    user["`**User**`"] -->|"`Uses`"| api\n',
+                encoding="utf-8",
+            )
+            results = sr.render([("c4", mmd)], Path(tmp))
+            self.assertEqual(results[0].status, "ok", results[0])
+            svg = (Path(tmp) / "c4.svg").read_text(encoding="utf-8")
+        self.assertNotIn("@font-face", svg)
+        self.assertLess(len(svg.encode("utf-8")), 100_000)
 
 
 if __name__ == "__main__":

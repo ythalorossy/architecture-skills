@@ -13,7 +13,6 @@ facts (missing elements, unknown ids), listing every problem.
 from pathlib import Path
 import argparse
 import json
-import os
 import re
 import sys
 import textwrap
@@ -905,8 +904,7 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
     for stem, mermaid in diagrams.items():
         (output / f"{stem}.mmd").write_text(mermaid, encoding="utf-8")
 
-    # C4_SVG=0 acts like --no-svg (D3 / SPEC-05)
-    env_disabled = os.environ.get("C4_SVG", "1") in ("0", "false", "no")
+    env_disabled = _sr.disabled_by_env()
 
     rendered: dict = {}
     render_results: list = []
