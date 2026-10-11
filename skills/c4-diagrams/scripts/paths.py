@@ -1,15 +1,17 @@
 """
-Shared path helpers — moved out of dotnet_projects.py (CQ-06).
+Path and name helpers shared by the ecosystem modules:
 
-Helpers that were used by multiple modules but lived in dotnet_projects.py:
-- normalize_include   (MSBuild backslash normalization)
-- resolve_include    (resolve a include path relative to a base dir)
-- local_tag         (strip XML namespace from element tag)
-- project_group     (folder that holds the project folder)
-
-SPEC-03 CQ-06 / CQ-07.
+- normalize_include  MSBuild backslash paths -> forward slashes
+- resolve_include    an include path, relative to a base folder
+- local_tag          an XML element's tag without its namespace
+- project_group      the folder that holds a project's folder
+- TEST_DIRS          folder names whose code is test code
 """
 from pathlib import Path, PurePosixPath
+
+# Code below a folder with one of these names is test code: it is left out
+# of components, facts and evidence.
+TEST_DIRS = frozenset({"test", "tests", "__tests__", "spec", "specs", "e2e", "testdata"})
 
 
 def normalize_include(include: str) -> str:

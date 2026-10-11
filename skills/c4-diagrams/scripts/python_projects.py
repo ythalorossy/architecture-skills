@@ -20,7 +20,9 @@ except ImportError:
 MANIFESTS = ("pyproject.toml", "setup.py", "setup.cfg")
 REQUIREMENT_NAME = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
 SETUP_PY_NAME = re.compile(r"""\bname\s*=\s*['"]([^'"]+)['"]""")
-TEST_DIRS = {"test", "tests"}
+# Top-level test packages next to the production code, probed as packages
+# of their own (narrower than paths.TEST_DIRS on purpose).
+TEST_PACKAGES = ("test", "tests")
 
 
 def normalize(name):
@@ -217,7 +219,7 @@ def _module_nodes(base):
 
     production = sorted(
         path for path in import_root.iterdir()
-        if _is_package(path) and path.name not in TEST_DIRS
+        if _is_package(path) and path.name not in TEST_PACKAGES
     )
 
     if not production:
@@ -236,7 +238,7 @@ def _module_nodes(base):
     nodes = {_module_name(path, import_root): (path, import_root) for path in production}
 
     for folder in {import_root, base}:
-        for name in TEST_DIRS:
+        for name in TEST_PACKAGES:
             tests = folder / name
             if tests.is_dir() and _python_files(tests):
                 nodes.setdefault(name, (tests, folder))
