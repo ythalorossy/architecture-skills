@@ -27,7 +27,6 @@ from scripts.cli_support import UserError, require_python, run_cli
 # tomllib (3.11+) and would otherwise fail with an opaque ImportError.
 require_python()
 
-from scripts.generate_mermaid import _node_ids
 from scripts import svg_render as _sr
 from scripts import code_diagrams
 from scripts import mermaid_syntax as _ms
@@ -247,12 +246,18 @@ class Diagram:
     def __init__(self):
         self.lines = []
         self.classes = {}
-        self.ids = {}
+        self._ids = _ms.IdAllocator("flowchart")
 
     def id(self, key):
-        if key not in self.ids:
-            self.ids[key] = _node_ids(list(self.ids) + [key])[key]
-        return self.ids[key]
+        """Unique, readable Mermaid id for key within this diagram."""
+        return self._ids.id(key)
+
+    def internal(self, name):
+        """Id for an internal node (boundary, module box) in this diagram."""
+        return self._ids.internal(name)
+
+    def __contains__(self, key):
+        return key in self._ids
 
     def node(self, key, label, cls, shape="rect", indent="    "):
         open_, close = {"rect": ("[", "]"), "db": ("[(", ")]"), "round": ("(", ")")}[shape]
@@ -303,7 +308,7 @@ def context_diagram(model):
 
     for person in model["people"]:
         _element_node(d, person, "people")
-    system_id = _ms.internal_id("system")
+    system_id = _ms.IdAllocator.internal_key("system")
     d.node(system_id, _label(system["name"], "Software System", system.get("description")), "system")
     for external in model["external_systems"]:
         _element_node(d, external, "external_systems")
@@ -324,7 +329,7 @@ def container_diagram(model):
     for person in model["people"]:
         _element_node(d, person, "people")
 
-    boundary = _ms.internal_id("boundary")
+    boundary = d.internal("boundary")
     d.lines.append(f'    subgraph {boundary}["`**{_clean(model["system"]["name"])}** [Software System]`"]')
     for container in model["containers"]:
         if not container.get("external"):
@@ -477,7 +482,7 @@ def _graph_diagram(model, facts, container, container_fact, title, nodes, edges,
     relationship_text = {(r["from"], r["to"]): r for r in model["relationships"]}
     d = Diagram()
     short = _short_names(list(nodes))
-    boundary = _ms.internal_id("boundary")
+    boundary = d.internal("boundary")
     d.lines.append(f'    subgraph {boundary}["`**{_clean(title)}** [Container]`"]')
     regular = [n for n, info in nodes.items() if not info.get("shared")]
     shared = [n for n, info in nodes.items() if info.get("shared")]
@@ -491,7 +496,7 @@ def _graph_diagram(model, facts, container, container_fact, title, nodes, edges,
     boxes = []
     if usage_key == "used_by_code" and len(modules) > 1:
         for module, members in sorted(modules.items(), key=lambda m: str(m[0])):
-            box = _ms.internal_id(f"module_{module}")
+            box = d.internal(f"module_{module}")
             boxes.append(box)
             d.lines.append(f'        subgraph {box}["`{_clean(module)}`"]')
             for node in members:
@@ -501,7 +506,7 @@ def _graph_diagram(model, facts, container, container_fact, title, nodes, edges,
         for node in regular:
             d.node(node, _label(label_of(node), "Component", texts.get(node, "")), "component", indent="        ")
     if shared:
-        d.lines.append(f'        subgraph {_ms.internal_id("shared")}["Shared"]')
+        d.lines.append(f'        subgraph {d.internal("shared")}["Shared"]')
         for node in shared:
             d.node(node, _label(label_of(node), "Component", texts.get(node, "")), "shared", indent="            ")
         d.lines.append("        end")
@@ -526,7 +531,7 @@ def _graph_diagram(model, facts, container, container_fact, title, nodes, edges,
             users = [n for n in (fact.get(usage_key) or {}).get(container_fact["id"], []) if n in nodes]
             if element is None or not users:
                 continue
-            if element["id"] not in d.ids:
+            if element["id"] not in d:
                 section = "containers" if element in model["containers"] else "external_systems"
                 _element_node(d, element, section)
             r = relationship_text.get((container["id"], element["id"]), {})
@@ -610,7 +615,8 @@ def flow_diagrams(model, facts):
             for end in (step["from"], step["to"]):
                 if end not in used:
                     used.append(end)
-        safe = _node_ids(used)
+        alloc = _ms.IdAllocator("sequence")
+        safe = {node: alloc.id(node) for node in used}
         lines = ["sequenceDiagram"]
         for node in used:
             label, kind = participants.get(node, (node, "participant"))
@@ -635,7 +641,7 @@ def deployment_diagram(facts, model):
         return None
     by_fact = _container_lookup(model)
     d = Diagram()
-    host = _ms.internal_id("host")
+    host = d.internal("host")
     d.lines.append(f'    subgraph {host}["`**Docker host** [docker compose]`"]')
     containers_by_service = {}
     for c in facts["containers"]:
