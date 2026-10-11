@@ -21,6 +21,11 @@ import json
 import os
 import xml.etree.ElementTree as ET
 
+try:
+    from scripts.paths import TEST_DIRS
+except ImportError:
+    from paths import TEST_DIRS
+
 # SPEC-11 cap: 2 MB default, enforced only in read_text.
 # One constant — grep test will verify no second cap anywhere in scripts/.
 MAX_TEXT_BYTES = 2 * 1024 * 1024
@@ -70,11 +75,6 @@ def walk_files(repo_path, predicate):
         for file_name in sorted(files):
             if predicate(file_name):
                 yield Path(root) / file_name
-
-
-def local_tag(element):
-    """Strip namespace from XML element tag (e.g. '{http://...}Project' -> 'Project')."""
-    return element.tag.rsplit("}", 1)[-1]
 
 
 class RepoIndex:
@@ -399,7 +399,6 @@ class RepoIndex:
         ):
             return False
         # Test directories
-        TEST_DIRS = {"test", "tests", "__tests__", "spec", "specs", "e2e", "testdata"}
         if any(p.lower() in TEST_DIRS for p in parts[:-1]):
             return False
         return True

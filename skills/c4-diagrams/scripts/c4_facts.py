@@ -27,7 +27,7 @@ from pathlib import Path
 
 try:
     from scripts.repo_index import walk_files, is_ignored_dir
-    from scripts.paths import local_tag
+    from scripts.paths import TEST_DIRS, local_tag
     from scripts.projects import discover_all
     from scripts.python_projects import _distributions, normalize, _python_files
     from scripts.generate_docs import is_test_project
@@ -36,7 +36,7 @@ try:
 except ImportError:
     import code_facts, go_projects
     from repo_index import walk_files, is_ignored_dir
-    from paths import local_tag
+    from paths import TEST_DIRS, local_tag
     from projects import discover_all
     from python_projects import _distributions, normalize, _python_files
     from generate_docs import is_test_project
@@ -45,7 +45,6 @@ except ImportError:
 
 SOURCE_EXTENSIONS = (".cs", ".fs", ".vb", ".py", ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".vue", ".svelte",
                      ".java", ".kt", ".go")
-TEST_DIRS = {"test", "tests", "__tests__", "spec", "specs", "e2e"}
 MAX_EVIDENCE = 3
 
 

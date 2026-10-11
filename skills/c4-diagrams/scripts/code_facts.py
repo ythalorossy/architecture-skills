@@ -17,13 +17,13 @@ import re
 from pathlib import Path
 
 try:
-    from scripts.repo_index import walk_files, local_tag
+    from scripts.repo_index import walk_files
+    from scripts.paths import TEST_DIRS, local_tag
 except ImportError:
-    from repo_index import walk_files, local_tag
+    from repo_index import walk_files
+    from paths import TEST_DIRS, local_tag
 import xml.etree.ElementTree as ET
 
-
-TEST_DIRS = {"test", "tests", "__tests__", "spec", "specs", "e2e", "testdata"}
 CODE_EXTENSIONS = {".java": "jvm", ".kt": "jvm", ".cs": "cs", ".go": "go"}
 
 
