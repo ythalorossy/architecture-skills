@@ -9,6 +9,8 @@ SPEC-06: tiered semantic checks (`tests/test_render_tiers.py`).
 A ValidationResult wins the worse tier: invalid > drift > ok.
 """
 import json
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -51,6 +53,102 @@ def _valid_model_for(container_ids):
         "flows": [],
         "excluded": [],
     }
+
+
+def _write_facts_and_model(out_dir: Path, facts: dict, model, *, with_report: bool = False) -> None:
+    """Lay out facts + c4-model.json for a render() call.
+
+    `with_report=True` writes a stub ArchitectureReport.md that has the
+    [//]: # (c4:start) ... [//]: # (c4:end) markers; render() replaces the
+    block inside them on a subsequent run.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "c4-facts.json").write_text(json.dumps(facts), encoding="utf-8")
+    if model is not None:
+        if isinstance(model, (dict, list)):
+            (out_dir / "c4-model.json").write_text(json.dumps(model), encoding="utf-8")
+        else:
+            # Raw bytes (malformed JSON test cases).
+            (out_dir / "c4-model.json").write_bytes(model)
+    if with_report:
+        (out_dir / "ArchitectureReport.md").write_text(
+            "# Report\n\n[//]: # (c4:start)\n\n[//]: # (c4:end)\n",
+            encoding="utf-8",
+        )
+
+
+# ---------- Task 4: render() per tier ----------
+
+class RenderTierTest(unittest.TestCase):
+    """Task 4: render() returns status, errors, drift, warnings, diagrams.
+
+    On drift the model is rendered and an `Unreviewed facts` section is
+    appended inside the C4 block. On invalid the model is dropped and the
+    facts-only model is drawn; errors are preserved.
+    """
+
+    def test_drift_renders_with_model_and_lists_unreviewed(self):
+        from scripts.render_c4 import render
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "out"
+            facts = _facts_with_two_containers()
+            model = _valid_model_for(["a"])  # `b` is unreviewed
+            _write_facts_and_model(out, facts, model, with_report=True)
+
+            result = render(out, svg=False)
+
+            self.assertEqual(result["status"], "drift")
+            self.assertIn("c4-context", result["diagrams"])
+            report = (out / "ArchitectureReport.md").read_text(encoding="utf-8")
+            self.assertIn("### Unreviewed facts", report)
+            self.assertIn("b", report)
+
+    def test_invalid_falls_back_to_facts_only(self):
+        from scripts.render_c4 import render
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "out"
+            facts = _facts_with_two_containers()
+            model = _valid_model_for(["a", "b"])
+            model["relationships"] = [{"from": "a", "to": "ghost"}]
+            _write_facts_and_model(out, facts, model)
+
+            result = render(out, svg=False)
+
+            self.assertEqual(result["status"], "invalid")
+            self.assertTrue(result["facts_only"])
+            self.assertTrue(result["errors"])
+
+    def test_malformed_json_falls_back_to_facts_only(self):
+        from scripts.render_c4 import render
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "out"
+            facts = _facts_with_two_containers()
+            _write_facts_and_model(out, facts, b"{not valid json")
+
+            result = render(out, svg=False)
+
+            self.assertEqual(result["status"], "invalid")
+            self.assertTrue(result["facts_only"])
+            self.assertTrue(result["errors"])
+            joined = "\n".join(result["errors"])
+            self.assertIn("c4-model.json:", joined)
+
+    def test_ok_renders_with_model(self):
+        from scripts.render_c4 import render
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "out"
+            facts = _facts_with_two_containers()
+            model = _valid_model_for(["a", "b"])
+            _write_facts_and_model(out, facts, model)
+
+            result = render(out, svg=False)
+
+            self.assertEqual(result["status"], "ok")
+            self.assertIn("c4-context", result["diagrams"])
 
 
 class TieredValidationTest(unittest.TestCase):
@@ -111,6 +209,73 @@ class TieredValidationTest(unittest.TestCase):
         self.assertEqual(result.status, "ok")
         self.assertEqual(result.errors, [])
         self.assertEqual(result.drift, [])
+
+
+# ---------- Task 5: CLI exit codes ----------
+
+RENDER_CLI = SKILL / "scripts" / "render_c4.py"
+BOOKSHOP = ROOT / "tests" / "fixtures" / "repos" / "bookshop"
+
+
+def _analyzed_bookshop(tmp: Path) -> Path:
+    """Run the real analyzer on the bookshop fixture; return the output folder.
+
+    The fixture model is copied in afterwards so each test controls c4-model.json.
+    """
+    from helpers import run_analyzer
+
+    out = tmp / "out"
+    run_analyzer(BOOKSHOP, out, no_svg=True)
+    shutil.copy(BOOKSHOP / "c4-model.json", out / "c4-model.json")
+    return out
+
+
+def _fixture_model() -> dict:
+    return json.loads((BOOKSHOP / "c4-model.json").read_text(encoding="utf-8"))
+
+
+def _run_cli(out: Path, *extra: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [sys.executable, str(RENDER_CLI), str(out), "--no-svg", *extra],
+        capture_output=True, text=True, timeout=120,
+    )
+
+
+class CliExitCodeTest(unittest.TestCase):
+    """Task 5: ok and drift exit 0, invalid exits 1, drift with --strict exits 2.
+
+    A drift run prints a `DRIFT:` line on stdout so the agent sees it without
+    reading the report.
+    """
+
+    def test_cli_exit_codes_ok_drift_invalid_strict(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = _analyzed_bookshop(Path(tmp))
+
+            ok = _run_cli(out)
+            self.assertEqual(ok.returncode, 0, ok.stderr)
+            self.assertNotIn("DRIFT:", ok.stdout)
+
+            drifted = _fixture_model()
+            drifted["containers"] = [c for c in drifted["containers"] if c["id"] != "db-elasticsearch"]
+            drifted["relationships"] = [
+                r for r in drifted["relationships"]
+                if "db-elasticsearch" not in (r["from"], r["to"])
+            ]
+            (out / "c4-model.json").write_text(json.dumps(drifted), encoding="utf-8")
+            drift = _run_cli(out)
+            self.assertEqual(drift.returncode, 0, drift.stderr)
+            self.assertIn("DRIFT:", drift.stdout)
+            self.assertIn("db-elasticsearch", drift.stdout)
+
+            strict = _run_cli(out, "--strict")
+            self.assertEqual(strict.returncode, 2, strict.stderr)
+
+            broken = _fixture_model()
+            broken["relationships"].append({"from": "bookshop-api", "to": "ghost", "description": "x"})
+            (out / "c4-model.json").write_text(json.dumps(broken), encoding="utf-8")
+            invalid = _run_cli(out)
+            self.assertEqual(invalid.returncode, 1, invalid.stderr)
 
 
 if __name__ == "__main__":

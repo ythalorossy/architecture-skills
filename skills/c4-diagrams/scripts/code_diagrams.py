@@ -11,12 +11,12 @@ import re
 try:
     from scripts import code_facts, code_types
     from scripts.c4_facts import slug, _is_vendored
-    from scripts.dotnet_projects import walk_files
+    from scripts.repo_index import walk_files
     from scripts import mermaid_syntax as _ms
 except ImportError:
     import code_facts, code_types
     from c4_facts import slug, _is_vendored
-    from dotnet_projects import walk_files
+    from repo_index import walk_files
     import mermaid_syntax as _ms
 
 MAX_TYPES = 12
@@ -227,7 +227,10 @@ def prepare(model, facts, output, collector=None, repo_override=None):
     # Relocatable output (ARC-06): verify the resolved path points to a directory
     # whose name matches the last segment of the relative path.  If not, skip
     # Level 4 with a model-tier warning.
-    if not repo.is_dir() or (not repo_override and repo.name != Path(repo_rel).name):
+    # A relative path that climbs out of the output folder ("../..") has no
+    # folder name to compare; the name check only applies to a named folder.
+    named = Path(os.path.normpath(repo_rel)).name
+    if not repo.is_dir() or (not repo_override and named not in ("", "..") and repo.name != named):
         msg = (
             f"repository not found at {repo_rel}; re-run analyze_repository.py "
             f"or pass --repo <path> to render_c4.py"

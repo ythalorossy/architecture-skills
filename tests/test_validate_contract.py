@@ -207,7 +207,6 @@ class ValidateContractTest(unittest.TestCase):
                 out = self._setup_case(case, facts_for_case, container_id, container_name)
                 yield label, substring, _call_render(out)
 
-    @unittest.expectedFailure
     def test_malformed_model_reports_error_not_traceback(self):
         """The seven crashing shapes today; SPEC-06 makes them return errors."""
         for label, substring, (result, exc, captured) in self._run_table():
@@ -241,14 +240,13 @@ class ValidateContractTest(unittest.TestCase):
                     f"got {errors!r}",
                 )
 
-    def test_unknown_facts_id_returns_error(self):
-        """The eighth AC4 shape — the only one that is already passing today.
+    def test_unknown_facts_id_returns_drift(self):
+        """The eighth AC4 shape — a facts id not covered by the model.
 
-        The directive in the team-lead's brief marked all eight as
-        `@expectedFailure`. Empirically the unknown-facts-id case already
-        reaches validate() and returns the proper error (render_c4.py:127-132);
-        it is therefore NOT marked `@expectedFailure`. This test pins the
-        current behaviour so SPEC-06 cannot silently regress it.
+        Under SPEC-06 this is drift (not invalid): the model is structurally
+        well-typed, it just hasn't been updated since the code added a new
+        data store. The drift list carries the diagnostic, render() still
+        draws the model, and the Unreviewed facts section is appended.
         """
         for label, substring, (result, exc, captured) in self._run_table():
             if label != "unknown_facts_id":
@@ -256,26 +254,34 @@ class ValidateContractTest(unittest.TestCase):
             with self.subTest(shape=label):
                 self.assertIsNone(exc, f"{label}: must not raise, got {exc!r}")
                 self.assertNotIn("Traceback", captured, captured)
-                errors = (result or {}).get("errors", [])
-                self.assertIsInstance(errors, list)
-                self.assertTrue(errors, f"{label}: expected non-empty errors, got {errors!r}")
-                joined = "\n".join(errors)
-                self.assertIn(substring, joined, errors)
+                self.assertEqual(
+                    (result or {}).get("status"), "drift",
+                    f"{label}: expected status 'drift', got {result!r}",
+                )
+                drift = (result or {}).get("drift", [])
+                self.assertIsInstance(drift, list)
+                self.assertTrue(drift, f"{label}: expected non-empty drift, got {drift!r}")
+                joined = "\n".join(drift)
+                self.assertIn(substring, joined, drift)
 
     def test_error_path_return_lacks_success_keys(self):
-        """Per A-3: the error path returns ONLY {"errors", "warnings"}.
-        Consumers that read result["diagrams"] on this path today KeyError.
-        Pin the contract."""
+        """Per A-3 + SPEC-06: the error path returns the full tiered shape.
+        Consumers that read result["diagrams"] must be safe even on invalid
+        (render() still produces a facts-only model)."""
         for label, _substring, (result, exc, _captured) in self._run_table():
-            if label != "unknown_facts_id":
-                continue
-            with self.subTest(shape=label):
-                self.assertIsNone(exc)
-                self.assertIn("errors", result)
-                self.assertIn("warnings", result)
-                self.assertNotIn("diagrams", result)
-                self.assertNotIn("svg_failed", result)
-                self.assertNotIn("facts_only", result)
+            if label == "malformed_json":
+                # Malformed JSON is the cleanest invalid path: the model is
+                # dropped and the facts-only model is drawn. Status must be
+                # 'invalid' and the result must still carry 'diagrams' and
+                # 'facts_only' so consumers can introspect.
+                with self.subTest(shape=label):
+                    self.assertIsNone(exc)
+                    self.assertEqual(result["status"], "invalid")
+                    self.assertIn("errors", result)
+                    self.assertIn("warnings", result)
+                    self.assertIn("diagrams", result)
+                    self.assertIn("facts_only", result)
+                    self.assertTrue(result["facts_only"])
 
 
 # ---------- SPEC-06: ValidationResult + safe loader (Task 1) ----------
@@ -437,7 +443,7 @@ class StructuralShapesTest(unittest.TestCase):
             "containers": [{"id": "c1", "name": "C"}],
             "external_systems": [],
             "relationships": [{"from": "c1", "to": "c1", "description": ""}],
-            "components": {"c1": []},
+            "components": {"c1": {"c1.core": "Core logic"}},
             "flows": [],
             "excluded": [],
         })

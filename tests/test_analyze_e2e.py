@@ -23,6 +23,7 @@ from helpers import mask_volatile, run_analyzer
 
 FIXTURES_ROOT = Path(__file__).resolve().parent / "fixtures" / "repos"
 GOLDEN_ROOT = Path(__file__).resolve().parent / "golden"
+ANALYZER = Path(__file__).resolve().parent.parent / "skills" / "c4-diagrams" / "scripts" / "analyze_repository.py"
 
 # One entry per AC3 ecosystem. Listed in a fixed order so the subTest
 # iterations and the golden directory layout stay in lockstep.
@@ -292,6 +293,34 @@ class AnalyzeE2ETest(unittest.TestCase):
                     mask_volatile(summary2),
                     f"{fixture_name}: summary.json not byte-identical between runs",
                 )
+
+
+class TestAnalyzerSurvivesBadModel(unittest.TestCase):
+    """Task 5: a broken c4-model.json never aborts the analyzer."""
+
+    def test_analyzer_survives_bad_model_json(self):
+        fixture = FIXTURES_ROOT / "bookshop"
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            shutil.copytree(fixture, repo)
+            out = Path(tmp) / "out"
+            out.mkdir()
+            # Trailing comma after the containers array: the stdlib parser reports EOF.
+            (out / "c4-model.json").write_text(
+                '{\n  "system": {"name": "Demo"},\n  "containers": [],\n', encoding="utf-8"
+            )
+
+            proc = subprocess.run(
+                [sys.executable, str(ANALYZER), str(repo), "--output", str(out), "--no-svg"],
+                capture_output=True, text=True, timeout=300,
+            )
+
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertNotIn("Traceback", proc.stdout + proc.stderr)
+            self.assertTrue((out / "c4-facts.json").is_file())
+            summary = json.loads((out / "summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary["c4"]["model_status"], "invalid")
+            self.assertTrue(any("c4-model.json: line" in e for e in summary["c4"]["model_errors"]))
 
 
 if __name__ == "__main__":
