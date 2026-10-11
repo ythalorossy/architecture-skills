@@ -4,7 +4,7 @@
     "name": "Ythalo Saldanha",
     "email": "architecture-skills+ythalorossy@gmail.com"
   },
-  "version": "3.3.5",
+  "version": "3.3.6",
   "description": "Agent skills for software architecture: C4 diagrams, key flows, deployment, API and configuration views for a local repository.",
   "type": "module",
   "main": "index.js",
