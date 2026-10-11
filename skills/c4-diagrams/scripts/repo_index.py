@@ -150,14 +150,27 @@ class RepoIndex:
         """List of Paths with the given suffix."""
         return list(self._by_suffix.get(suffix, []))
 
-    def walk(self, predicate):
+    def walk(self, predicate, under=None):
         """
         Iterate absolute Paths in the repo matching the predicate.
 
         This replaces the old walk_files(repo, predicate) function.
         Predicate takes a filename string (not a Path).
+
+        `under` limits the walk to files inside that directory (a path inside the
+        repository). Without it the whole repository is searched, so a caller that
+        means "this module" must pass its directory: a file outside the directory
+        is never returned.
         """
+        prefix = None
+        if under is not None:
+            resolved = Path(under).resolve()
+            if not resolved.is_relative_to(self.root):
+                return
+            prefix = resolved.relative_to(self.root)
         for rel in self._files:
+            if prefix is not None and not rel.is_relative_to(prefix):
+                continue
             if predicate(rel.name):
                 yield self.root / rel
 

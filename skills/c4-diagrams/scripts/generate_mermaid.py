@@ -86,57 +86,25 @@ def generate_mermaid(graph, groups=None):
 
 def render_svg(mermaid_file, svg_file, timeout=180):
     """
-    Render a .mmd file to SVG with mermaid-cli, so the report can show the
-    diagram as an image in viewers that don't render Mermaid (e.g. VS Code's
-    built-in preview). Uses `mmdc` if installed, else `npx`. Returns True on
-    success; any failure (no Node, no network, timeout) returns False.
+    Thin compatibility wrapper: calls svg_render.render() for a single stem
+    and returns True/False for backwards compatibility with callers that use it
+    as a predicate.
+
+    The timeout argument is accepted but ignored (the new pipeline uses its own
+    bounded timeouts per SPEC-05).
     """
-    import shutil
-    import subprocess
+    from scripts import svg_render as _sr
 
-    # Use the full path from shutil.which(): on Windows these are .cmd shims
-    # (npx.cmd, mmdc.cmd) that subprocess can't start by bare name.
-    mmdc = shutil.which("mmdc")
-    npx = shutil.which("npx")
-    if mmdc:
-        command = [mmdc]
-    elif npx:
-        command = [npx, "-y", "@mermaid-js/mermaid-cli"]
-    else:
-        return False
-
-    import json
-    import tempfile
-
-    # Plain <text> labels: HTML labels (<foreignObject>) go blank in some
-    # viewers when the SVG is shown as an <img>.
-    config = {
-        "htmlLabels": False,
-        "markdownAutoWrap": False,
-        "flowchart": {"htmlLabels": False, "wrappingWidth": 1000}
-    }
-
-    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as file:
-        json.dump(config, file)
-        config_file = file.name
-
-    try:
-        result = subprocess.run(
-            command + [
-                "-i", str(mermaid_file),
-                "-o", str(svg_file),
-                "-c", config_file,
-                "-b", "white"
-            ],
-            capture_output=True,
-            timeout=timeout
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    finally:
-        Path(config_file).unlink(missing_ok=True)
-
-    return result.returncode == 0 and Path(svg_file).is_file()
+    stem = Path(svg_file).stem
+    results = _sr.render(
+        [(stem, Path(mermaid_file))],
+        Path(svg_file).parent,
+    )
+    # Return True only if the stem succeeded
+    for r in results:
+        if r.stem == stem:
+            return r.status == "ok"
+    return False
 
 
 def save_mermaid(graph, output_file, groups=None):

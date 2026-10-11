@@ -7,16 +7,9 @@ Each shape asserts two things per AC4:
      shape).
   2. No "Traceback" appears in the captured output — REVIEW FOCUS 4.
 
-Today seven of eight shapes raise `JSONDecodeError`, `AttributeError`, or
-`KeyError` from inside `render_c4.render` (render_c4.py:110,115,119,137,145,
-760,762 — see `.serena/SPEC-02-traceability.md` §4/A-6 for the per-shape
-call site). They are marked `@unittest.expectedFailure` until SPEC-06 makes
-them return clean error strings without raising. The eighth shape (unknown
-`facts` id) already returns an error and is tested as a passing case — see
-`test_unknown_facts_id_returns_error` below and the report-back in
-`/home/ysaldanha/lab/architecture-skills/.serena/SPEC-02-traceability.md` §4
-for the discrepancy with the directive that asked for all eight to be
-`expectedFailure`.
+Under SPEC-06 the seven crashing shapes return tiered `invalid` errors and
+the eighth (unknown facts id) returns `drift`. All eight are plain passing
+tests (the former `@unittest.expectedFailure` markers are removed).
 
 The `c4-model.json` string is a CLI-layer wrapper (`render_c4.py:886`) and
 must NOT be asserted on at the render() level — see A-7. The CLI-layer
@@ -207,7 +200,6 @@ class ValidateContractTest(unittest.TestCase):
                 out = self._setup_case(case, facts_for_case, container_id, container_name)
                 yield label, substring, _call_render(out)
 
-    @unittest.expectedFailure
     def test_malformed_model_reports_error_not_traceback(self):
         """The seven crashing shapes today; SPEC-06 makes them return errors."""
         for label, substring, (result, exc, captured) in self._run_table():
@@ -241,14 +233,13 @@ class ValidateContractTest(unittest.TestCase):
                     f"got {errors!r}",
                 )
 
-    def test_unknown_facts_id_returns_error(self):
-        """The eighth AC4 shape — the only one that is already passing today.
+    def test_unknown_facts_id_returns_drift(self):
+        """The eighth AC4 shape — a facts id not covered by the model.
 
-        The directive in the team-lead's brief marked all eight as
-        `@expectedFailure`. Empirically the unknown-facts-id case already
-        reaches validate() and returns the proper error (render_c4.py:127-132);
-        it is therefore NOT marked `@expectedFailure`. This test pins the
-        current behaviour so SPEC-06 cannot silently regress it.
+        Under SPEC-06 this is drift (not invalid): the model is structurally
+        well-typed, it just hasn't been updated since the code added a new
+        data store. The drift list carries the diagnostic, render() still
+        draws the model, and the Unreviewed facts section is appended.
         """
         for label, substring, (result, exc, captured) in self._run_table():
             if label != "unknown_facts_id":
@@ -256,26 +247,201 @@ class ValidateContractTest(unittest.TestCase):
             with self.subTest(shape=label):
                 self.assertIsNone(exc, f"{label}: must not raise, got {exc!r}")
                 self.assertNotIn("Traceback", captured, captured)
-                errors = (result or {}).get("errors", [])
-                self.assertIsInstance(errors, list)
-                self.assertTrue(errors, f"{label}: expected non-empty errors, got {errors!r}")
-                joined = "\n".join(errors)
-                self.assertIn(substring, joined, errors)
+                self.assertEqual(
+                    (result or {}).get("status"), "drift",
+                    f"{label}: expected status 'drift', got {result!r}",
+                )
+                drift = (result or {}).get("drift", [])
+                self.assertIsInstance(drift, list)
+                self.assertTrue(drift, f"{label}: expected non-empty drift, got {drift!r}")
+                joined = "\n".join(drift)
+                self.assertIn(substring, joined, drift)
 
     def test_error_path_return_lacks_success_keys(self):
-        """Per A-3: the error path returns ONLY {"errors", "warnings"}.
-        Consumers that read result["diagrams"] on this path today KeyError.
-        Pin the contract."""
+        """Per A-3 + SPEC-06: the error path returns the full tiered shape.
+        Consumers that read result["diagrams"] must be safe even on invalid
+        (render() still produces a facts-only model)."""
         for label, _substring, (result, exc, _captured) in self._run_table():
-            if label != "unknown_facts_id":
-                continue
-            with self.subTest(shape=label):
-                self.assertIsNone(exc)
-                self.assertIn("errors", result)
-                self.assertIn("warnings", result)
-                self.assertNotIn("diagrams", result)
-                self.assertNotIn("svg_failed", result)
-                self.assertNotIn("facts_only", result)
+            if label == "malformed_json":
+                # Malformed JSON is the cleanest invalid path: the model is
+                # dropped and the facts-only model is drawn. Status must be
+                # 'invalid' and the result must still carry 'diagrams' and
+                # 'facts_only' so consumers can introspect.
+                with self.subTest(shape=label):
+                    self.assertIsNone(exc)
+                    self.assertEqual(result["status"], "invalid")
+                    self.assertIn("errors", result)
+                    self.assertIn("warnings", result)
+                    self.assertIn("diagrams", result)
+                    self.assertIn("facts_only", result)
+                    self.assertTrue(result["facts_only"])
+
+
+# ---------- SPEC-06: ValidationResult + safe loader (Task 1) ----------
+
+class LoaderResultTest(unittest.TestCase):
+    """Task 1: ValidationResult status derivation and safe loader errors.
+
+    Each loader call returns a ValidationResult with status, errors, drift,
+    warnings lists. Status is derived: errors -> invalid, else drift -> drift,
+    else ok. Messages are prefixed `c4-model.json:` and JSON parse errors
+    name the line and column of the failure.
+    """
+
+    def test_bad_json_reports_line_and_column(self):
+        """Trailing comma on line 3 -> message names line 3 and a column."""
+        from scripts.model_check import load_model
+
+        with tempfile.TemporaryDirectory() as tmp:
+            model_path = Path(tmp) / "c4-model.json"
+            # A trailing comma after a closing bracket is the canonical
+            # malformed-JSON case. AC2 requires the message to name the line
+            # and column of the trailing comma (line 3 here), not the EOF
+            # position the stdlib parser reports.
+            model_path.write_text(
+                '{\n  "system": {"name": "Demo"},\n  "containers": [],\n',
+                encoding="utf-8",
+            )
+            result = load_model(model_path)
+
+        self.assertEqual(result.status, "invalid")
+        self.assertEqual(len(result.errors), 1)
+        message = result.errors[0]
+        self.assertTrue(
+            message.startswith("c4-model.json: line 3"),
+            f"expected 'c4-model.json: line 3 ...' prefix, got {message!r}",
+        )
+        self.assertIn("column", message)
+
+    def test_top_level_list_is_invalid(self):
+        """A list at the top level is invalid (it must be an object)."""
+        from scripts.model_check import load_model
+
+        with tempfile.TemporaryDirectory() as tmp:
+            model_path = Path(tmp) / "c4-model.json"
+            model_path.write_text("[1, 2, 3]", encoding="utf-8")
+            result = load_model(model_path)
+
+        self.assertEqual(result.status, "invalid")
+        self.assertTrue(result.errors)
+
+    def test_valid_object_returns_ok(self):
+        """A well-formed object returns status ok with empty lists."""
+        from scripts.model_check import load_model
+
+        with tempfile.TemporaryDirectory() as tmp:
+            model_path = Path(tmp) / "c4-model.json"
+            model_path.write_text('{"system": {"name": "Demo"}}', encoding="utf-8")
+            result = load_model(model_path)
+
+        self.assertEqual(result.status, "ok")
+        self.assertEqual(result.errors, [])
+        self.assertEqual(result.drift, [])
+        self.assertEqual(result.warnings, [])
+
+
+# ---------- SPEC-06: Structural pre-check (Task 2) ----------
+
+class StructuralShapesTest(unittest.TestCase):
+    """Task 2: check_structure catches every REL-04 shape with JSON paths.
+
+    Each shape must produce `status == "invalid"` and an error message that
+    names the JSON path of the offending value (e.g. `containers[3]`,
+    `excluded[0].id`, `flows[0].steps`).
+    """
+
+    def _run_one(self, model: dict) -> "scripts.model_check.ValidationResult":
+        from scripts.model_check import check_structure
+
+        return check_structure(model)
+
+    def test_containers_str_reports_path(self):
+        result = self._run_one({"system": {"name": "Demo"}, "containers": "oops"})
+        self.assertEqual(result.status, "invalid")
+        joined = "\n".join(result.errors)
+        self.assertIn("containers", joined)
+
+    def test_system_str_reports_path(self):
+        result = self._run_one({"system": "not a dict"})
+        self.assertEqual(result.status, "invalid")
+        joined = "\n".join(result.errors)
+        self.assertIn("system", joined)
+
+    def test_element_str_reports_index(self):
+        result = self._run_one({
+            "system": {"name": "Demo"},
+            "containers": [{"id": "a", "name": "A"}, "oops", {"id": "c", "name": "C"}],
+        })
+        self.assertEqual(result.status, "invalid")
+        joined = "\n".join(result.errors)
+        self.assertIn("containers[1]", joined)
+
+    def test_excluded_no_id_reports_path(self):
+        result = self._run_one({
+            "system": {"name": "Demo"},
+            "excluded": [{"reason": "missing id"}],
+        })
+        self.assertEqual(result.status, "invalid")
+        joined = "\n".join(result.errors)
+        self.assertIn("excluded[0]", joined)
+        self.assertIn("id", joined)
+
+    def test_flow_steps_str_reports_path(self):
+        result = self._run_one({
+            "system": {"name": "Demo"},
+            "flows": [{"name": "Flow 1", "steps": "should be a list"}],
+        })
+        self.assertEqual(result.status, "invalid")
+        joined = "\n".join(result.errors)
+        self.assertIn("flows[0].steps", joined)
+
+    def test_components_list_reports_path(self):
+        result = self._run_one({
+            "system": {"name": "Demo"},
+            "components": ["not", "a", "dict"],
+        })
+        self.assertEqual(result.status, "invalid")
+        joined = "\n".join(result.errors)
+        self.assertIn("components", joined)
+
+    def test_components_description_str_reports_path(self):
+        result = self._run_one({
+            "system": {"name": "Demo"},
+            "components": {"c1": "should be a list"},
+        })
+        self.assertEqual(result.status, "invalid")
+        joined = "\n".join(result.errors)
+        self.assertIn("components", joined)
+        self.assertIn("c1", joined)
+
+    def test_relationship_not_object_reports_index(self):
+        result = self._run_one({
+            "system": {"name": "Demo"},
+            "relationships": [{"from": "a", "to": "b"}, "oops"],
+        })
+        self.assertEqual(result.status, "invalid")
+        joined = "\n".join(result.errors)
+        self.assertIn("relationships[1]", joined)
+
+    def test_missing_system_name_reports_path(self):
+        result = self._run_one({"system": {}})
+        self.assertEqual(result.status, "invalid")
+        joined = "\n".join(result.errors)
+        self.assertIn("system.name", joined)
+
+    def test_well_typed_object_returns_ok(self):
+        result = self._run_one({
+            "system": {"name": "Demo"},
+            "people": [],
+            "containers": [{"id": "c1", "name": "C"}],
+            "external_systems": [],
+            "relationships": [{"from": "c1", "to": "c1", "description": ""}],
+            "components": {"c1": {"c1.core": "Core logic"}},
+            "flows": [],
+            "excluded": [],
+        })
+        self.assertEqual(result.status, "ok")
+        self.assertEqual(result.errors, [])
 
 
 if __name__ == "__main__":

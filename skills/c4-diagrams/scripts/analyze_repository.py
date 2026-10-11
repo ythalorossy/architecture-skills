@@ -1,6 +1,7 @@
 from pathlib import Path
 import argparse
 import json
+import os
 import sys
 
 # Allow running as a plain script from any directory, not only
@@ -9,7 +10,7 @@ SKILL_DIR = Path(__file__).resolve().parent.parent
 if str(SKILL_DIR) not in sys.path:
     sys.path.insert(0, str(SKILL_DIR))
 
-from scripts.cli_support import require_python, run_cli
+from scripts.cli_support import UserError, require_python, run_cli
 
 # Must run before the imports below: they reach python_projects, which needs
 # tomllib (3.11+) and would otherwise fail with an opaque ImportError.
@@ -29,10 +30,12 @@ from scripts.diagnostics import DiagnosticsCollector
 
 
 class RepositoryAnalyzer:
-    def __init__(self, repo_path: str, output_path: str, no_svg: bool = False, strict: bool = False, timestamp: bool = False):
+    def __init__(self, repo_path: str, output_path: str, no_svg: bool = False,
+                 svg: bool = True, strict: bool = False, timestamp: bool = False):
         self.repo_path = Path(repo_path).resolve()
         self.output_path = Path(output_path).resolve()
         self.no_svg = no_svg
+        self.svg = svg        # --svg flag: also render C4 SVGs (D3 / SPEC-05)
         self.strict = strict
         self.timestamp = timestamp
         self._collector: DiagnosticsCollector | None = None
@@ -86,7 +89,8 @@ class RepositoryAnalyzer:
         summary = self._generate_summary(
             stacks,
             scan_results,
-            dependency_graph
+            dependency_graph,
+            c4=c4,
         )
 
         summary["c4"] = c4
@@ -102,20 +106,35 @@ class RepositoryAnalyzer:
 
     def _validate_repository(self):
         if not self.repo_path.exists():
-            raise FileNotFoundError(
-                f"Repository not found: {self.repo_path}"
+            raise UserError(
+                "repository folder not found; pass the folder that holds the code",
+                path=self.repo_path,
             )
 
         if not self.repo_path.is_dir():
-            raise NotADirectoryError(
-                f"Not a directory: {self.repo_path}"
+            raise UserError(
+                "expected a repository folder, not a file; pass the folder that holds the code",
+                path=self.repo_path,
             )
 
     def _prepare_output_folder(self):
-        self.output_path.mkdir(
-            parents=True,
-            exist_ok=True
-        )
+        if self.output_path.resolve().is_relative_to(SKILL_DIR):
+            raise UserError(
+                "the output folder is inside the skill folder; run from your repository or pass --output",
+                path=self.output_path,
+            )
+        try:
+            self.output_path.mkdir(
+                parents=True,
+                exist_ok=True
+            )
+        except FileExistsError:
+            raise UserError(
+                "the output path is an existing file; pass a folder with --output",
+                path=self.output_path,
+            )
+        except OSError as ex:
+            raise UserError(f"cannot create the output folder ({ex.strerror})", path=self.output_path)
 
     def _detect_stack(self, index):
         print("Detecting technology stack...")
@@ -149,14 +168,28 @@ class RepositoryAnalyzer:
         # A stale SVG from an earlier run would show the wrong diagram.
         svg_file.unlink(missing_ok=True)
 
-        if dependency_graph:
+        self._dep_svg_result = None
+
+        if dependency_graph and not self.no_svg and os.environ.get("C4_SVG", "1") not in ("0", "false", "no"):
             print("Rendering diagram to SVG...")
 
-            if not render_svg(mermaid_file, svg_file):
+            from scripts import svg_render as _sr
+            results = _sr.render(
+                [("dependency-graph", mermaid_file)],
+                self.output_path,
+                svg_flag=True,
+                env_disabled=False,
+            )
+            self._dep_svg_result = results[0] if results else None
+
+            if self._dep_svg_result and self._dep_svg_result.status != "ok":
                 print(
-                    "WARNING: Could not render dependency-graph.svg (needs Node.js "
-                    "and @mermaid-js/mermaid-cli). The report keeps the Mermaid block only."
+                    f"WARNING: {self._dep_svg_result.stem}: "
+                    f"{self._dep_svg_result.status} — {self._dep_svg_result.message}"
                 )
+        elif self.no_svg or os.environ.get("C4_SVG", "1") in ("0", "false", "no"):
+            from scripts import svg_render as _sr
+            self._dep_svg_result = _sr.Result("dependency-graph", "skipped", "rendering disabled", 0.0)
 
         return mermaid
 
@@ -208,34 +241,33 @@ class RepositoryAnalyzer:
 
         print("Drawing C4 diagrams...")
 
+        # D3: analyzer default renders only dependency-graph.svg.
+        # --svg adds C4 SVGs. --no-svg renders nothing.
+        render_c4_svg = self.svg and not self.no_svg
+
         # An existing c4-model.json (written by the agent or edited by the user)
         # is kept. On drift (new facts not covered) it is rendered and the
         # unreviewed facts are listed; on invalid (unknown ids, missing
         # elements) it falls back to facts-only.  c4-model.json is never
         # modified.
-        result = render_c4(self.output_path, svg=not self.no_svg, collector=self._collector)
+        result = render_c4(self.output_path, svg=render_c4_svg, collector=self._collector)
+        model_status = result["status"]
         model_errors = result["errors"]
-        model_warnings = result.get("warnings") or []
-        model_status = "ok"
-        drift = []
-        if model_errors:
-            # Invalid: at least one element or relationship id is unknown.
-            result = render_c4(self.output_path, facts_only=True, svg=not self.no_svg, collector=self._collector)
-            model_status = "invalid"
-        elif model_warnings:
-            # Drift: the model is valid but some facts are not yet covered.
-            # Re-render with the model and surface the unreviewed facts.
-            result = render_c4(self.output_path, svg=not self.no_svg, collector=self._collector, show_drift=True)
-            model_status = "drift"
-            for w in model_warnings:
-                if "not in the model" in w.lower() or "was found in the code" in w.lower():
-                    drift.append({"message": w})
+        # render() already drew the facts-only model when the model is invalid,
+        # and drew the model with an Unreviewed facts section when it drifts.
+        drift = [{"message": message} for message in result["drift"]]
 
+        # Print one warning per failed stem, naming the cause (SPEC-05 AC8)
         if result["svg_failed"]:
-            print(
-                "WARNING: Could not render the C4 SVGs (needs Node.js and "
-                "@mermaid-js/mermaid-cli). The report keeps the Mermaid blocks only."
-            )
+            svg_status = result.get("svg", {})
+            for stem in result["svg_failed"]:
+                info = svg_status.get(stem, {})
+                status = info.get("status", "unknown")
+                msg = info.get("message", "")
+                if msg:
+                    print(f"WARNING: {stem}: {status} — {msg}")
+                else:
+                    print(f"WARNING: {stem}: {status}")
 
         return {
             "containers": len(facts["containers"]),
@@ -246,13 +278,15 @@ class RepositoryAnalyzer:
             "model_errors": model_errors,
             "model_status": model_status,
             "drift": drift,
+            "svg": result.get("svg", {}),
         }
 
     def _generate_summary(
         self,
         stacks,
         scan_results,
-        dependency_graph
+        dependency_graph,
+        c4=None,
     ):
         total_dependencies = sum(
             len(v)
@@ -265,7 +299,21 @@ class RepositoryAnalyzer:
         )
 
         collector = self._collector
-        status = "degraded" if (collector and collector.degraded) else "ok"
+
+        # Degraded if collector says so, or if any SVG render failed (SPEC-05 AC8 / SPEC-08 D2)
+        degraded = (collector and collector.degraded)
+        if c4 and not degraded:
+            svg_statuses = c4.get("svg", {})
+            dep_result = getattr(self, "_dep_svg_result", None)
+            if dep_result and dep_result.status not in ("ok", "skipped"):
+                degraded = True
+            if any(
+                info.get("status") not in ("ok", "skipped")
+                for info in svg_statuses.values()
+            ):
+                degraded = True
+
+        status = "degraded" if degraded else "ok"
 
         return {
             "repository": self.repo_path.name,
@@ -438,6 +486,16 @@ def parse_arguments():
     )
 
     parser.add_argument(
+        "--svg",
+        action="store_true",
+        help=(
+            "Also render the C4 SVGs (container, component, deployment, etc.). "
+            "By default only the dependency-graph SVG is rendered. "
+            "C4_SVG=0 in the environment acts like --no-svg."
+        ),
+    )
+
+    parser.add_argument(
         "--debug",
         action="store_true",
         help="Print the full traceback when an unexpected error occurs",
@@ -471,6 +529,7 @@ def main():
         repo_path=args.repository,
         output_path=args.output or default_output_path(args.repository),
         no_svg=args.no_svg,
+        svg=args.svg,
         strict=args.strict,
         timestamp=args.timestamp,
     )

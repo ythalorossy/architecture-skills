@@ -1,0 +1,4 @@
+#!/bin/bash
+# Fake npx that succeeds
+# Simulates: npx -y @mermaid-js/mermaid-cli@<version>
+exit 0
