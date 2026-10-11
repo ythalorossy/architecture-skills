@@ -56,8 +56,8 @@ python3 "<skill>/scripts/analyze_repository.py" "<repository_path>"
 
 After running, read `summary.json` and check:
 
-- **`status`**: `"degraded"` means at least one warning or skipped file occurred. `"ok"` means clean.
-- **`warnings`**: a list of diagnostics from parsers, renderers and the model. Each entry has `source`, `message`, `kind` and optionally `path`.
+- **`status`**: `"degraded"` means something needs attention: a file could not be read or parsed, a diagram failed to render, or `c4-model.json` is invalid. Every cause is listed in `warnings`. `"ok"` means clean. Missing Node.js is not degraded: the run prints a `NOTE:` and the report shows Mermaid source instead of images; tell the user.
+- **`warnings`**: one entry per problem, from parsers (`kind: parse`), unreadable paths (`skipped`), diagrams that failed to render (`render`) and the model (`model`, `model_error`). Each entry has `source`, `message`, `kind` and optionally `path`.
 - **`c4.model_status`**: `"drift"` means the model is valid but some new facts are unreviewed; `"invalid"` means the model has unknown relationship ids and fell back to facts-only; `"ok"` means the model and facts are in sync.
 - **`skipped_files`**: files that could not be read (permission errors, broken symlinks).
 
@@ -65,6 +65,7 @@ After running, read `summary.json` and check:
 - **`drift`**: update `c4-model.json` to cover the new facts. Re-run `render_c4.py`.
 - **`invalid`**: fix the reported errors in `c4-model.json` (unknown ids, missing elements). Re-run `render_c4.py`.
 - **`parse` warnings**: tell the user which files could not be parsed and what the error was.
+- **`render` warnings**: a `syntax-error` is a bug in the diagram (often a label in the model); fix it and re-run `render_c4.py`. Report `timeout` and `tool-error` to the user.
 - **`skipped_files`**: tell the user which files were skipped and why.
 - **`degraded` with `--strict`**: the script exits with code 2; without `--strict` it exits 0.
 

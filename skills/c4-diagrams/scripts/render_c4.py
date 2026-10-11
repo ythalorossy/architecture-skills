@@ -1024,17 +1024,19 @@ def main():
     print("Diagrams: " + ", ".join(result["diagrams"]))
     for message in result["drift"]:
         print(f"DRIFT: {message}")
-    if result["svg_failed"]:
-        # Print one line per failed stem, naming the cause (SPEC-05 AC8)
-        svg_status = result.get("svg", {})
-        for stem in result["svg_failed"]:
-            info = svg_status.get(stem, {})
-            status = info.get("status", "unknown")
-            msg = info.get("message", "")
-            if msg:
-                print(f"WARNING: {stem}: {status} — {msg}")
-            else:
-                print(f"WARNING: {stem}: {status}")
+    svg_status = result.get("svg", {})
+    missing_tool = False
+    for stem in result["svg_failed"]:
+        info = svg_status.get(stem, {})
+        status = info.get("status", "unknown")
+        if status == "missing-tool":
+            missing_tool = True
+            continue
+        msg = info.get("message", "")
+        print(f"WARNING: {stem}: {status}" + (f" — {msg}" if msg else ""))
+    if missing_tool:
+        print("NOTE: SVGs not rendered: neither mmdc nor npx is on PATH. "
+              "The report shows the Mermaid source instead.")
     # Exit codes: 0 ok, 0 drift (DRIFT: lines printed), 1 invalid, 2 drift with --strict.
     if result["status"] == "drift" and args.strict:
         sys.exit(2)
