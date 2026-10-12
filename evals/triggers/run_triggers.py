@@ -48,17 +48,33 @@ def command_for(case):
 
 
 def fired(events_text):
-    """Did any emitted event invoke the c4-diagrams skill?
+    """Did an assistant message invoke the c4-diagrams skill?
 
-    Scanning the raw text rather than parsing every event shape keeps this
-    working when the CLI's event schema shifts: the skill's name appearing
-    beside a Skill tool use is the signal.
+    Only `tool_use` blocks named `Skill` inside assistant events count, matched
+    on the skill identifier (bare or plugin-qualified). The `system`/`init`
+    event lists every tool and skill, so it is never evidence of firing, and
+    unparseable lines are ignored.
     """
     for line in events_text.splitlines():
-        if SKILL_NAME not in line:
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
             continue
-        if '"Skill"' in line or '"skill"' in line:
-            return True
+        if not isinstance(event, dict) or event.get("type") != "assistant":
+            continue
+        message = event.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") != "tool_use" or block.get("name") != "Skill":
+                continue
+            tool_input = block.get("input")
+            identifier = tool_input.get("skill") if isinstance(tool_input, dict) else None
+            if isinstance(identifier, str) and identifier.split(":")[-1] == SKILL_NAME:
+                return True
     return False
 
 

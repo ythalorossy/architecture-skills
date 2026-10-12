@@ -726,6 +726,26 @@ class TestTriggerRunner(unittest.TestCase):
                  '"name":"Skill","input":{"skill":"some-other-skill"}}]}}'
         self.assertFalse(run_triggers.fired(events))
 
+    def test_fired_is_false_on_the_system_init_event(self):
+        """The init event lists every tool and skill; it is not evidence of firing."""
+        init = json.dumps({
+            "type": "system", "subtype": "init",
+            "tools": ["Bash", "Read", "Skill"],
+            "skills": ["architecture-skills:c4-diagrams", "simplify"],
+        })
+        self.assertFalse(run_triggers.fired(init))
+
+    def test_fired_detects_the_plugin_qualified_skill(self):
+        event = json.dumps({"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "name": "Skill", "input": {"skill": "architecture-skills:c4-diagrams"}}]}})
+        self.assertTrue(run_triggers.fired(event))
+
+    def test_fired_ignores_unparseable_lines(self):
+        event = json.dumps({"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "name": "Skill", "input": {"skill": "c4-diagrams"}}]}})
+        self.assertTrue(run_triggers.fired("not json at all\n" + event))
+        self.assertFalse(run_triggers.fired("not json at all\n{broken"))
+
     def test_score_computes_precision_and_recall(self):
         results = [
             {"id": "a", "should_fire": True,  "fired": True,  "status": "ok"},
