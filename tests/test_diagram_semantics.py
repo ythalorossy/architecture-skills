@@ -116,17 +116,66 @@ class RowStackingTest(unittest.TestCase):
         )
 
 
-class SharedComponentTest(unittest.TestCase):
-    def test_hub_is_found_even_when_reduction_hides_its_edges(self):
-        # A chain n0 -> n1 -> ... -> n23 where every node also uses util. The
-        # graph is dense, so reduction keeps only n23 -> util; util is still
-        # used by all 24 others and belongs in the Shared box.
+class FlatGroupSplitTest(unittest.TestCase):
+    """A container with no folders is split into readable parts too.
+
+    44 components in a single group came out as one 44-node diagram with a
+    note saying it was too big to read: splitting only ever looked at
+    folders, and so did the search for the components everything else uses.
+    """
+
+    def _flat(self, count=44, edges=(), reverse=False):
+        members = [f"n{i:02}" for i in range(count)]
+        return _graph({"": list(reversed(members)) if reverse else members}, list(edges))
+
+    def _drawn(self, views):
+        """{suffix: [component, ...]} per view, stubs for other parts left out."""
+        return {suffix: sorted(n for n, info in nodes.items() if not info.get("stub"))
+                for suffix, _, nodes, _, _ in views}
+
+    def test_every_part_stays_within_the_limit(self):
+        views = render_c4._component_views(self._flat())
+        parts = self._drawn(views)
+        self.assertGreater(len(parts), 1)
+        for suffix, members in parts.items():
+            self.assertLessEqual(len(members), render_c4.MAX_COMPONENTS, suffix)
+        self.assertEqual(sorted(n for members in parts.values() for n in members),
+                         sorted(self._flat()["nodes"]))
+
+    def test_the_parts_do_not_depend_on_the_order_the_components_arrive_in(self):
+        self.assertEqual(self._drawn(render_c4._component_views(self._flat())),
+                         self._drawn(render_c4._component_views(self._flat(reverse=True))))
+
+    def test_a_hub_is_still_found_when_the_view_is_split(self):
+        # A chain n00 -> n01 -> ... -> n23 where every node also uses util.
+        # The graph is dense, so reduction keeps only n23 -> util; util is
+        # still used by all 24 others and belongs in the Shared box, and the
+        # split must not be what hides it.
         chain = [f"n{i:02}" for i in range(24)]
         edges = list(zip(chain, chain[1:])) + [(n, "util") for n in chain]
-        [(_, _, nodes, drawn, notes)] = render_c4._component_views(_graph({"": chain + ["util"]}, edges))
-        self.assertTrue(nodes["util"]["shared"])
-        self.assertIn("util (24)", " ".join(notes))
-        self.assertFalse(any("util" in targets for targets in drawn.values()))
+        views = render_c4._component_views(_graph({"": chain + ["util"]}, edges))
+        self.assertGreater(len(views), 1)
+        marked = [n for _, _, nodes, _, _ in views for n, info in nodes.items() if info.get("shared")]
+        self.assertEqual(marked, ["util"])
+        self.assertIn("util (24)", " ".join(n for _, _, _, _, notes in views for n in notes))
+        for _, _, _, drawn, _ in views:
+            self.assertFalse(any("util" in targets for targets in drawn.values()))
+
+    def test_the_container_gets_one_file_per_part(self):
+        facts = {
+            "repository": "demo",
+            "containers": [{"id": "api", "name": "API", "kind": "service", "technology": "Go",
+                            "evidence": [], "used_by": [], "components": self._flat()}],
+            "data_stores": [], "external_systems": [], "relationships": [],
+        }
+        model = render_c4.facts_only_model(facts)
+        self.assertEqual([stem for stem, _, _, _, _ in render_c4.component_diagrams(model, facts)],
+                         ["c4-component-api-part1", "c4-component-api-part2", "c4-component-api-part3"])
+
+    def test_components_that_share_a_folder_prefix_are_split_by_it(self):
+        groups = {"": [f"src/{folder}/f{i:02}" for folder in ("api", "ui") for i in range(12)]}
+        views = render_c4._component_views(_graph(groups, []))
+        self.assertEqual([subtitle for _, subtitle, _, _, _ in views], ["folders", "api", "ui"])
 
 
 # One Go-style module graph, and two code-structure graphs for it: one that

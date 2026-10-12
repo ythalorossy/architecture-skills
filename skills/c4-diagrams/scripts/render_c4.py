@@ -543,12 +543,89 @@ def _transitive_reduction(edges):
     return current
 
 
+def _hubs(nodes, all_edges):
+    """
+    (components most others use, the note that says so), or ([], None).
+
+    Counts every dependency, not only the ones left after hiding shortcuts:
+    reduction removes most of the edges into a widely used component, so a
+    hub is invisible in the reduced graph.
+    """
+    indegree = {n: 0 for n in nodes}
+    for targets in all_edges.values():
+        for target in targets:
+            if target in indegree:
+                indegree[target] += 1
+    threshold = max(3, len(nodes) // 2)
+    shared = [n for n, count in indegree.items() if count >= threshold]
+    if not shared:
+        return [], None
+    return shared, (
+        "Used by most other components, drawn in the Shared box without their incoming edges: "
+        + ", ".join(f"{n} ({indegree[n]})" for n in shared) + "."
+    )
+
+
+def _dependency_order(nodes, edges):
+    """Every node once, a component after the ones it uses, ties in name order.
+
+    A cycle has no such order; its members follow in name order. The result
+    only depends on the names and the edges, never on the order the nodes
+    arrived in, so the parts built from it are stable between runs.
+    """
+    uses = {n: {t for t in edges.get(n, []) if t in nodes and t != n} for n in nodes}
+    done, order = set(), []
+    while len(order) < len(nodes):
+        ready = sorted(n for n in uses if n not in done and uses[n] <= done)
+        if not ready:  # only cycles left
+            ready = sorted(n for n in uses if n not in done)
+        done.update(ready)
+        order += ready
+    return order
+
+
+def _flat_groups(nodes, edges):
+    """Sub-groups of one flat group of components, and whether they are named.
+
+    A container whose components share no folder still has too many of them
+    to draw at once. They are split by the first path segment of the name
+    when that says something ("src/api/books" and "src/ui/cart" are a folder
+    apart), and otherwise into chunks of MAX_COMPONENTS in dependency order.
+    Chunk keys are numbers a reader can learn nothing from, which is what the
+    second return value says.
+    """
+    short = _short_names(list(nodes))
+    order = _dependency_order(nodes, edges)
+    by_segment = {}
+    for node in order:
+        head = re.match(r"(.+?)[./]", short[node])
+        by_segment.setdefault(head.group(1) if head else "(root)", []).append(node)
+    if len(by_segment) > 1:
+        return _capped(by_segment), True
+    return ({f"part {index // MAX_COMPONENTS + 1}": order[index:index + MAX_COMPONENTS]
+             for index in range(0, len(order), MAX_COMPONENTS)}, False)
+
+
+def _capped(groups):
+    """The same groups, with any group above MAX_COMPONENTS cut into numbered chunks."""
+    out = {}
+    for group, members in groups.items():
+        if len(members) <= MAX_COMPONENTS:
+            out[group] = members
+            continue
+        chunks = -(-len(members) // MAX_COMPONENTS)
+        for index in range(chunks):
+            out[f"{group} ({index + 1} of {chunks})"] = members[index * MAX_COMPONENTS:(index + 1) * MAX_COMPONENTS]
+    return out
+
+
 def _component_views(graph, overview=True, full_list="the dependency graph appendix"):
     """
     Split one container's components into readable views: [(suffix, title, nodes, edges, notes)].
     Shortcut edges are hidden when the graph is dense; above MAX_COMPONENTS nodes the
-    view is grouped by folder/module (an overview plus one view per group), and
-    components most others use are moved to a "shared" box.
+    view is split into parts of at most MAX_COMPONENTS (by folder/module, or, when there
+    is only one, by the next path segment or in dependency order), and components most
+    others use are moved to a "shared" box.
     """
     nodes = graph["nodes"]
     edges = graph["edges"]
@@ -570,8 +647,19 @@ def _component_views(graph, overview=True, full_list="the dependency graph appen
     for node, info in nodes.items():
         groups.setdefault(info["group"] or "(root)", []).append(node)
 
-    if len(nodes) > MAX_COMPONENTS and len(groups) > 1:
-        group_of = {n: (nodes[n]["group"] or "(root)") for n in nodes}
+    shared = []
+    if len(nodes) > MAX_COMPONENTS and len(groups) < 2:
+        # One flat group: the components everyone uses are the only structure
+        # it has, so they are found before it is cut into parts.
+        shared, hub_note = _hubs(nodes, all_edges)
+        if shared:
+            notes.append(hub_note)
+            edges = {n: [t for t in targets if t not in shared] for n, targets in edges.items()}
+        groups, named = _flat_groups(nodes, edges)
+        overview = overview and named
+
+    if len(nodes) > MAX_COMPONENTS:
+        group_of = {n: g for g, members in groups.items() for n in members}
         group_edges = {}
         # From the raw edges, not the reduced ones: hiding A → C is only
         # readable when A → B → C is drawn beside it, and the folder overview
@@ -600,7 +688,7 @@ def _component_views(graph, overview=True, full_list="the dependency graph appen
             members = [n for _, m in pack for n in m]
             member_set = set(members)
             first_notes = [] if overview or index > 1 else notes + [f"{len(nodes)} components, drawn in {len(packs)} parts."]
-            view_nodes = {n: nodes[n] for n in members}
+            view_nodes = {n: ({**nodes[n], "shared": True} if n in shared else nodes[n]) for n in members}
             view_edges = {}
             for n in members:
                 view_edges[n] = []
@@ -619,26 +707,7 @@ def _component_views(graph, overview=True, full_list="the dependency graph appen
             ))
         return views
 
-    shared = []
-    if len(nodes) > MAX_COMPONENTS:
-        # Count every dependency, not only the ones left after hiding
-        # shortcuts: reduction removes most edges into a widely used component.
-        indegree = {n: 0 for n in nodes}
-        for targets in all_edges.values():
-            for target in targets:
-                indegree[target] += 1
-        threshold = max(3, len(nodes) // 2)
-        shared = [n for n, count in indegree.items() if count >= threshold]
-        if shared:
-            notes.append(
-                "Used by most other components, drawn in the Shared box without their incoming edges: "
-                + ", ".join(f"{n} ({indegree[n]})" for n in shared) + "."
-            )
-            edges = {n: [t for t in targets if t not in shared] for n, targets in edges.items()}
-    if len(nodes) > MAX_COMPONENTS:
-        notes.append(f"{len(nodes)} components: above the {MAX_COMPONENTS} that stay readable in one diagram.")
-
-    return [("", "", {n: {**nodes[n], "shared": n in shared} for n in nodes}, edges, notes)]
+    return [("", "", nodes, edges, notes)]
 
 
 def _container_lookup(model):
