@@ -28,9 +28,23 @@ The automated dependency checks found no structural concerns.
 
 > Drawn from code facts only: no `c4-model.json` yet, so people, external purposes, descriptions and key flows are missing and the System Context level is left out. Write `c4-model.json` and run `render_c4.py` to complete it.
 
+### Key
+
+What the shapes and lines in the diagrams below mean.
+
+| Symbol | Meaning |
+|---|---|
+| Blue box | **Container** — an application or service that runs on its own. |
+| Light blue box | **Component** — a module, package or namespace inside one container. |
+| Dashed grey outline | The system or the container the diagram is about. |
+| Solid arrow | A dependency or a call, labelled with what it does and the technology it uses. |
+
 ### Level 2: Containers
 
 ```mermaid
+---
+title: "gradle_kts · Containers"
+---
 flowchart TB
     subgraph boundary["gradle_kts [Software System]"]
         gradle_kts["gradle_kts<br/>[Container]"]
@@ -56,6 +70,9 @@ For each container: the modules it is built from (when it has several), then the
 #### gradle_kts
 
 ```mermaid
+---
+title: "gradle_kts"
+---
 flowchart TB
     subgraph boundary["gradle_kts [Container]"]
         core["core<br/>[Component]"]

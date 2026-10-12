@@ -1,3 +1,6 @@
+---
+title: "bookshop-api"
+---
 flowchart TB
     subgraph boundary["bookshop-api [Container]"]
         bookshop_main["main<br/>[Component]"]
@@ -14,6 +17,10 @@ flowchart TB
     bookshop_orders -->|"Reads/writes"| db_postgresql
     ext_payments_example["payments.example<br/>[Software System]"]
     bookshop_payments -->|"Calls"| ext_payments_example
+    bookshop_web["bookshop-web<br/>[Container: React]<br/>web app"]
+    bookshop_web -->|"Calls /api (dev-server proxy<br/>to http://localhost:8000)<br/>[HTTP]"| boundary
+    ext_covers_example["covers.example<br/>[Software System]"]
+    boundary -->|"Calls"| ext_covers_example
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff
@@ -21,6 +28,6 @@ flowchart TB
     classDef external fill:#999999,stroke:#6b6b6b,color:#ffffff
     classDef shared fill:#dbe9f6,stroke:#5d82a8,color:#000000,stroke-dasharray:4 3
     class bookshop_main,bookshop_orders,bookshop_payments,bookshop_search component
-    class db_elasticsearch,db_postgresql container
-    class ext_payments_example external
+    class db_elasticsearch,db_postgresql,bookshop_web container
+    class ext_payments_example,ext_covers_example external
     style boundary fill:none,stroke:#444444,stroke-dasharray:6 4

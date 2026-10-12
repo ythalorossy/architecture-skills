@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- **A container with no folders is no longer one unreadable diagram.** 44 components in a single group were drawn as one 44-node view with a note saying it was too big to read, because splitting only ever looked at folders — and so did the search for the components everything else depends on. Such a container is now split into views of at most 20 components, by the first path segment of the names when that says something and in dependency order otherwise, and its shared components are still collected in the Shared box.
+- **Level 3 says who calls the container.** A container's component diagram drew only its own components and the stores they use: the Web app's Level 3 showed neither the Reader who uses it nor the API it calls, so Level 2 and Level 3 described different systems. The people, containers and systems the model relates to the container are now drawn around its boundary, with the labels Level 2 already uses.
 - **Three kinds of unreadable manifest no longer stop the run.** A `pyproject.toml` or `pnpm-workspace.yaml` saved in Latin-1, or a `.csproj` the OS refuses to open, ended the analysis with `ERROR: internal error …` and exit 1. Each is now read through the tolerant reader, recorded, and the run finishes as `degraded`.
 - **A repository where nothing is recognised is no longer reported as a clean run.** No manifest and no entry point gave `containers: 0` with `status: ok` and an empty `warnings` list, which looks like an empty repository rather than a failed detection. It now carries a `detection` warning saying what to check, and the run is `degraded`. A repository that is understood but has no runnable part keeps reporting `ok`.
 - **A lone `requirements.txt` no longer claims the repository is Python.** A `docs/requirements.txt` pinning a Sphinx build put `Python` in `technology_stack` with no Python source anywhere.
@@ -17,6 +19,10 @@
 - **Model mistakes that used to pass in silence now say what is wrong.** A data store the repository itself runs, filed under `external_systems`, was drawn as another team's system with no message. An unknown key on a relationship, a flow or a flow step was dropped on the floor, so a misspelled `technolgy` or `notes` simply never appeared in the diagram. Each is now a warning that names the key and the closest documented one. A relationship that ends on a component id is told to use a flow step, and the message reads `unknown 'to' id 'x'` instead of `unknown to id 'x'`.
 - **Unproven elements reach the Assumptions list.** A person, container or external system marked `"assumptions": true` (a typo for `"assumption"`), or carrying neither evidence nor a marking, was left out of the report's Assumptions section, so nothing asked the team to confirm it. Both are listed now, as "unmarked, no evidence".
 - **A missing key in `c4-facts.json` is named.** Dropping `endpoints`, `configuration` or `deployment` silently removed that section from the report and still exited 0; dropping `data_stores` gave `internal error in __main__:validate: 'data_stores'`. All seven required keys are checked up front and reported as `c4-facts.json: <key> missing; re-run analyze_repository.py`, exit 1.
+
+### Added
+
+- **Every diagram says what it is, and the report says what the shapes mean.** Each `.mmd` carries a front-matter `title`, so a diagram opened or shared on its own is no longer an unlabelled set of boxes, and the renderers draw it above the picture. The C4 section of `ArchitectureReport.md` opens with one Key, listing only the shapes, colours and line styles the diagrams in that report actually use.
 
 ### Changed
 

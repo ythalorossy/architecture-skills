@@ -28,9 +28,23 @@ The automated dependency checks found no structural concerns.
 
 > Drawn from code facts only: no `c4-model.json` yet, so people, external purposes, descriptions and key flows are missing and the System Context level is left out. Write `c4-model.json` and run `render_c4.py` to complete it.
 
+### Key
+
+What the shapes and lines in the diagrams below mean.
+
+| Symbol | Meaning |
+|---|---|
+| Blue box | **Container** — an application or service that runs on its own. |
+| Light blue box | **Component** — a module, package or namespace inside one container. |
+| Dashed grey outline | The system or the container the diagram is about. |
+| Solid arrow | A dependency or a call, labelled with what it does and the technology it uses. |
+
 ### Level 2: Containers
 
 ```mermaid
+---
+title: "go_mod · Containers"
+---
 flowchart TB
     subgraph boundary["go_mod [Software System]"]
         api["api<br/>[Container: Go]<br/>app"]
@@ -56,6 +70,9 @@ For each container: the modules it is built from (when it has several), then the
 #### api
 
 ```mermaid
+---
+title: "api"
+---
 flowchart TB
     subgraph boundary["api [Container]"]
         cmd_api["cmd/api<br/>[Component]"]
