@@ -144,3 +144,108 @@ def resolve_roles(model, gold):
 def _role_of(matched):
     """{element id: role}, the reverse of resolve_roles' result."""
     return {element_id: role for role, element_id in matched.items() if element_id}
+
+
+def _component_owner(model):
+    """{component key: owning container id} from the model's `components` map.
+
+    Flow steps name components, not containers ("bookshop.orders"), so a step
+    end has to be mapped to its container before a container role can match.
+    """
+    owners = {}
+    components = model.get("components")
+    if isinstance(components, dict):
+        for container_id, entries in components.items():
+            if isinstance(entries, dict):
+                for component in entries:
+                    owners.setdefault(component, container_id)
+    return owners
+
+
+def _end_role(end, role_of, owners=None):
+    """The gold role an edge end belongs to, or None.
+
+    `owners` is passed for flow steps only. It is applied *before* the role
+    lookup on purpose: "web/src/api" contains the substring "api" but is a
+    module of the web app, so matching first would score it as the API.
+    """
+    if end is None:
+        return None
+    end = str(end)
+    if owners:
+        end = owners.get(end, end)
+    return role_of.get(end)
+
+
+def _edge_roles(edges, role_of, owners=None):
+    """{(from role, to role)} for the edges whose ends both resolve."""
+    pairs = set()
+    for edge in edges or []:
+        if not isinstance(edge, dict):
+            continue
+        source = _end_role(edge.get("from"), role_of, owners)
+        target = _end_role(edge.get("to"), role_of, owners)
+        if source and target:
+            pairs.add((source, target))
+    return pairs
+
+
+def _flow_steps(model):
+    """Every step of every flow, flattened."""
+    steps = []
+    for flow in model.get("flows") or []:
+        if isinstance(flow, dict):
+            steps.extend(flow.get("steps") or [])
+    return steps
+
+
+def score_recall(model, gold):
+    """How much of the gold this model contains.
+
+    Three parts, summed into one score: the required elements, the required
+    relationships (direction significant — a reversed arrow is wrong) and the
+    required flow steps (order within a flow is not checked).
+    """
+    matched_roles = resolve_roles(model, gold)
+    role_of = _role_of(matched_roles)
+    owners = _component_owner(model)
+    missed = []
+
+    elements = gold["required_elements"]
+    element_hits = 0
+    for entry in elements:
+        if entry["role"] in matched_roles:
+            element_hits += 1
+        else:
+            missed.append(f"element {entry['role']}")
+
+    relationship_pairs = _edge_roles(model.get("relationships"), role_of)
+    relationship_hits = 0
+    for pair in gold["required_relationships"]:
+        if tuple(pair) in relationship_pairs:
+            relationship_hits += 1
+        else:
+            missed.append(f"relationship {pair[0]} -> {pair[1]}")
+
+    step_pairs = _edge_roles(_flow_steps(model), role_of, owners)
+    step_hits = 0
+    for pair in gold["required_flow_steps"]:
+        if tuple(pair) in step_pairs:
+            step_hits += 1
+        else:
+            missed.append(f"flow step {pair[0]} -> {pair[1]}")
+
+    parts = {
+        "elements": (element_hits, len(elements)),
+        "relationships": (relationship_hits, len(gold["required_relationships"])),
+        "flow_steps": (step_hits, len(gold["required_flow_steps"])),
+    }
+    hits = element_hits + relationship_hits + step_hits
+    total = sum(count for _, count in parts.values())
+    return {
+        "score": hits / total if total else 1.0,
+        "hits": hits,
+        "total": total,
+        "parts": parts,
+        "missed": missed,
+    }

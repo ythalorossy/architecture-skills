@@ -217,5 +217,82 @@ class TestResolveRoles(unittest.TestCase):
         self.assertEqual(grade.resolve_roles(candidate, gold), {"api": "c1"})
 
 
+class TestRecall(unittest.TestCase):
+    def setUp(self):
+        self.gold = grade.load_gold(GOLD_FILE)
+
+    def test_a_complete_model_scores_one(self):
+        result = grade.score_recall(model(), self.gold)
+        self.assertEqual(result["score"], 1.0)
+        self.assertEqual(result["hits"], 13)
+        self.assertEqual(result["total"], 13)
+        self.assertEqual(result["parts"]["elements"], (6, 6))
+        self.assertEqual(result["parts"]["relationships"], (5, 5))
+        self.assertEqual(result["parts"]["flow_steps"], (2, 2))
+        self.assertEqual(result["missed"], [])
+
+    def test_a_flow_step_resolves_through_its_owning_container(self):
+        """Steps name components; 'bookshop.orders' belongs to the API container."""
+        result = grade.score_recall(model(), self.gold)
+        self.assertEqual(result["parts"]["flow_steps"], (2, 2))
+
+    def test_a_component_is_resolved_before_its_name_is_matched(self):
+        """'web/src/api' contains 'api' but is a module of the web app."""
+        candidate = model(flows=[{"id": "f", "name": "F", "steps": [
+            {"from": "web/src/api", "to": "db-postgresql"},
+        ]}])
+        result = grade.score_recall(candidate, self.gold)
+        self.assertIn("flow step api -> orders-db", result["missed"])
+
+    def test_deleting_the_api_container_cascades(self):
+        """Every gold role is a relationship end, so an element loss is never alone."""
+        candidate = model(containers=[
+            {"id": "bookshop-web", "name": "Web app"},
+            {"id": "db-postgresql", "name": "Orders database", "type": "database"},
+            {"id": "db-elasticsearch", "name": "Catalogue index", "type": "database"},
+        ])
+        result = grade.score_recall(candidate, self.gold)
+        self.assertEqual(result["parts"]["elements"], (5, 6))
+        # Only reader -> web-ui survives: the other four all have the API as an end.
+        self.assertEqual(result["parts"]["relationships"], (1, 5))
+        # Both required steps run through bookshop.orders, a module of the API.
+        self.assertEqual(result["parts"]["flow_steps"], (0, 2))
+        self.assertIn("element api", result["missed"])
+        self.assertIn("relationship web-ui -> api", result["missed"])
+
+    def test_a_reversed_relationship_does_not_match(self):
+        candidate = model(relationships=[{"from": "db-postgresql", "to": "bookshop-api"}])
+        result = grade.score_recall(candidate, self.gold)
+        self.assertIn("relationship api -> orders-db", result["missed"])
+
+    def test_a_model_without_flows_or_components_scores_zero_flow_steps(self):
+        """Review Focus 2: every facts-only model has this shape."""
+        candidate = model()
+        del candidate["flows"]
+        del candidate["components"]
+        result = grade.score_recall(candidate, self.gold)
+        self.assertEqual(result["parts"]["flow_steps"], (0, 2))
+        self.assertEqual(result["parts"]["elements"], (6, 6))
+
+    def test_an_end_that_is_missing_or_none_is_skipped(self):
+        """Review Focus 3: a half-written model scores, it does not crash."""
+        candidate = model(
+            relationships=[{"from": None, "to": "bookshop-api"}, {"to": "db-postgresql"},
+                           {"from": "bookshop-api", "to": "db-postgresql"}],
+            flows=[{"id": "f", "name": "F", "steps": [{"from": "bookshop.orders"}, "oops"]}],
+        )
+        result = grade.score_recall(candidate, self.gold)
+        self.assertEqual(result["parts"]["relationships"], (1, 5))
+        self.assertEqual(result["parts"]["flow_steps"], (0, 2))
+
+    def test_the_fixture_model_scores_one(self):
+        """The grader's self-check against the committed reference answer."""
+        fixture = json.loads(
+            (REPO_ROOT / "tests" / "fixtures" / "repos" / "bookshop" / "c4-model.json")
+            .read_text(encoding="utf-8"))
+        result = grade.score_recall(fixture, self.gold)
+        self.assertEqual(result["score"], 1.0, result["missed"])
+
+
 if __name__ == "__main__":
     unittest.main()
