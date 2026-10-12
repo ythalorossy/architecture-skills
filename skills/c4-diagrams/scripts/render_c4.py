@@ -28,7 +28,7 @@ from scripts.cli_support import UserError, require_python, run_cli
 require_python()
 
 from scripts import svg_render as _sr
-from scripts import c4_facts, code_diagrams
+from scripts import c4_facts, code_diagrams, generate_docs
 from scripts import mermaid_syntax as _ms
 from scripts.model_check import ValidationResult, check_structure, load_model
 
@@ -1248,9 +1248,15 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
             re.DOTALL,
         )
         if pattern.search(text):
-            report.write_text(pattern.sub(lambda _: "\n".join(block), text), encoding="utf-8")
+            text = pattern.sub(lambda _: "\n".join(block), text)
         else:
             result.warnings.append("ArchitectureReport.md has no C4 block; re-run analyze_repository.py")
+        if not use_model.get("_facts_only"):
+            # The analyzer writes the report before the model is read, so its
+            # Executive Summary can only count projects. Now that the model is
+            # loaded and valid, say what the system is made of instead.
+            text = generate_docs.replace_summary(text, generate_docs.model_summary(use_model))
+        report.write_text(text, encoding="utf-8")
 
     # Per-diagram SVG status for summary.json.
     svg_status = {}

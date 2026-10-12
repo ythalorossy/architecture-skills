@@ -23,6 +23,13 @@ ASSETS_DIR = (
     Path(__file__).parent.parent / "assets"
 )
 
+# The Executive Summary's first paragraph is written twice: once here, from
+# the dependency graph, and again by render_c4 once c4-model.json has been
+# read and validated. Markdown "comments" (empty link definitions) mark the
+# part that may be replaced, the same way the C4 block is marked.
+SUMMARY_START = "[//]: # (summary:start)"
+SUMMARY_END = "[//]: # (summary:end)"
+
 TEST_PROJECT = re.compile(
     r"(^|[.\-_])(Unit|Integration|Functional|Acceptance|E2E)?(Tests?|Specs?)$",
     re.IGNORECASE
@@ -41,6 +48,61 @@ def load_template(template_name):
 
 def is_test_project(name):
     return bool(TEST_PROJECT.search(name))
+
+
+def _count(number, singular, plural=None):
+    return f"{number} {singular if number == 1 else (plural or singular + 's')}"
+
+
+def _listed(parts):
+    """'a', 'a and b', 'a, b and c'."""
+    if len(parts) < 2:
+        return "".join(parts)
+    return ", ".join(parts[:-1]) + " and " + parts[-1]
+
+
+def model_summary(model):
+    """The Executive Summary paragraphs for a repository that has a model.
+
+    The dependency graph counts projects, which are not the parts of a running
+    system: a Python package is not a container. When `c4-model.json` says what
+    the system is made of, that answer opens the report instead of the count.
+    """
+    system = model.get("system") or {}
+    name = str(system.get("name") or "").strip() or "The system"
+    description = str(system.get("description") or "").strip()
+
+    containers = model.get("containers") or []
+    stores = [e for e in containers if e.get("type") in ("database", "queue")]
+    counts = [_count(len(containers) - len(stores), "container")]
+    for items, singular, plural in (
+        (stores, "data store", None),
+        (model.get("external_systems") or [], "external system", None),
+        (model.get("people") or [], "person", "people"),
+        (model.get("relationships") or [], "relationship", None),
+        (model.get("flows") or [], "key flow", None),
+    ):
+        if items:
+            counts.append(_count(len(items), singular, plural))
+
+    paragraphs = []
+    if description:
+        paragraphs.append(description if description.endswith((".", "!", "?")) else description + ".")
+    paragraphs.append(f"The model of {name} describes {_listed(counts)}.")
+    return "\n\n".join(paragraphs)
+
+
+def replace_summary(text, paragraph):
+    """Swap the marked Executive Summary paragraph in `text` for `paragraph`.
+
+    Returns the text unchanged when the markers are missing: an older report,
+    or one the user rewrote by hand, is left alone rather than guessed at.
+    """
+    marked = re.compile(re.escape(SUMMARY_START) + ".*?" + re.escape(SUMMARY_END), re.DOTALL)
+    if not marked.search(text):
+        return text
+    block = "\n\n".join([SUMMARY_START, paragraph, SUMMARY_END])
+    return marked.sub(lambda _: block, text)
 
 
 def find_cycles(graph):
@@ -276,23 +338,29 @@ def generate_report(
     folders = sorted({group for group in groups.values() if group})
 
     if graph:
-        executive_summary = (
+        # Replaced by render_c4 when c4-model.json describes the system.
+        described = (
             f"{project_name} has {len(graph)} projects "
             f"({len(facts['production'])} production, {len(facts['tests'])} test) "
-            f"with {internal_edges} project references between them. "
-            + (
-                f"The analysis found {len(concerns)} concern(s)."
-                if concerns
-                else "The analysis found no structural concerns."
-            )
+            f"with {internal_edges} project references between them."
+        )
+        checks = (
+            f"The automated dependency checks found {len(concerns)} concern(s)."
+            if concerns
+            else "The automated dependency checks found no structural concerns."
         )
     else:
         # An empty graph is "not analyzed", not "healthy".
-        executive_summary = (
+        described = (
             f"No supported projects were found in {project_name} (.NET projects, "
             "package.json packages, Python packages, Maven or Gradle modules), so "
             "this report says nothing about its structure. Analyze it directly."
         )
+        checks = ""
+
+    executive_summary = "\n\n".join(
+        [SUMMARY_START, described, SUMMARY_END] + ([checks] if checks else [])
+    )
 
     overview = [
         f"**Solutions / build roots:** {', '.join(facts['solutions']) or 'none found'}",
