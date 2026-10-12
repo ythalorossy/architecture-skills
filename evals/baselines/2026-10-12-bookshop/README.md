@@ -25,6 +25,8 @@
 > **Deferred work.** A meaningful quality baseline needs a fixture that is
 > **not** the skill's worked example. That fixture does not exist yet.
 
+### Scores — contaminated upper bound, not a quality measurement (see the warning above)
+
 | Score | Value |
 |---|---|
 | recall | 1.00 (13/13 — elements 6/6, relationships 5/5, flow steps 2/2) |
@@ -63,6 +65,7 @@ designed, and evidence the gold is not merely string-matching ids.
 The scores do not capture the extra material (the added flow and component);
 hallucination counts only claims that fail evidence checks, and those passed.
 
-**Caveat:** one run, not a statistical claim. N=3 is deferred — see the
-BACKLOG. bookshop is a 17-file synthetic fixture whose answer is visible to the
+**Caveat:** one run, not a statistical claim. Repeating it N=3 times is
+deferred, as is a gold file for a fixture that is not the skill's worked
+example (it does not exist yet). bookshop is a 17-file synthetic fixture whose answer is visible to the
 skill, so a good score here does not predict a good score on a real repository.
