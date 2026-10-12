@@ -1,9 +1,7 @@
 flowchart TB
-    subgraph boundary["`**dotnet_sln** [Container]`"]
-        Core["`**Core**
-[Component]`"]
-        Web["`**Web**
-[Component]`"]
+    subgraph boundary["dotnet_sln [Container]"]
+        Core["Core<br/>[Component]"]
+        Web["Web<br/>[Component]"]
     end
     Web --> Core
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff

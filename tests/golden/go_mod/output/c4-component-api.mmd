@@ -1,9 +1,7 @@
 flowchart TB
-    subgraph boundary["`**api** [Container]`"]
-        cmd_api["`**cmd/api**
-[Component]`"]
-        internal_store["`**internal/store**
-[Component]`"]
+    subgraph boundary["api [Container]"]
+        cmd_api["cmd/api<br/>[Component]"]
+        internal_store["internal/store<br/>[Component]"]
     end
     cmd_api --> internal_store
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff

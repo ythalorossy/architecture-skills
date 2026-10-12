@@ -26,9 +26,8 @@ node_workspace has 2 projects (2 production, 0 test) with 1 project references b
 
 ```mermaid
 flowchart TB
-    subgraph boundary["`**node_workspace** [Software System]`"]
-        node_workspace["`**node_workspace**
-[Container]`"]
+    subgraph boundary["node_workspace [Software System]"]
+        node_workspace["node_workspace<br/>[Container]"]
     end
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
@@ -52,11 +51,9 @@ For each container: the modules it is built from (when it has several), then the
 
 ```mermaid
 flowchart TB
-    subgraph boundary["`**node_workspace** [Container]`"]
-        acme_core["`**core**
-[Component]`"]
-        acme_web["`**web**
-[Component]`"]
+    subgraph boundary["node_workspace [Container]"]
+        acme_core["core<br/>[Component]"]
+        acme_web["web<br/>[Component]"]
     end
     acme_web --> acme_core
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff

@@ -1,26 +1,19 @@
 flowchart TB
-    subgraph boundary["`**bookshop-api** [Container]`"]
-        bookshop_main["`**main**
-[Component]`"]
-        bookshop_orders["`**orders**
-[Component]`"]
-        bookshop_payments["`**payments**
-[Component]`"]
-        bookshop_search["`**search**
-[Component]`"]
+    subgraph boundary["bookshop-api [Container]"]
+        bookshop_main["main<br/>[Component]"]
+        bookshop_orders["orders<br/>[Component]"]
+        bookshop_payments["payments<br/>[Component]"]
+        bookshop_search["search<br/>[Component]"]
     end
     bookshop_main --> bookshop_orders
     bookshop_main --> bookshop_search
     bookshop_orders --> bookshop_payments
-    db_elasticsearch[("`**Elasticsearch**
-[Container: Elasticsearch]`")]
-    bookshop_search -->|"`Reads/writes`"| db_elasticsearch
-    db_postgresql[("`**PostgreSQL**
-[Container: PostgreSQL]`")]
-    bookshop_orders -->|"`Reads/writes`"| db_postgresql
-    ext_payments_example["`**payments.example**
-[Software System]`"]
-    bookshop_payments -->|"`Calls`"| ext_payments_example
+    db_elasticsearch[("Elasticsearch<br/>[Container: Elasticsearch]")]
+    bookshop_search -->|"Reads/writes"| db_elasticsearch
+    db_postgresql[("PostgreSQL<br/>[Container: PostgreSQL]")]
+    bookshop_orders -->|"Reads/writes"| db_postgresql
+    ext_payments_example["payments.example<br/>[Software System]"]
+    bookshop_payments -->|"Calls"| ext_payments_example
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff

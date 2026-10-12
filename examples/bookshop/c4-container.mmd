@@ -1,41 +1,17 @@
 flowchart TB
-    reader("`**Reader**
-[Person]
-Searches the catalogue and buys
-books`")
-    subgraph boundary["`**Bookshop** [Software System]`"]
-        bookshop_web["`**Web app**
-[Container: React, Vite]
-Search and checkout pages in the
-browser`"]
-        bookshop_api["`**Bookshop API**
-[Container: Python, FastAPI]
-Searches the catalogue and places
-orders`"]
-        db_postgresql[("`**Orders database**
-[Container: PostgreSQL 16]
-Orders and their payment
-references`")]
+    reader("Reader<br/>[Person]<br/>Searches the catalogue and buys<br/>books")
+    subgraph boundary["Bookshop [Software System]"]
+        bookshop_web["Web app<br/>[Container: React, Vite]<br/>Search and checkout pages in the<br/>browser"]
+        bookshop_api["Bookshop API<br/>[Container: Python, FastAPI]<br/>Searches the catalogue and places<br/>orders"]
+        db_postgresql[("Orders database<br/>[Container: PostgreSQL 16]<br/>Orders and their payment<br/>references")]
     end
-    db_elasticsearch["`**Catalogue index**
-[Software System]
-Book catalogue search index, run
-and filled by the catalogue team`"]
-    ext_payments_example["`**Payment provider**
-[Software System]
-Charges the reader's card for an
-order`"]
-    reader -->|"`Finds and buys books using
-[HTTPS]`"| bookshop_web
-    bookshop_web -->|"`Searches books and places
-orders through
-[JSON/HTTPS]`"| bookshop_api
-    bookshop_api -->|"`Stores orders in
-[psycopg]`"| db_postgresql
-    bookshop_api -->|"`Searches the catalogue in
-[Elasticsearch client]`"| db_elasticsearch
-    bookshop_api -->|"`Charges cards with
-[HTTPS, httpx]`"| ext_payments_example
+    db_elasticsearch["Catalogue index<br/>[Software System]<br/>Book catalogue search index, run<br/>and filled by the catalogue team"]
+    ext_payments_example["Payment provider<br/>[Software System]<br/>Charges the reader's card for an<br/>order"]
+    reader -->|"Finds and buys books using<br/>[HTTPS]"| bookshop_web
+    bookshop_web -->|"Searches books and places<br/>orders through<br/>[JSON/HTTPS]"| bookshop_api
+    bookshop_api -->|"Stores orders in<br/>[psycopg]"| db_postgresql
+    bookshop_api -->|"Searches the catalogue in<br/>[Elasticsearch client]"| db_elasticsearch
+    bookshop_api -->|"Charges cards with<br/>[HTTPS, httpx]"| ext_payments_example
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff

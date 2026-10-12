@@ -1,27 +1,17 @@
 flowchart TB
-    subgraph boundary["`**bookshop** [Software System]`"]
-        bookshop_api["`**bookshop-api**
-[Container: Python, FastAPI]
-web api`"]
-        bookshop_web["`**bookshop-web**
-[Container: React]
-web app`"]
-        db_elasticsearch[("`**Elasticsearch**
-[Container: Elasticsearch]`")]
-        db_postgresql[("`**PostgreSQL**
-[Container: PostgreSQL]`")]
+    subgraph boundary["bookshop [Software System]"]
+        bookshop_api["bookshop-api<br/>[Container: Python, FastAPI]<br/>web api"]
+        bookshop_web["bookshop-web<br/>[Container: React]<br/>web app"]
+        db_elasticsearch[("Elasticsearch<br/>[Container: Elasticsearch]")]
+        db_postgresql[("PostgreSQL<br/>[Container: PostgreSQL]")]
     end
-    ext_covers_example["`**covers.example**
-[Software System]`"]
-    ext_payments_example["`**payments.example**
-[Software System]`"]
-    bookshop_api -->|"`Reads/writes`"| db_postgresql
-    bookshop_web -->|"`Calls /api (dev-server proxy
-to http://localhost:8000)
-[HTTP]`"| bookshop_api
-    bookshop_api -->|"`Reads/writes`"| db_elasticsearch
-    bookshop_api -->|"`Calls`"| ext_covers_example
-    bookshop_api -->|"`Calls`"| ext_payments_example
+    ext_covers_example["covers.example<br/>[Software System]"]
+    ext_payments_example["payments.example<br/>[Software System]"]
+    bookshop_api -->|"Reads/writes"| db_postgresql
+    bookshop_web -->|"Calls /api (dev-server proxy<br/>to http://localhost:8000)<br/>[HTTP]"| bookshop_api
+    bookshop_api -->|"Reads/writes"| db_elasticsearch
+    bookshop_api -->|"Calls"| ext_covers_example
+    bookshop_api -->|"Calls"| ext_payments_example
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff

@@ -26,10 +26,8 @@ go_mod has 2 projects (2 production, 0 test) with 1 project references between t
 
 ```mermaid
 flowchart TB
-    subgraph boundary["`**go_mod** [Software System]`"]
-        api["`**api**
-[Container: Go]
-app`"]
+    subgraph boundary["go_mod [Software System]"]
+        api["api<br/>[Container: Go]<br/>app"]
     end
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
@@ -53,11 +51,9 @@ For each container: the modules it is built from (when it has several), then the
 
 ```mermaid
 flowchart TB
-    subgraph boundary["`**api** [Container]`"]
-        cmd_api["`**cmd/api**
-[Component]`"]
-        internal_store["`**internal/store**
-[Component]`"]
+    subgraph boundary["api [Container]"]
+        cmd_api["cmd/api<br/>[Component]"]
+        internal_store["internal/store<br/>[Component]"]
     end
     cmd_api --> internal_store
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff

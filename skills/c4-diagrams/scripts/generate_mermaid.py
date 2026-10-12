@@ -11,7 +11,9 @@ def _node_ids(names, alloc=None):
 
 def _label(text):
     """Escape text for a flowchart label string (``["label"]``)."""
-    return _ms.label_text("flowchart_md", text)
+    # Plain, not markdown: mermaid parses no Markdown in ["label"], so a
+    # markdown escape would reach the diagram as a literal backslash.
+    return _ms.label_text("flowchart_plain", text)
 
 
 def generate_mermaid(graph, groups=None):

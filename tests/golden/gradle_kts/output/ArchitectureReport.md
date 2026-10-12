@@ -26,9 +26,8 @@ gradle_kts has 2 projects (2 production, 0 test) with 1 project references betwe
 
 ```mermaid
 flowchart TB
-    subgraph boundary["`**gradle_kts** [Software System]`"]
-        gradle_kts["`**gradle_kts**
-[Container]`"]
+    subgraph boundary["gradle_kts [Software System]"]
+        gradle_kts["gradle_kts<br/>[Container]"]
     end
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
@@ -52,11 +51,9 @@ For each container: the modules it is built from (when it has several), then the
 
 ```mermaid
 flowchart TB
-    subgraph boundary["`**gradle_kts** [Container]`"]
-        core["`**core**
-[Component]`"]
-        web["`**web**
-[Component]`"]
+    subgraph boundary["gradle_kts [Container]"]
+        core["core<br/>[Component]"]
+        web["web<br/>[Component]"]
     end
     web --> core
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff

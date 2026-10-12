@@ -192,6 +192,46 @@ class MarkdownProseTest(unittest.TestCase):
         self.assertNotIn("#gt;", section)
 
 
+class PlainLabelTest(unittest.TestCase):
+    """Labels are plain, not Mermaid markdown strings.
+
+    A markdown string ("`…`") makes mermaid parse the label as Markdown, which
+    eats the metacharacters of ordinary code names: ``user_service`` loses its
+    underscore and ``__main__`` turns bold. Escaping them does not help, because
+    the SVG renderer drops the escapes. Plain labels parse no Markdown, so the
+    characters survive. The cost is that the element name is no longer bold.
+    """
+
+    METACHAR_NAMES = ("user_service", "__main__", "2*3*4", "a~b")
+
+    def test_element_labels_are_not_markdown_strings(self):
+        model = _make_minimal_model(
+            containers=[{"id": "svc", "name": "user_service", "technology": "Python",
+                         "description": "runs __main__ and 2*3*4"}],
+        )
+        mermaid = render_c4.container_diagram(model)
+        self.assertNotIn('"`', mermaid, f"markdown-string label in:\n{mermaid}")
+        self.assertNotIn('`"', mermaid, f"markdown-string label in:\n{mermaid}")
+
+    def test_metacharacters_survive_in_the_label(self):
+        model = _make_minimal_model(
+            containers=[{"id": "svc", "name": "user_service", "technology": "Python",
+                         "description": "runs __main__ and 2*3*4 and a~b"}],
+        )
+        mermaid = render_c4.container_diagram(model)
+        for name in self.METACHAR_NAMES:
+            self.assertIn(name, mermaid,
+                          f"{name!r} was altered in:\n{mermaid}")
+
+    def test_no_bold_markers_are_emitted(self):
+        model = _make_minimal_model(
+            containers=[{"id": "svc", "name": "Svc", "technology": "Python"}],
+        )
+        mermaid = render_c4.container_diagram(model)
+        self.assertNotIn("**", mermaid,
+                         f"bold markers render literally in a plain label:\n{mermaid}")
+
+
 class SequenceAliasEscapeTest(unittest.TestCase):
     """A ';' in a participant alias ends the statement and breaks the parse."""
 

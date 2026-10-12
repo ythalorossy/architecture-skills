@@ -1,9 +1,7 @@
 flowchart TB
-    subgraph boundary["`**gradle_kts** [Container]`"]
-        core["`**core**
-[Component]`"]
-        web["`**web**
-[Component]`"]
+    subgraph boundary["gradle_kts [Container]"]
+        core["core<br/>[Component]"]
+        web["web<br/>[Component]"]
     end
     web --> core
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff

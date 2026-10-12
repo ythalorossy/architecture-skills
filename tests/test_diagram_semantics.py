@@ -306,7 +306,7 @@ class ComposeTest(unittest.TestCase):
         self.assertIn('db_sql_server[("', mermaid)
         model = render_c4.facts_only_model(facts)
         deployment = render_c4.deployment_diagram(facts, model)
-        self.assertRegex(deployment, r'svc_db\[\("`\*\*db\*\*')
+        self.assertRegex(deployment, r'svc_db\[\("db')
 
 
 class FactsOnlyContainerDiagramTest(unittest.TestCase):
@@ -319,7 +319,7 @@ class FactsOnlyContainerDiagramTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             run_analyzer(fixture, tmp)
             mermaid = (Path(tmp) / "c4-container.mmd").read_text(encoding="utf-8")
-        self.assertIn('bookshop_api -->|"`Reads/writes`"| db_postgresql', mermaid)
+        self.assertIn('bookshop_api -->|"Reads/writes"| db_postgresql', mermaid)
         self.assertIn("Calls /api", mermaid)
         self.assertNotIn("Depends on", mermaid)
 

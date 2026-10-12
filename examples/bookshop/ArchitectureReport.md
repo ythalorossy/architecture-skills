@@ -48,28 +48,13 @@ Online shop where readers find books and buy them
 
 ```mermaid
 flowchart TB
-    reader("`**Reader**
-[Person]
-Searches the catalogue and buys
-books`")
-    system["`**Bookshop**
-[Software System]
-Online shop where readers find
-books and buy them`"]
-    ext_payments_example["`**Payment provider**
-[Software System]
-Charges the reader's card for an
-order`"]
-    db_elasticsearch["`**Catalogue index**
-[Software System]
-Book catalogue search index, run
-and filled by the catalogue team`"]
-    reader -->|"`Finds and buys books using
-[HTTPS]`"| system
-    system -->|"`Searches the catalogue in
-[Elasticsearch client]`"| db_elasticsearch
-    system -->|"`Charges cards with
-[HTTPS, httpx]`"| ext_payments_example
+    reader("Reader<br/>[Person]<br/>Searches the catalogue and buys<br/>books")
+    system["Bookshop<br/>[Software System]<br/>Online shop where readers find<br/>books and buy them"]
+    ext_payments_example["Payment provider<br/>[Software System]<br/>Charges the reader's card for an<br/>order"]
+    db_elasticsearch["Catalogue index<br/>[Software System]<br/>Book catalogue search index, run<br/>and filled by the catalogue team"]
+    reader -->|"Finds and buys books using<br/>[HTTPS]"| system
+    system -->|"Searches the catalogue in<br/>[Elasticsearch client]"| db_elasticsearch
+    system -->|"Charges cards with<br/>[HTTPS, httpx]"| ext_payments_example
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff
@@ -92,43 +77,19 @@ and filled by the catalogue team`"]
 
 ```mermaid
 flowchart TB
-    reader("`**Reader**
-[Person]
-Searches the catalogue and buys
-books`")
-    subgraph boundary["`**Bookshop** [Software System]`"]
-        bookshop_web["`**Web app**
-[Container: React, Vite]
-Search and checkout pages in the
-browser`"]
-        bookshop_api["`**Bookshop API**
-[Container: Python, FastAPI]
-Searches the catalogue and places
-orders`"]
-        db_postgresql[("`**Orders database**
-[Container: PostgreSQL 16]
-Orders and their payment
-references`")]
+    reader("Reader<br/>[Person]<br/>Searches the catalogue and buys<br/>books")
+    subgraph boundary["Bookshop [Software System]"]
+        bookshop_web["Web app<br/>[Container: React, Vite]<br/>Search and checkout pages in the<br/>browser"]
+        bookshop_api["Bookshop API<br/>[Container: Python, FastAPI]<br/>Searches the catalogue and places<br/>orders"]
+        db_postgresql[("Orders database<br/>[Container: PostgreSQL 16]<br/>Orders and their payment<br/>references")]
     end
-    db_elasticsearch["`**Catalogue index**
-[Software System]
-Book catalogue search index, run
-and filled by the catalogue team`"]
-    ext_payments_example["`**Payment provider**
-[Software System]
-Charges the reader's card for an
-order`"]
-    reader -->|"`Finds and buys books using
-[HTTPS]`"| bookshop_web
-    bookshop_web -->|"`Searches books and places
-orders through
-[JSON/HTTPS]`"| bookshop_api
-    bookshop_api -->|"`Stores orders in
-[psycopg]`"| db_postgresql
-    bookshop_api -->|"`Searches the catalogue in
-[Elasticsearch client]`"| db_elasticsearch
-    bookshop_api -->|"`Charges cards with
-[HTTPS, httpx]`"| ext_payments_example
+    db_elasticsearch["Catalogue index<br/>[Software System]<br/>Book catalogue search index, run<br/>and filled by the catalogue team"]
+    ext_payments_example["Payment provider<br/>[Software System]<br/>Charges the reader's card for an<br/>order"]
+    reader -->|"Finds and buys books using<br/>[HTTPS]"| bookshop_web
+    bookshop_web -->|"Searches books and places<br/>orders through<br/>[JSON/HTTPS]"| bookshop_api
+    bookshop_api -->|"Stores orders in<br/>[psycopg]"| db_postgresql
+    bookshop_api -->|"Searches the catalogue in<br/>[Elasticsearch client]"| db_elasticsearch
+    bookshop_api -->|"Charges cards with<br/>[HTTPS, httpx]"| ext_payments_example
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff
@@ -163,45 +124,21 @@ For each container: the modules it is built from (when it has several), then the
 
 ```mermaid
 flowchart TB
-    subgraph boundary["`**Bookshop API** [Container]`"]
-        bookshop_main["`**main**
-[Component]
-HTTP routes; hand each request to
-a service`"]
-        bookshop_orders["`**orders**
-[Component]
-Places an order: takes payment,
-then records it`"]
-        bookshop_payments["`**payments**
-[Component]
-Client for the payment provider's
-charges API`"]
-        bookshop_search["`**search**
-[Component]
-Full-text book search against the
-catalogue index`"]
+    subgraph boundary["Bookshop API [Container]"]
+        bookshop_main["main<br/>[Component]<br/>HTTP routes; hand each request to<br/>a service"]
+        bookshop_orders["orders<br/>[Component]<br/>Places an order: takes payment,<br/>then records it"]
+        bookshop_payments["payments<br/>[Component]<br/>Client for the payment provider's<br/>charges API"]
+        bookshop_search["search<br/>[Component]<br/>Full-text book search against the<br/>catalogue index"]
     end
     bookshop_main --> bookshop_orders
     bookshop_main --> bookshop_search
     bookshop_orders --> bookshop_payments
-    db_elasticsearch[("`**Catalogue index**
-[Container: Elasticsearch]
-Book catalogue search index, run
-and filled by the catalogue team`")]
-    bookshop_search -->|"`Searches the catalogue in
-[Elasticsearch client]`"| db_elasticsearch
-    db_postgresql[("`**Orders database**
-[Container: PostgreSQL 16]
-Orders and their payment
-references`")]
-    bookshop_orders -->|"`Stores orders in
-[psycopg]`"| db_postgresql
-    ext_payments_example["`**Payment provider**
-[Software System]
-Charges the reader's card for an
-order`"]
-    bookshop_payments -->|"`Charges cards with
-[HTTPS, httpx]`"| ext_payments_example
+    db_elasticsearch[("Catalogue index<br/>[Container: Elasticsearch]<br/>Book catalogue search index, run<br/>and filled by the catalogue team")]
+    bookshop_search -->|"Searches the catalogue in<br/>[Elasticsearch client]"| db_elasticsearch
+    db_postgresql[("Orders database<br/>[Container: PostgreSQL 16]<br/>Orders and their payment<br/>references")]
+    bookshop_orders -->|"Stores orders in<br/>[psycopg]"| db_postgresql
+    ext_payments_example["Payment provider<br/>[Software System]<br/>Charges the reader's card for an<br/>order"]
+    bookshop_payments -->|"Charges cards with<br/>[HTTPS, httpx]"| ext_payments_example
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff
@@ -225,13 +162,9 @@ order`"]
 
 ```mermaid
 flowchart TB
-    subgraph boundary["`**Web app** [Container]`"]
-        web_src__files["`**src (root files)**
-[Component]`"]
-        web_src_api["`**src/api**
-[Component]
-Fetch wrappers for the API's book
-and order endpoints`"]
+    subgraph boundary["Web app [Container]"]
+        web_src__files["src (root files)<br/>[Component]"]
+        web_src_api["src/api<br/>[Component]<br/>Fetch wrappers for the API's book<br/>and order endpoints"]
     end
     web_src__files --> web_src_api
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
@@ -325,21 +258,13 @@ sequenceDiagram
 
 ```mermaid
 flowchart TB
-    subgraph host["`**Docker host** [docker compose]`"]
-        svc_db[("`**db**
-[Container instance]
-postgres:16`")]
-        svc_api["`**api (Bookshop API)**
-[Container instance]
-build ./api
-ports 8000:8000`"]
-        svc_web["`**web (Web app)**
-[Container instance]
-build ./web
-ports 5173:5173`"]
+    subgraph host["Docker host [docker compose]"]
+        svc_db[("db<br/>[Container instance]<br/>postgres:16")]
+        svc_api["api (Bookshop API)<br/>[Container instance]<br/>build ./api<br/>ports 8000:8000"]
+        svc_web["web (Web app)<br/>[Container instance]<br/>build ./web<br/>ports 5173:5173"]
     end
-    svc_api -->|"`depends on`"| svc_db
-    svc_web -->|"`depends on`"| svc_api
+    svc_api -->|"depends on"| svc_db
+    svc_web -->|"depends on"| svc_api
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff

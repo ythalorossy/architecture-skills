@@ -1,19 +1,11 @@
 flowchart TB
-    subgraph host["`**Docker host** [docker compose]`"]
-        svc_db[("`**db**
-[Container instance]
-postgres:16`")]
-        svc_api["`**api (Bookshop API)**
-[Container instance]
-build ./api
-ports 8000:8000`"]
-        svc_web["`**web (Web app)**
-[Container instance]
-build ./web
-ports 5173:5173`"]
+    subgraph host["Docker host [docker compose]"]
+        svc_db[("db<br/>[Container instance]<br/>postgres:16")]
+        svc_api["api (Bookshop API)<br/>[Container instance]<br/>build ./api<br/>ports 8000:8000"]
+        svc_web["web (Web app)<br/>[Container instance]<br/>build ./web<br/>ports 5173:5173"]
     end
-    svc_api -->|"`depends on`"| svc_db
-    svc_web -->|"`depends on`"| svc_api
+    svc_api -->|"depends on"| svc_db
+    svc_web -->|"depends on"| svc_api
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff

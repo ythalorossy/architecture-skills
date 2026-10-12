@@ -312,26 +312,36 @@ def _prose(text):
     return str(text)
 
 
+#: Line break inside a label. Plain labels take no raw newline, and it has to
+#: go in after escaping, which turns a literal < into an entity code.
+BR = "<br/>"
+
+
 def _wrap(text, width=34):
-    return "\n".join(textwrap.wrap(_clean(text), width)) if text else ""
+    return BR.join(textwrap.wrap(_clean(text), width)) if text else ""
 
 
 def _label(name, kind, description=""):
-    """Build a markdown label for a C4 element node."""
-    # Use mermaid_syntax escaper for the name/kind (markdown string context)
-    name_escaped = _ms.label_text("flowchart_md", str(name))
-    kind_escaped = _ms.label_text("flowchart_md", str(kind))
-    lines = [f"**{name_escaped}**", f"[{kind_escaped}]"]
+    """Build a label for a C4 element node.
+
+    Plain, not a mermaid markdown string ("`…`"). A markdown string makes
+    mermaid parse the label as Markdown, and ordinary code names are full of
+    its metacharacters: ``user_service`` loses the underscore and ``__main__``
+    turns bold. Escaping them does not help on the SVG path, where the renderer
+    drops the escapes and the characters with them. A plain label parses no
+    Markdown, so every character survives. The name is no longer bold.
+    """
+    lines = [_clean(name), f"[{_clean(kind)}]"]
     if description:
         lines.append(_wrap(description))
-    return '"`' + "\n".join(lines) + '`"'
+    return '"' + BR.join(lines) + '"'
 
 
 def _edge_label(description, technology=""):
     text = _wrap(description, 28) if description else ""
     if technology:
-        text += ("\n" if text else "") + f"[{_clean(technology)}]"
-    return f'|"`{text}`"|' if text else ""
+        text += (BR if text else "") + f"[{_clean(technology)}]"
+    return f'|"{text}"|' if text else ""
 
 
 class Diagram:
@@ -448,7 +458,7 @@ def container_diagram(model):
         _element_node(d, person, "people")
 
     boundary = d.internal("boundary")
-    d.lines.append(f'    subgraph {boundary}["`**{_clean(model["system"]["name"])}** [Software System]`"]')
+    d.lines.append(f'    subgraph {boundary}["{_clean(model["system"]["name"])} [Software System]"]')
     for container in model["containers"]:
         if not container.get("external"):
             _element_node(d, container, "containers", indent="        ")
@@ -648,7 +658,7 @@ def _graph_diagram(model, facts, container, container_fact, title, nodes, edges,
     d = Diagram()
     short = _short_names(list(nodes))
     boundary = d.internal("boundary")
-    d.lines.append(f'    subgraph {boundary}["`**{_clean(title)}** [Container]`"]')
+    d.lines.append(f'    subgraph {boundary}["{_clean(title)} [Container]"]')
     regular = [n for n, info in nodes.items() if not info.get("shared") and not info.get("stub")]
     shared = [n for n, info in nodes.items() if info.get("shared")]
     stubs = [n for n, info in nodes.items() if info.get("stub")]
@@ -664,7 +674,7 @@ def _graph_diagram(model, facts, container, container_fact, title, nodes, edges,
         for module, members in sorted(modules.items(), key=lambda m: str(m[0])):
             box = d.internal(f"module_{module}")
             boxes.append(box)
-            d.lines.append(f'        subgraph {box}["`{_clean(module)}`"]')
+            d.lines.append(f'        subgraph {box}["{_clean(module)}"]')
             for node in members:
                 d.node(node, _label(label_of(node), "Component", texts.get(node, "")), "component", indent="            ")
             d.lines.append("        end")
@@ -816,7 +826,7 @@ def deployment_diagram(facts, model):
     by_fact = _container_lookup(model)
     d = Diagram()
     host = d.internal("host")
-    d.lines.append(f'    subgraph {host}["`**Docker host** [docker compose]`"]')
+    d.lines.append(f'    subgraph {host}["Docker host [docker compose]"]')
     containers_by_service = {}
     for c in facts["containers"]:
         for service in c.get("compose_services") or []:
@@ -833,8 +843,8 @@ def deployment_diagram(facts, model):
             name = f"{service['name']} ({element['name']})"
         # The same image table the facts use, so a store is a store in every view.
         store = any(key in image.split(":")[0].lower() for key, _ in c4_facts.COMPOSE_STORES)
-        lines = [f"**{_clean(name)}**", "[Container instance]"] + [_wrap(detail)] + ([f"ports {_clean(ports)}"] if ports else [])
-        label = '"`' + "\n".join(l for l in lines if l) + '`"'
+        lines = [_clean(name), "[Container instance]"] + [_wrap(detail)] + ([f"ports {_clean(ports)}"] if ports else [])
+        label = '"' + BR.join(l for l in lines if l) + '"'
         d.node(f"svc:{service['name']}", label, "container", "db" if store else "rect", indent="        ")
     d.lines.append("    end")
     for service in services:

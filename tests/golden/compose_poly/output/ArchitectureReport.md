@@ -26,14 +26,11 @@ No supported projects were found in compose_poly (.NET projects, package.json pa
 
 ```mermaid
 flowchart TB
-    subgraph boundary["`**compose_poly** [Software System]`"]
-        app["`**app**
-[Container: Docker]
-service`"]
-        db_postgresql[("`**PostgreSQL**
-[Container: PostgreSQL]`")]
+    subgraph boundary["compose_poly [Software System]"]
+        app["app<br/>[Container: Docker]<br/>service"]
+        db_postgresql[("PostgreSQL<br/>[Container: PostgreSQL]")]
     end
-    app -->|"`Depends on`"| db_postgresql
+    app -->|"Depends on"| db_postgresql
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff
@@ -55,16 +52,11 @@ service`"]
 
 ```mermaid
 flowchart TB
-    subgraph host["`**Docker host** [docker compose]`"]
-        svc_db[("`**db**
-[Container instance]
-postgres:16`")]
-        svc_app["`**app**
-[Container instance]
-build ./app
-ports 8000:8000`"]
+    subgraph host["Docker host [docker compose]"]
+        svc_db[("db<br/>[Container instance]<br/>postgres:16")]
+        svc_app["app<br/>[Container instance]<br/>build ./app<br/>ports 8000:8000"]
     end
-    svc_app -->|"`depends on`"| svc_db
+    svc_app -->|"depends on"| svc_db
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff
