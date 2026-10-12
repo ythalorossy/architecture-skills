@@ -176,8 +176,11 @@ def _end_role(end, role_of, owners=None):
     """The gold role an edge end belongs to, or None.
 
     `owners` is passed for flow steps only. It is applied *before* the role
-    lookup on purpose: "web/src/api" contains the substring "api" but is a
-    module of the web app, so matching first would score it as the API.
+    lookup on purpose: a component key can collide with a container id. If the
+    web container owns a component keyed "bookshop-api", looking the key up
+    directly would resolve the step to the API container; mapping it to its
+    owner first resolves it to the web app. Pinned by
+    test_a_component_key_that_collides_with_a_container_id_resolves_to_its_owner.
     """
     if end is None:
         return None
