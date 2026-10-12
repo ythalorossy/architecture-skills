@@ -9,6 +9,9 @@
 - **A lone `requirements.txt` no longer claims the repository is Python.** A `docs/requirements.txt` pinning a Sphinx build put `Python` in `technology_stack` with no Python source anywhere.
 - **The folder overview no longer drops dependencies.** It was built from the reduced edge set, so a dependency hidden at component level because a longer path showed it disappeared from the folder diagram too, where that longer path is not drawn.
 - **A code-structure diagram that repeats the module diagram is no longer written.** A container whose modules each hold one package of the same name produced two files, one report section and one `summary.json` entry for the same picture.
+- **Code names keep their characters in diagram labels.** Labels were Mermaid markdown strings, so the renderer parsed them as Markdown: `user_service` was drawn as `user_service` with the underscore eaten on the SVG path, and `__main__` came out bold as `main`. Labels are plain now and every character survives, in the `.mmd` files and in the SVGs. The element name is no longer bold.
+- **A `;` in a flow participant's name no longer breaks the diagram.** A participant called `Orders; API` ended the sequence diagram with `Parse error on line 3`, losing the whole flow.
+- **`#lt;` and `#gt;` no longer appear in the report.** Mermaid's entity codes were applied to Markdown prose, so a description or heading mentioning `<Request>` reached `ArchitectureReport.md` as `#lt;Request#gt;`.
 - **A missing key in `c4-facts.json` is named.** Dropping `endpoints`, `configuration` or `deployment` silently removed that section from the report and still exited 0; dropping `data_stores` gave `internal error in __main__:validate: 'data_stores'`. All seven required keys are checked up front and reported as `c4-facts.json: <key> missing; re-run analyze_repository.py`, exit 1.
 
 ### Changed
