@@ -1,11 +1,15 @@
 """
 What the C4 diagrams say, not just whether they parse.
 """
+import tempfile
 import unittest
+from pathlib import Path
 
-from helpers import write  # noqa: F401  (puts the skill on sys.path)
+from helpers import REPO_ROOT, run_analyzer, write  # noqa: F401  (puts the skill on sys.path)
 
 from scripts import render_c4
+
+FIXTURES = REPO_ROOT / "tests" / "fixtures" / "repos"
 
 
 class MergeRelationshipsTest(unittest.TestCase):
@@ -123,6 +127,79 @@ class SharedComponentTest(unittest.TestCase):
         self.assertTrue(nodes["util"]["shared"])
         self.assertIn("util (24)", " ".join(notes))
         self.assertFalse(any("util" in targets for targets in drawn.values()))
+
+
+# One Go-style module graph, and two code-structure graphs for it: one that
+# repeats it box for box (a single package per module, named after the module)
+# and one that says something new (packages with their own names and edges).
+MODULE_GRAPH = {
+    "nodes": {"cmd/api": {"group": "cmd"}, "internal/store": {"group": "internal"}},
+    "edges": {"cmd/api": ["internal/store"], "internal/store": []},
+}
+ECHOING_CODE_GRAPH = {
+    "nodes": {
+        "cmd/api::cmd/api": {"module": "cmd/api", "group": "cmd/api", "label": "cmd/api"},
+        "internal/store::internal/store": {"module": "internal/store", "group": "internal/store",
+                                           "label": "internal/store"},
+    },
+    "edges": {"cmd/api::cmd/api": ["internal/store::internal/store"],
+              "internal/store::internal/store": []},
+}
+RICHER_CODE_GRAPH = {
+    "nodes": {
+        "cmd/api::handlers": {"module": "cmd/api", "group": "cmd/api", "label": "handlers"},
+        "internal/store::postgres": {"module": "internal/store", "group": "internal/store",
+                                     "label": "postgres"},
+    },
+    "edges": {"cmd/api::handlers": ["internal/store::postgres"], "internal/store::postgres": []},
+}
+
+
+class DuplicateStructureViewTest(unittest.TestCase):
+    """A code-structure view that repeats the component view is not drawn.
+
+    Level 3 draws the modules a container is built from and then the code
+    structure inside them. When every module holds one package named after
+    it, the second diagram is the first one again in different boxes, so it
+    is skipped — report section, file list and summary.json included.
+    """
+
+    def _views(self, code):
+        facts = {
+            "repository": "demo",
+            "containers": [{"id": "api", "name": "API", "kind": "service", "technology": "Go",
+                            "evidence": [], "used_by": [],
+                            "components": MODULE_GRAPH, "code_components": code}],
+            "data_stores": [], "external_systems": [], "relationships": [],
+        }
+        model = render_c4.facts_only_model(facts)
+        return [stem for stem, _, _, _, _ in render_c4.component_diagrams(model, facts)]
+
+    def test_echoing_structure_view_is_skipped(self):
+        self.assertEqual(self._views(ECHOING_CODE_GRAPH), ["c4-component-api"])
+
+    def test_structure_view_that_says_something_new_is_kept(self):
+        self.assertEqual(self._views(RICHER_CODE_GRAPH),
+                         ["c4-component-api", "c4-structure-api"])
+
+    def test_nothing_refers_to_the_skipped_view(self):
+        # go_mod is the fixture whose code structure echoes its modules.
+        with tempfile.TemporaryDirectory() as tmp:
+            _, summary = run_analyzer(FIXTURES / "go_mod", tmp)
+            out = Path(tmp)
+            report = (out / "ArchitectureReport.md").read_text(encoding="utf-8")
+            files = sorted(p.name for p in out.glob("c4-*.mmd"))
+        self.assertEqual(files, ["c4-component-api.mmd", "c4-container.mmd"])
+        self.assertEqual(summary["c4"]["diagrams"], ["c4-container", "c4-component-api"])
+        self.assertNotIn("c4-structure-api", report)
+        self.assertIn("c4-component-api", report)
+
+    def test_the_structure_view_is_still_drawn_when_it_differs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _, summary = run_analyzer(FIXTURES / "maven_layered", tmp)
+            report = (Path(tmp) / "ArchitectureReport.md").read_text(encoding="utf-8")
+        self.assertIn("c4-structure-shop-api", summary["c4"]["diagrams"])
+        self.assertIn("c4-structure-shop-api.mmd", report)
 
 
 class FolderOverviewTest(unittest.TestCase):

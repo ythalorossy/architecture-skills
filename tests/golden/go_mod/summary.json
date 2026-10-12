@@ -23,8 +23,7 @@
     "external_systems": 0,
     "diagrams": [
       "c4-container",
-      "c4-component-api",
-      "c4-structure-api"
+      "c4-component-api"
     ],
     "model": "facts-only",
     "model_errors": [],

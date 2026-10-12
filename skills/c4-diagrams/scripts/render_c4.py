@@ -475,6 +475,31 @@ def _short_names(nodes):
     return {n: (n[len(prefix):] if prefix and n.startswith(prefix) and len(n) > len(prefix) else n) for n in nodes}
 
 
+def _component_label(node, info, short):
+    """The text drawn in a component box."""
+    return (info.get("label") or short[node]).replace(" (files)", " (root files)")
+
+
+def _drawn_graph(graph):
+    """What a component-style diagram of ``graph`` shows: box labels and the
+    edges between them.
+
+    The node keys are left out on purpose. A container's modules and the code
+    structure inside them are keyed differently (``internal/store`` against
+    ``internal/store::internal/store``) while drawing the very same picture,
+    and that is what makes one of the two views worth skipping.
+    """
+    nodes = graph.get("nodes") or {}
+    short = _short_names(list(nodes))
+    labels = {node: _component_label(node, info, short) for node, info in nodes.items()}
+    edges = {
+        (labels[source], labels[target])
+        for source, targets in (graph.get("edges") or {}).items() if source in labels
+        for target in targets if target in labels
+    }
+    return set(labels.values()), edges
+
+
 def _transitive_reduction(edges):
     """Drop an edge only while another path still connects its ends (safe with cycles)."""
     current = {a: list(targets) for a, targets in edges.items()}
@@ -624,7 +649,7 @@ def _graph_diagram(model, facts, container, container_fact, title, nodes, edges,
     stubs = [n for n, info in nodes.items() if info.get("stub")]
 
     def label_of(node):
-        return (nodes[node].get("label") or short[node]).replace(" (files)", " (root files)")
+        return _component_label(node, nodes[node], short)
 
     modules = {}
     for node in regular:
@@ -701,7 +726,8 @@ def component_diagrams(model, facts):
         texts = descriptions.get(container["id"]) or {}
 
         components = container_fact.get("components") or {}
-        if len(components.get("nodes", {})) >= 2:
+        has_modules = len(components.get("nodes", {})) >= 2
+        if has_modules:
             for suffix, subtitle, nodes, edges, notes in _component_views(components):
                 title = container["name"] + (f" / {subtitle}" if subtitle else "")
                 stem = f"c4-component-{container['id']}{suffix}"
@@ -709,8 +735,11 @@ def component_diagrams(model, facts):
                 results.append((stem, title, mermaid, notes, "modules"))
 
         code = container_fact.get("code_components") or {}
-        if len(code.get("nodes", {})) >= 2:
-            has_modules = len(components.get("nodes", {})) >= 2
+        # A module holding one package named after it draws the same boxes and
+        # the same arrows as the module view above; a second copy of a diagram
+        # is not a second level of detail, so it is left out.
+        echoes_modules = has_modules and _drawn_graph(code) == _drawn_graph(components)
+        if len(code.get("nodes", {})) >= 2 and not echoes_modules:
             for suffix, subtitle, nodes, edges, notes in _component_views(
                 code, overview=not has_modules, full_list="c4-facts.json (`code_components`)"
             ):
