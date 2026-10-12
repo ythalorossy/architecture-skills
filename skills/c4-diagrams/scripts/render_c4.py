@@ -1048,10 +1048,18 @@ def deployment_diagram(facts, model):
 
 # ---------- output ----------
 
-def _section(title, stem, mermaid, svg_ok, notes=(), intro=""):
+def _section(title, stem, mermaid, svg_ok, notes=(), intro="", svg_error=None):
     lines = [title, ""]
     if intro:
         lines += [_prose(intro), ""]
+    notes = list(notes)
+    if svg_error:
+        # Without this the reader sees Mermaid source where the other
+        # diagrams have a picture, and nothing says the image is missing.
+        status, message = svg_error
+        notes.append(f"This diagram did not render to an image ({status}"
+                     + (f": {_prose(message)}" if message else "")
+                     + "). The Mermaid source is below.")
     lines += [f"> {note}" for note in notes] + ([""] if notes else [])
     if svg_ok:
         lines += [f"![{stem}]({stem}.svg)", "", "<details>", "<summary>Mermaid source</summary>", "",
@@ -1174,13 +1182,13 @@ def _endpoints_section(facts, model):
     return lines
 
 
-def _deployment_section(facts, model, svg_ok, mermaid):
+def _deployment_section(facts, model, svg_ok, mermaid, svg_error=None):
     deployment = facts.get("deployment") or {}
     if not any(deployment.get(k) for k in ("compose", "dockerfiles", "kubernetes", "ci", "platforms")):
         return []
     lines = ["### Deployment", ""]
     if mermaid:
-        lines.append(_section("#### docker compose", "c4-deployment", mermaid, svg_ok))
+        lines.append(_section("#### docker compose", "c4-deployment", mermaid, svg_ok, svg_error=svg_error))
     if deployment.get("dockerfiles"):
         lines += ["#### Container images", "", "| Dockerfile | Build stages | Runtime image | Exposes | Starts with |", "|---|---|---|---|---|"]
         for f in deployment["dockerfiles"]:
@@ -1398,11 +1406,17 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
 
     rendered: dict = {}
     render_results: list = []
+    # Stems whose image failed for a reason the user can act on. A machine
+    # with no mermaid-cli is not one of them: that is one note for the whole
+    # run, not a note under every diagram.
+    svg_errors: dict = {}
     if svg and not env_disabled:
         stems = [(stem, output / f"{stem}.mmd") for stem in diagrams]
         render_results = _sr.render(stems, output)
         for r in render_results:
             rendered[r.stem] = r.status == "ok"
+            if r.status not in ("ok", "missing-tool", "skipped"):
+                svg_errors[r.stem] = (r.status, r.message)
 
     block = [BLOCK_START, ""] + _summary_section(use_model) + ["## Architecture (C4 model)", ""]
     if use_model.get("_facts_only"):
@@ -1420,9 +1434,11 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
     block += _key_section(diagrams.values())
 
     if "c4-context" in diagrams:
-        block.append(_section("### Level 1: System context", "c4-context", diagrams["c4-context"], rendered.get("c4-context")))
+        block.append(_section("### Level 1: System context", "c4-context", diagrams["c4-context"],
+                              rendered.get("c4-context"), svg_error=svg_errors.get("c4-context")))
     if "c4-container" in diagrams:
-        block.append(_section("### Level 2: Containers", "c4-container", diagrams["c4-container"], rendered.get("c4-container")))
+        block.append(_section("### Level 2: Containers", "c4-container", diagrams["c4-container"],
+                              rendered.get("c4-container"), svg_error=svg_errors.get("c4-container")))
         block += _containers_table(use_model, facts) + [""]
 
     if components:
@@ -1430,7 +1446,8 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
                   "For each container: the modules it is built from (when it has several), then the code structure "
                   "inside them (packages or namespaces and the imports between them).", ""]
         for stem, title, mermaid, notes, _kind in components:
-            block.append(_section(f"#### {title}", stem, mermaid, rendered.get(stem), notes))
+            block.append(_section(f"#### {title}", stem, mermaid, rendered.get(stem), notes,
+                                  svg_error=svg_errors.get(stem)))
 
     if code_entries:
         block += ["### Level 4: Code", "",
@@ -1438,14 +1455,17 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
                   "dependencies inside the component and public methods. Boxes marked external live in another component.", ""]
         for entry in code_entries:
             block.append(_section(f"#### {_prose(entry['title'])}", entry["stem"], entry["mermaid"],
-                                  rendered.get(entry["stem"]), code_diagrams.notes(entry), intro=entry["description"]))
+                                  rendered.get(entry["stem"]), code_diagrams.notes(entry), intro=entry["description"],
+                                  svg_error=svg_errors.get(entry["stem"])))
 
     if flows:
         block += ["### Key flows", "", "How a request moves through the system, step by step.", ""]
         for stem, title, mermaid, description in flows:
-            block.append(_section(f"#### {_prose(title)}", stem, mermaid, rendered.get(stem), intro=description))
+            block.append(_section(f"#### {_prose(title)}", stem, mermaid, rendered.get(stem), intro=description,
+                                  svg_error=svg_errors.get(stem)))
 
-    block += _deployment_section(facts, use_model, rendered.get("c4-deployment"), deployment)
+    block += _deployment_section(facts, use_model, rendered.get("c4-deployment"), deployment,
+                                 svg_error=svg_errors.get("c4-deployment"))
     block += _endpoints_section(facts, use_model)
     block += _configuration_section(facts, use_model)
     block += _inventory_section(facts, use_model)

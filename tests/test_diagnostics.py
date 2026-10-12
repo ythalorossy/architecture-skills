@@ -13,6 +13,25 @@ if str(SKILL) not in sys.path:
 from scripts.diagnostics import DiagnosticsCollector
 
 
+class TestRepoRelativePaths(unittest.TestCase):
+    """summary.json describes files the way the user names them: relative to the repository."""
+
+    def test_an_absolute_path_inside_the_repository_is_relativised(self):
+        c = DiagnosticsCollector(root="/repo")
+        c.file_skipped("repo_index", "/repo/api/huge.py", "too_large")
+        self.assertEqual(c.skipped_files(), [{"path": "api/huge.py", "reason": "too_large"}])
+
+    def test_a_path_outside_the_repository_is_kept_as_it_is(self):
+        c = DiagnosticsCollector(root="/repo")
+        c.render_warning("svg_render", "syntax-error", "c4-container.mmd")
+        self.assertEqual(c.warnings()[0]["path"], "c4-container.mmd")
+
+    def test_without_a_root_the_path_is_untouched(self):
+        c = DiagnosticsCollector()
+        c.file_skipped("repo_index", "/repo/api/huge.py", "too_large")
+        self.assertEqual(c.skipped_files()[0]["path"], "/repo/api/huge.py")
+
+
 class TestDiagnosticDedup(unittest.TestCase):
     """Collector deduplicates identical diagnostics."""
 

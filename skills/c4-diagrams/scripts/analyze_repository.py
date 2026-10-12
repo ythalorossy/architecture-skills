@@ -140,7 +140,7 @@ class RepositoryAnalyzer:
         print(f"Analyzing repository: {self.repo_path}")
 
         # One walk of the repository for the whole run.
-        self._collector = DiagnosticsCollector()
+        self._collector = DiagnosticsCollector(root=self.repo_path)
         self._nothing_detected = False
         index = RepoIndex.build(self.repo_path, self._collector)
 
@@ -371,6 +371,8 @@ class RepositoryAnalyzer:
         # render() already drew the facts-only model when the model is invalid,
         # and drew the model with an Unreviewed facts section when it drifts.
         drift = [{"message": message} for message in result["drift"]]
+        for message in result["drift"]:
+            print(f"DRIFT: {message}")
 
         # validate() hints: things to fix in c4-model.json that are not bad
         # enough to stop the drawing. render_c4.py standalone prints them;

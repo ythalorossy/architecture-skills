@@ -18,6 +18,7 @@ The collector is passed into components that would otherwise print to stderr.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass
@@ -55,10 +56,13 @@ class DiagnosticsCollector:
     so that a repeated warning does not multiply the entries in summary.json.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, root=None) -> None:
         self._seen: set[Diagnostic] = set()
         self._list: list[Diagnostic] = []
         self._degraded = False
+        # The repository, when known: paths are filed relative to it, the
+        # way the user names them. A path outside it is kept as it is.
+        self._root = Path(root).resolve() if root is not None else None
 
     @property
     def degraded(self) -> bool:
@@ -123,7 +127,22 @@ class DiagnosticsCollector:
     # Internal helpers
     # ------------------------------------------------------------------
 
+    def _relative(self, path: str | None) -> str | None:
+        """A repository path as the user writes it: relative, forward slashes."""
+        if path is None or self._root is None:
+            return path
+        try:
+            candidate = Path(path)
+            if not candidate.is_absolute():
+                return path
+            return candidate.resolve().relative_to(self._root).as_posix()
+        except (ValueError, OSError):
+            return path
+
     def _add(self, diagnostic: Diagnostic) -> None:
+        diagnostic = Diagnostic(
+            diagnostic.source, self._relative(diagnostic.path), diagnostic.message, diagnostic.kind
+        )
         if diagnostic not in self._seen:
             self._seen.add(diagnostic)
             self._list.append(diagnostic)
@@ -139,9 +158,17 @@ class DiagnosticsCollector:
         return [d.to_dict() for d in self._list]
 
     def skipped_files(self) -> list[dict]:
-        """Skipped-file entries only, for summary.json."""
-        return [
-            {"path": d.path, "reason": d.message}
-            for d in self._list
-            if d.kind == "skipped"
-        ]
+        """Skipped-file entries only, for summary.json.
+
+        One entry per file and reason: the same file can be dropped by two
+        scanners, and the user is being told about the file, not about
+        which module reached it first.
+        """
+        entries = []
+        for d in self._list:
+            if d.kind != "skipped":
+                continue
+            entry = {"path": d.path, "reason": d.message}
+            if entry not in entries:
+                entries.append(entry)
+        return entries

@@ -31,14 +31,14 @@ try:
     from scripts.python_projects import _distributions, normalize, _python_files
     from scripts.generate_docs import is_test_project
     from scripts import code_facts, go_projects
-    from scripts.repo_index import RepoIndex, MAX_TEXT_BYTES
+    from scripts.repo_index import RepoIndex, read_file_text, recording_skips
 except ImportError:
     import code_facts, go_projects
     from paths import TEST_DIRS, local_tag
     from projects import discover_all
     from python_projects import _distributions, normalize, _python_files
     from generate_docs import is_test_project
-    from repo_index import RepoIndex, MAX_TEXT_BYTES
+    from repo_index import RepoIndex, read_file_text, recording_skips
 
 
 SOURCE_EXTENSIONS = (".cs", ".fs", ".vb", ".py", ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".vue", ".svelte",
@@ -200,13 +200,7 @@ def _line_of(text, index):
 
 def _file_text(path):
     """File text, or "" when unreadable or larger than MAX_TEXT_BYTES (generated bundles, data dumps)."""
-    try:
-        path = Path(path)
-        if path.stat().st_size > MAX_TEXT_BYTES:
-            return ""
-        return path.read_text(encoding="utf-8-sig", errors="replace")
-    except OSError:
-        return ""
+    return read_file_text(path, "c4_facts")
 
 
 def _is_vendored(rel_parts):
@@ -672,6 +666,17 @@ class _Ownership:
 
 
 def collect_facts(repo_path, graph, index=None, discovery=None):
+    """Collect the facts, recording every file dropped for its size.
+
+    The scanners below read through module-level helpers with no collector
+    of their own, so the run's collector is installed for the call.
+    """
+    index = RepoIndex.ensure(index, Path(repo_path).resolve())
+    with recording_skips(index.collector):
+        return _collect_facts(repo_path, graph, index=index, discovery=discovery)
+
+
+def _collect_facts(repo_path, graph, index=None, discovery=None):
     repo = Path(repo_path).resolve()
     index = RepoIndex.ensure(index, repo)
     if discovery is None:
@@ -829,7 +834,8 @@ def collect_facts(repo_path, graph, index=None, discovery=None):
     for project in projects:
         if is_test_project(project["id"]) or not project["path"].is_file():
             continue
-        text = index.read_text(project["path"])
+        # None when the manifest is unreadable or past the size cap.
+        text = index.read_text(project["path"]) or ""
         for prefix, kind, technology in PACKAGE_SIGNALS:
             match = re.search(r"""(Include="|<artifactId>|['":])""" + re.escape(prefix), text)
             if match:

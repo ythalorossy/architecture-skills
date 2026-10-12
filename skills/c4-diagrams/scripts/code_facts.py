@@ -17,10 +17,10 @@ import re
 from pathlib import Path
 
 try:
-    from scripts.repo_index import RepoIndex, walk_files
+    from scripts.repo_index import RepoIndex, read_file_text, walk_files
     from scripts.paths import TEST_DIRS, local_tag
 except ImportError:
-    from repo_index import RepoIndex, walk_files
+    from repo_index import RepoIndex, read_file_text, walk_files
     from paths import TEST_DIRS, local_tag
 import xml.etree.ElementTree as ET
 
@@ -28,10 +28,8 @@ CODE_EXTENSIONS = {".java": "jvm", ".kt": "jvm", ".cs": "cs", ".go": "go"}
 
 
 def _file_text(path):
-    try:
-        return Path(path).read_text(encoding="utf-8-sig", errors="replace")
-    except OSError:
-        return ""
+    """File text, or "" when unreadable or past the size cap (see repo_index)."""
+    return read_file_text(path, "code_facts")
 
 
 def _line_of(text, index):
