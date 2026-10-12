@@ -12,7 +12,13 @@
 
 ## Executive Summary
 
-node_workspace has 2 projects (2 production, 0 test) with 1 project references between them. The analysis found no structural concerns.
+[//]: # (summary:start)
+
+node_workspace has 2 projects (2 production, 0 test) with 1 project references between them.
+
+[//]: # (summary:end)
+
+The automated dependency checks found no structural concerns.
 
 ---
 

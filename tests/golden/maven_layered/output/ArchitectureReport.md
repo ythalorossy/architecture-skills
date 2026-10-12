@@ -12,7 +12,13 @@
 
 ## Executive Summary
 
-maven_layered has 4 projects (4 production, 0 test) with 4 project references between them. The analysis found no structural concerns.
+[//]: # (summary:start)
+
+maven_layered has 4 projects (4 production, 0 test) with 4 project references between them.
+
+[//]: # (summary:end)
+
+The automated dependency checks found no structural concerns.
 
 ---
 

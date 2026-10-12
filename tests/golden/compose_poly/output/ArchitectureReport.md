@@ -12,7 +12,11 @@
 
 ## Executive Summary
 
+[//]: # (summary:start)
+
 No supported projects were found in compose_poly (.NET projects, package.json packages, Python packages, Maven or Gradle modules), so this report says nothing about its structure. Analyze it directly.
+
+[//]: # (summary:end)
 
 ---
 

@@ -14,7 +14,13 @@
 
 ## Executive Summary
 
-bookshop has 6 projects (6 production, 0 test) with 4 project references between them. The analysis found no structural concerns.
+[//]: # (summary:start)
+
+bookshop has 6 projects (6 production, 0 test) with 4 project references between them.
+
+[//]: # (summary:end)
+
+The automated dependency checks found no structural concerns.
 
 ---
 
