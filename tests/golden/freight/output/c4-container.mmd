@@ -1,0 +1,24 @@
+---
+title: "freight · Containers"
+---
+flowchart TB
+    subgraph boundary["freight [Software System]"]
+        freight_api["freight-api<br/>[Container: Python, FastAPI]<br/>web api"]
+        freight_worker["freight-worker<br/>[Container: Node.js, CLI]<br/>cli"]
+        adminer["adminer<br/>[Container: adminer:4]<br/>service"]
+        db_postgresql[("PostgreSQL<br/>[Container: PostgreSQL]")]
+        db_redis[("Redis<br/>[Container: Redis]")]
+    end
+    freight_api -->|"Reads/writes"| db_postgresql
+    freight_worker -->|"Reads/writes"| db_postgresql
+    adminer -->|"Depends on"| db_postgresql
+    freight_api -->|"Reads/writes"| db_redis
+    freight_worker -->|"Reads/writes"| db_redis
+    classDef person fill:#08427b,stroke:#052e56,color:#ffffff
+    classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
+    classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff
+    classDef component fill:#85bbf0,stroke:#5d82a8,color:#000000
+    classDef external fill:#999999,stroke:#6b6b6b,color:#ffffff
+    classDef shared fill:#dbe9f6,stroke:#5d82a8,color:#000000,stroke-dasharray:4 3
+    class freight_api,freight_worker,adminer,db_postgresql,db_redis container
+    style boundary fill:none,stroke:#444444,stroke-dasharray:6 4

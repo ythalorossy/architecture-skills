@@ -14,7 +14,13 @@
 
 ## Executive Summary
 
-bookshop has 6 projects (6 production, 0 test) with 4 project references between them. The analysis found no structural concerns.
+[//]: # (summary:start)
+
+bookshop has 6 projects (6 production, 0 test) with 4 project references between them.
+
+[//]: # (summary:end)
+
+The automated dependency checks found no structural concerns.
 
 ---
 
@@ -24,9 +30,25 @@ bookshop has 6 projects (6 production, 0 test) with 4 project references between
 
 > Drawn from code facts only: no `c4-model.json` yet, so people, external purposes, descriptions and key flows are missing and the System Context level is left out. Write `c4-model.json` and run `render_c4.py` to complete it.
 
+### Key
+
+What the shapes and lines in the diagrams below mean.
+
+| Symbol | Meaning |
+|---|---|
+| Blue box | **Container** — an application or service that runs on its own. |
+| Blue cylinder | **Data store** — a database, cache or queue. |
+| Light blue box | **Component** — a module, package or namespace inside one container. |
+| Grey box | **External system** — run by someone else. |
+| Dashed grey outline | The system or the container the diagram is about. |
+| Solid arrow | A dependency or a call, labelled with what it does and the technology it uses. |
+
 ### Level 2: Containers
 
 ```mermaid
+---
+title: "bookshop · Containers"
+---
 flowchart TB
     subgraph boundary["bookshop [Software System]"]
         bookshop_api["bookshop-api<br/>[Container: Python, FastAPI]<br/>web api"]
@@ -66,6 +88,9 @@ For each container: the modules it is built from (when it has several), then the
 #### bookshop-api
 
 ```mermaid
+---
+title: "bookshop-api"
+---
 flowchart TB
     subgraph boundary["bookshop-api [Container]"]
         bookshop_main["main<br/>[Component]"]
@@ -82,6 +107,10 @@ flowchart TB
     bookshop_orders -->|"Reads/writes"| db_postgresql
     ext_payments_example["payments.example<br/>[Software System]"]
     bookshop_payments -->|"Calls"| ext_payments_example
+    bookshop_web["bookshop-web<br/>[Container: React]<br/>web app"]
+    bookshop_web -->|"Calls /api (dev-server proxy<br/>to http://localhost:8000)<br/>[HTTP]"| boundary
+    ext_covers_example["covers.example<br/>[Software System]"]
+    boundary -->|"Calls"| ext_covers_example
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff
@@ -89,20 +118,25 @@ flowchart TB
     classDef external fill:#999999,stroke:#6b6b6b,color:#ffffff
     classDef shared fill:#dbe9f6,stroke:#5d82a8,color:#000000,stroke-dasharray:4 3
     class bookshop_main,bookshop_orders,bookshop_payments,bookshop_search component
-    class db_elasticsearch,db_postgresql container
-    class ext_payments_example external
+    class db_elasticsearch,db_postgresql,bookshop_web container
+    class ext_payments_example,ext_covers_example external
     style boundary fill:none,stroke:#444444,stroke-dasharray:6 4
 ```
 
 #### bookshop-web
 
 ```mermaid
+---
+title: "bookshop-web"
+---
 flowchart TB
     subgraph boundary["bookshop-web [Container]"]
         web_src__files["src (root files)<br/>[Component]"]
         web_src_api["src/api<br/>[Component]"]
     end
     web_src__files --> web_src_api
+    bookshop_api["bookshop-api<br/>[Container: Python, FastAPI]<br/>web api"]
+    boundary -->|"Calls /api (dev-server proxy<br/>to http://localhost:8000)<br/>[HTTP]"| bookshop_api
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff
@@ -110,6 +144,7 @@ flowchart TB
     classDef external fill:#999999,stroke:#6b6b6b,color:#ffffff
     classDef shared fill:#dbe9f6,stroke:#5d82a8,color:#000000,stroke-dasharray:4 3
     class web_src__files,web_src_api component
+    class bookshop_api container
     style boundary fill:none,stroke:#444444,stroke-dasharray:6 4
 ```
 
@@ -118,6 +153,9 @@ flowchart TB
 #### docker compose
 
 ```mermaid
+---
+title: "bookshop · Deployment (docker compose)"
+---
 flowchart TB
     subgraph host["Docker host [docker compose]"]
         svc_db[("db<br/>[Container instance]<br/>postgres:16")]

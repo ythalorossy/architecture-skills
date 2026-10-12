@@ -28,7 +28,7 @@ from scripts.cli_support import UserError, require_python, run_cli
 require_python()
 
 from scripts import svg_render as _sr
-from scripts import c4_facts, code_diagrams
+from scripts import c4_facts, code_diagrams, generate_docs
 from scripts import mermaid_syntax as _ms
 from scripts.model_check import ValidationResult, check_structure, load_model
 
@@ -109,6 +109,11 @@ def _covers(element):
 ELEMENT_KEYS = ("id", "name", "description", "technology", "type", "evidence", "assumption", "external", "facts")
 ELEMENT_TYPES = ("container", "database", "queue")
 SUMMARY_KEYS = ("overview", "findings", "recommendations")
+# The keys c4-model-reference.md documents, and the only ones anything reads.
+# Everything else is dropped on the floor, so say so.
+RELATIONSHIP_KEYS = ("from", "to", "description", "technology", "assumption")
+FLOW_KEYS = ("id", "name", "description", "steps")
+STEP_KEYS = ("from", "to", "description", "technology", "reply", "async", "note")
 
 
 def _did_you_mean(value, candidates):
@@ -116,6 +121,13 @@ def _did_you_mean(value, candidates):
     import difflib
     match = difflib.get_close_matches(str(value), [str(c) for c in candidates], n=1, cutoff=0.75)
     return f" (did you mean {match[0]!r}?)" if match else ""
+
+
+def _unknown_keys(item, allowed, label, warnings):
+    """Warn about every key nothing reads, with the closest documented one."""
+    for key in item:
+        if key not in allowed:
+            warnings.append(f"{label}: unknown key {key!r}{_did_you_mean(key, allowed)}; it is ignored")
 
 
 def _evidence_problem(entry, repo):
@@ -177,9 +189,7 @@ def validate(model, facts, result=None, repo=None):
             elements[element["id"]] = section
             if not element.get("evidence") and not element.get("assumption"):
                 warnings.append(f"{element['id']}: no evidence and not marked as an assumption")
-            for key in element:
-                if key not in ELEMENT_KEYS:
-                    warnings.append(f"{element['id']}: unknown key {key!r}{_did_you_mean(key, ELEMENT_KEYS)}; it is ignored")
+            _unknown_keys(element, ELEMENT_KEYS, element["id"], warnings)
             if "type" in element and element["type"] not in ELEMENT_TYPES:
                 warnings.append(f"{element['id']}: unknown type {element['type']!r}"
                                 f"{_did_you_mean(element['type'], ELEMENT_TYPES)}; use container, database or queue")
@@ -194,11 +204,22 @@ def validate(model, facts, result=None, repo=None):
         invalid("system.name is missing")
 
     fact_ids = [f["id"] for kind in ("containers", "data_stores", "external_systems") for f in facts[kind]]
+    store_ids = {f["id"] for f in facts["data_stores"]}
     covered_by = {}
     for section in ("containers", "external_systems"):
         for element in model.get(section) or []:
             if "id" not in element:
                 continue
+            if section == "external_systems":
+                for fact in _covers(element):
+                    if fact in store_ids:
+                        # A store the repository runs is a container of the
+                        # system, not a system someone else owns.
+                        warnings.append(
+                            f"{element['id']}: {fact} is a data store found in this repository; "
+                            'move it to containers with "type": "database", and add "external": true '
+                            "if the system does not own it"
+                        )
             for fact in element.get("facts") or []:
                 if fact not in fact_ids:
                     warnings.append(f"{element['id']}: facts lists {fact!r}, which is not in c4-facts.json"
@@ -229,16 +250,27 @@ def validate(model, facts, result=None, repo=None):
                     "add it (or list it in `facts` of an element) or put it in `excluded` with a reason"
                 )
 
+    component_ids = all_component_ids(model, facts)
+    components = {c for ids in component_ids.values() for c in ids}
+
+    pairs = {}
     for index, relationship in enumerate(model.get("relationships") or []):
+        _unknown_keys(relationship, RELATIONSHIP_KEYS, f"relationships[{index}]", warnings)
+        pairs.setdefault((relationship.get("from"), relationship.get("to")), []).append(index)
         for end in ("from", "to"):
-            if relationship.get(end) not in elements:
+            value = relationship.get(end)
+            if value not in elements:
+                # A component only exists inside a container, so it can be a
+                # flow step but never an end of a Level 2 relationship.
+                hint = (
+                    "; it is a component, so use a flow step to show calls inside a container"
+                    if value in components else _did_you_mean(value, elements)
+                )
                 invalid(
                     f"relationships[{index}]: {relationship.get('from')!r} -> "
-                    f"{relationship.get('to')!r}: unknown {end} id {relationship.get(end)!r}"
-                    f"{_did_you_mean(relationship.get(end), elements)}"
+                    f"{relationship.get('to')!r}: unknown {end!r} id {value!r}{hint}"
                 )
 
-    component_ids = all_component_ids(model, facts)
     for container_id, descriptions in (model.get("components") or {}).items():
         if elements.get(container_id) != "containers":
             invalid(
@@ -250,8 +282,17 @@ def validate(model, facts, result=None, repo=None):
             if component not in component_ids.get(container_id, set()):
                 warnings.append(f"components.{container_id}: {component!r} is not a component of that container; its description is ignored")
 
-    known = set(elements) | {c for ids in component_ids.values() for c in ids}
+    for (source, target), indexes in pairs.items():
+        if len(indexes) > 1:
+            # _merge_relationships keeps one edge per (from, to), so the second
+            # description is never drawn.
+            times = "twice" if len(indexes) == 2 else f"{len(indexes)} times"
+            listed = ", ".join(f"relationships[{index}]" for index in indexes)
+            warnings.append(f"{source} -> {target} is listed {times} ({listed}); they are drawn as one arrow")
+
+    known = set(elements) | components
     for flow_index, flow in enumerate(model.get("flows") or []):
+        _unknown_keys(flow, FLOW_KEYS, f"flows[{flow_index}]", warnings)
         if not flow.get("name") or not flow.get("steps"):
             invalid(
                 f"flows[{flow_index}]: every flow needs a name and steps "
@@ -259,6 +300,7 @@ def validate(model, facts, result=None, repo=None):
             )
             continue
         for number, step in enumerate(flow["steps"], 1):
+            _unknown_keys(step, STEP_KEYS, f"flows[{flow_index}].steps[{number - 1}]", warnings)
             for end in ("from", "to"):
                 if step.get(end) not in known:
                     invalid(
@@ -298,6 +340,31 @@ def all_component_ids(model, facts):
                 ids |= set((container.get("code_components") or {}).get("nodes", {}))
         result[element["id"]] = ids
     return result
+
+
+COVERAGE_LINE = ("Coverage: facts {}/{}, containers described {}/{}, "
+                 "components described {}/{}, people {}, flows {}, code {}")
+
+
+def _coverage(model, facts, result):
+    """How much of the judgement work the model carries.
+
+    `validate` answers "is this model consistent?"; this answers "is it
+    finished?" -- a model can be `ok` and say nothing.
+    """
+    fact_ids = {f["id"] for kind in ("containers", "data_stores", "external_systems") for f in facts[kind]}
+    containers = [c for c in model.get("containers") or [] if c.get("id")]
+    component_ids = all_component_ids(model, facts)
+    return {
+        "facts": [len(fact_ids) - len(result.drift), len(fact_ids)],
+        "containers_described": [sum(1 for c in containers if str(c.get("description") or "").strip()),
+                                 len(containers)],
+        "components_described": [sum(len(d) for d in (model.get("components") or {}).values()),
+                                 sum(len(ids) for ids in component_ids.values())],
+        "people": len(model.get("people") or []),
+        "flows": len(model.get("flows") or []),
+        "code": len(model.get("code") or []),
+    }
 
 
 # ---------- mermaid ----------
@@ -342,6 +409,21 @@ def _edge_label(description, technology=""):
     if technology:
         text += (BR if text else "") + f"[{_clean(technology)}]"
     return f'|"{text}"|' if text else ""
+
+
+def _with_title(mermaid, title):
+    """The diagram with a front-matter ``title``, so a shared `.mmd` says what it is.
+
+    JSON quoting is YAML's double-quoted scalar: a colon, a quote or a
+    backslash in a container name cannot end the header early. Non-ASCII
+    characters are left as they are, so a name stays readable in the file.
+    A diagram that already carries front matter (Level 4 sets a renderer
+    option) gets the title added to it rather than a second header.
+    """
+    header = f"title: {json.dumps(str(title), ensure_ascii=False)}\n"
+    if mermaid.startswith("---\n"):
+        return "---\n" + header + mermaid[len("---\n"):]
+    return "---\n" + header + "---\n" + mermaid
 
 
 class Diagram:
@@ -449,7 +531,7 @@ def context_diagram(model):
     ])
     for r in edges:
         d.edge(r["from"], r["to"], _edge_label(r.get("description"), r.get("technology")))
-    return d.text()
+    return _with_title(d.text(), f"{system['name']} \u00b7 System context")
 
 
 def container_diagram(model):
@@ -472,7 +554,7 @@ def container_diagram(model):
 
     for r in _merge_relationships(model["relationships"]):
         d.edge(r["from"], r["to"], _edge_label(r.get("description"), r.get("technology")))
-    return d.text([boundary])
+    return _with_title(d.text([boundary]), f"{model['system']['name']} \u00b7 Containers")
 
 
 def _short_names(nodes):
@@ -543,12 +625,89 @@ def _transitive_reduction(edges):
     return current
 
 
+def _hubs(nodes, all_edges):
+    """
+    (components most others use, the note that says so), or ([], None).
+
+    Counts every dependency, not only the ones left after hiding shortcuts:
+    reduction removes most of the edges into a widely used component, so a
+    hub is invisible in the reduced graph.
+    """
+    indegree = {n: 0 for n in nodes}
+    for targets in all_edges.values():
+        for target in targets:
+            if target in indegree:
+                indegree[target] += 1
+    threshold = max(3, len(nodes) // 2)
+    shared = [n for n, count in indegree.items() if count >= threshold]
+    if not shared:
+        return [], None
+    return shared, (
+        "Used by most other components, drawn in the Shared box without their incoming edges: "
+        + ", ".join(f"{n} ({indegree[n]})" for n in shared) + "."
+    )
+
+
+def _dependency_order(nodes, edges):
+    """Every node once, a component after the ones it uses, ties in name order.
+
+    A cycle has no such order; its members follow in name order. The result
+    only depends on the names and the edges, never on the order the nodes
+    arrived in, so the parts built from it are stable between runs.
+    """
+    uses = {n: {t for t in edges.get(n, []) if t in nodes and t != n} for n in nodes}
+    done, order = set(), []
+    while len(order) < len(nodes):
+        ready = sorted(n for n in uses if n not in done and uses[n] <= done)
+        if not ready:  # only cycles left
+            ready = sorted(n for n in uses if n not in done)
+        done.update(ready)
+        order += ready
+    return order
+
+
+def _flat_groups(nodes, edges):
+    """Sub-groups of one flat group of components, and whether they are named.
+
+    A container whose components share no folder still has too many of them
+    to draw at once. They are split by the first path segment of the name
+    when that says something ("src/api/books" and "src/ui/cart" are a folder
+    apart), and otherwise into chunks of MAX_COMPONENTS in dependency order.
+    Chunk keys are numbers a reader can learn nothing from, which is what the
+    second return value says.
+    """
+    short = _short_names(list(nodes))
+    order = _dependency_order(nodes, edges)
+    by_segment = {}
+    for node in order:
+        head = re.match(r"(.+?)[./]", short[node])
+        by_segment.setdefault(head.group(1) if head else "(root)", []).append(node)
+    if len(by_segment) > 1:
+        return _capped(by_segment), True
+    return ({f"part {index // MAX_COMPONENTS + 1}": order[index:index + MAX_COMPONENTS]
+             for index in range(0, len(order), MAX_COMPONENTS)}, False)
+
+
+def _capped(groups):
+    """The same groups, with any group above MAX_COMPONENTS cut into numbered chunks."""
+    out = {}
+    for group, members in groups.items():
+        if len(members) <= MAX_COMPONENTS:
+            out[group] = members
+            continue
+        chunks = -(-len(members) // MAX_COMPONENTS)
+        for index in range(chunks):
+            out[f"{group} ({index + 1} of {chunks})"] = members[index * MAX_COMPONENTS:(index + 1) * MAX_COMPONENTS]
+    return out
+
+
 def _component_views(graph, overview=True, full_list="the dependency graph appendix"):
     """
     Split one container's components into readable views: [(suffix, title, nodes, edges, notes)].
     Shortcut edges are hidden when the graph is dense; above MAX_COMPONENTS nodes the
-    view is grouped by folder/module (an overview plus one view per group), and
-    components most others use are moved to a "shared" box.
+    view is split into parts of at most MAX_COMPONENTS (by folder/module, or, when there
+    is only one, by the next path segment or in dependency order), and components most
+    others use are moved to a "shared" box.
     """
     nodes = graph["nodes"]
     edges = graph["edges"]
@@ -570,8 +729,19 @@ def _component_views(graph, overview=True, full_list="the dependency graph appen
     for node, info in nodes.items():
         groups.setdefault(info["group"] or "(root)", []).append(node)
 
-    if len(nodes) > MAX_COMPONENTS and len(groups) > 1:
-        group_of = {n: (nodes[n]["group"] or "(root)") for n in nodes}
+    shared = []
+    if len(nodes) > MAX_COMPONENTS and len(groups) < 2:
+        # One flat group: the components everyone uses are the only structure
+        # it has, so they are found before it is cut into parts.
+        shared, hub_note = _hubs(nodes, all_edges)
+        if shared:
+            notes.append(hub_note)
+            edges = {n: [t for t in targets if t not in shared] for n, targets in edges.items()}
+        groups, named = _flat_groups(nodes, edges)
+        overview = overview and named
+
+    if len(nodes) > MAX_COMPONENTS:
+        group_of = {n: g for g, members in groups.items() for n in members}
         group_edges = {}
         # From the raw edges, not the reduced ones: hiding A → C is only
         # readable when A → B → C is drawn beside it, and the folder overview
@@ -600,7 +770,7 @@ def _component_views(graph, overview=True, full_list="the dependency graph appen
             members = [n for _, m in pack for n in m]
             member_set = set(members)
             first_notes = [] if overview or index > 1 else notes + [f"{len(nodes)} components, drawn in {len(packs)} parts."]
-            view_nodes = {n: nodes[n] for n in members}
+            view_nodes = {n: ({**nodes[n], "shared": True} if n in shared else nodes[n]) for n in members}
             view_edges = {}
             for n in members:
                 view_edges[n] = []
@@ -619,26 +789,7 @@ def _component_views(graph, overview=True, full_list="the dependency graph appen
             ))
         return views
 
-    shared = []
-    if len(nodes) > MAX_COMPONENTS:
-        # Count every dependency, not only the ones left after hiding
-        # shortcuts: reduction removes most edges into a widely used component.
-        indegree = {n: 0 for n in nodes}
-        for targets in all_edges.values():
-            for target in targets:
-                indegree[target] += 1
-        threshold = max(3, len(nodes) // 2)
-        shared = [n for n, count in indegree.items() if count >= threshold]
-        if shared:
-            notes.append(
-                "Used by most other components, drawn in the Shared box without their incoming edges: "
-                + ", ".join(f"{n} ({indegree[n]})" for n in shared) + "."
-            )
-            edges = {n: [t for t in targets if t not in shared] for n, targets in edges.items()}
-    if len(nodes) > MAX_COMPONENTS:
-        notes.append(f"{len(nodes)} components: above the {MAX_COMPONENTS} that stay readable in one diagram.")
-
-    return [("", "", {n: {**nodes[n], "shared": n in shared} for n in nodes}, edges, notes)]
+    return [("", "", nodes, edges, notes)]
 
 
 def _container_lookup(model):
@@ -650,6 +801,39 @@ def _container_lookup(model):
     return by_fact
 
 
+def _context_nodes(diagram, model, container, boundary_key):
+    """Draw the people, containers and systems this container talks to, around its boundary.
+
+    Level 2 shows who calls the container and what it calls; without the
+    same neighbours on Level 3 the two levels contradict each other. Only
+    direct model relationships are drawn — the facts say which component
+    uses a store, and those edges are already on the diagram, so a neighbour
+    already drawn is left alone.
+    """
+    by_id = {}
+    for section in ("people", "containers", "external_systems"):
+        for element in model.get(section) or []:
+            by_id.setdefault(element.get("id"), (element, section))
+    for r in _merge_relationships(model.get("relationships") or []):
+        if r["from"] == container["id"]:
+            other, inbound = r["to"], False
+        elif r["to"] == container["id"]:
+            other, inbound = r["from"], True
+        else:
+            continue
+        found = by_id.get(other)
+        if found is None or other in diagram:
+            continue
+        element, section = found
+        if section == "containers" and element.get("external"):
+            diagram.node(element["id"], _label(element["name"], "Software System", element.get("description")), "external")
+        else:
+            _element_node(diagram, element, section)
+        label = _edge_label(r.get("description"), r.get("technology"))
+        ends = (other, boundary_key) if inbound else (boundary_key, other)
+        diagram.edge(*ends, label)
+
+
 def _graph_diagram(model, facts, container, container_fact, title, nodes, edges, texts, usage_key):
     """One component-style diagram: nodes inside the container boundary (grouped by module when
     there are several), edges between them, and the stores/external systems they use."""
@@ -657,7 +841,8 @@ def _graph_diagram(model, facts, container, container_fact, title, nodes, edges,
     relationship_text = {(r["from"], r["to"]): r for r in model["relationships"]}
     d = Diagram()
     short = _short_names(list(nodes))
-    boundary = d.internal("boundary")
+    boundary_key = _ms.IdAllocator.internal_key("boundary")
+    boundary = d.id(boundary_key)
     d.lines.append(f'    subgraph {boundary}["{_clean(title)} [Container]"]')
     regular = [n for n, info in nodes.items() if not info.get("shared") and not info.get("stub")]
     shared = [n for n, info in nodes.items() if info.get("shared")]
@@ -719,6 +904,8 @@ def _graph_diagram(model, facts, container, container_fact, title, nodes, edges,
             for user in users:
                 d.edge(user, element["id"], _edge_label(r.get("description", "Uses"), r.get("technology")))
 
+    _context_nodes(d, model, container, boundary_key)
+
     out = d.text([boundary])
     for box in boxes:
         out += f"    style {box} fill:#f4f8fc,stroke:#9fb6cc\n"
@@ -746,7 +933,9 @@ def component_diagrams(model, facts):
             for suffix, subtitle, nodes, edges, notes in _component_views(components):
                 title = container["name"] + (f" / {subtitle}" if subtitle else "")
                 stem = f"c4-component-{container['id']}{suffix}"
-                mermaid = _graph_diagram(model, facts, container, container_fact, title, nodes, edges, texts, "used_by_components")
+                mermaid = _with_title(
+                    _graph_diagram(model, facts, container, container_fact, title, nodes, edges, texts, "used_by_components"),
+                    title)
                 results.append((stem, title, mermaid, notes, "modules"))
 
         code = container_fact.get("code_components") or {}
@@ -760,7 +949,9 @@ def component_diagrams(model, facts):
             ):
                 title = f"{container['name']} · code structure" + (f" / {subtitle}" if subtitle else "")
                 stem = f"c4-structure-{container['id']}{suffix}"
-                mermaid = _graph_diagram(model, facts, container, container_fact, title, nodes, edges, texts, "used_by_code")
+                mermaid = _with_title(
+                    _graph_diagram(model, facts, container, container_fact, title, nodes, edges, texts, "used_by_code"),
+                    title)
                 results.append((stem, title, mermaid, notes, "code"))
 
     return results
@@ -814,7 +1005,8 @@ def flow_diagrams(model, facts):
             if step.get("note"):
                 lines.append(f"    Note over {safe[step['to']]}: {_seq_text(step['note'])}")
         slug = re.sub(r"[^a-z0-9]+", "-", (flow.get("id") or flow["name"]).lower()).strip("-") or str(index)
-        results.append((f"c4-flow-{slug}", flow["name"], "\n".join(lines) + "\n", flow.get("description", "")))
+        results.append((f"c4-flow-{slug}", flow["name"],
+                        _with_title("\n".join(lines) + "\n", flow["name"]), flow.get("description", "")))
     return results
 
 
@@ -851,7 +1043,7 @@ def deployment_diagram(facts, model):
         for dependency in service.get("depends_on") or []:
             if any(s["name"] == dependency for s in services):
                 d.edge(f"svc:{service['name']}", f"svc:{dependency}", _edge_label("depends on"))
-    return d.text([host])
+    return _with_title(d.text([host]), f"{model['system']['name']} \u00b7 Deployment (docker compose)")
 
 
 # ---------- output ----------
@@ -869,16 +1061,86 @@ def _section(title, stem, mermaid, svg_ok, notes=(), intro=""):
     return "\n".join(lines) + "\n"
 
 
+#: The legend: (symbol kind, shape, meaning). A row is written only when the
+#: diagrams in this report actually draw that symbol, so the Key never
+#: explains a shape the reader cannot find.
+_KEY_ROWS = (
+    ("person", "Dark blue rounded box", "**Person** — a user or a role outside the system."),
+    ("system", "Blue box (Level 1)", "**Software system** — the system this report describes."),
+    ("container", "Blue box", "**Container** — an application or service that runs on its own."),
+    ("database", "Blue cylinder", "**Data store** — a database, cache or queue."),
+    ("component", "Light blue box", "**Component** — a module, package or namespace inside one container."),
+    ("shared", "Pale dashed box", "Used by most of the other components, or drawn in another part of the same view."),
+    ("external", "Grey box", "**External system** — run by someone else."),
+    ("boundary", "Dashed grey outline", "The system or the container the diagram is about."),
+    ("arrow", "Solid arrow", "A dependency or a call, labelled with what it does and the technology it uses."),
+    ("dashed", "Dashed arrow", "A dependency on a component drawn in another part of the same view."),
+)
+
+_KEY_CLASSES = ("person", "system", "container", "component", "external", "shared")
+
+
+def _key_symbols(diagrams):
+    """Which `_KEY_ROWS` the drawn diagrams use.
+
+    Read off the diagrams themselves rather than the model: the palette is
+    declared in every flowchart whether or not a box uses it, so only the
+    `class` lines, the shapes and the arrow styles say what is really there.
+    """
+    used = set()
+    for mermaid in diagrams:
+        if "flowchart TB" not in mermaid:
+            # Level 4 class diagrams style each box on its own line.
+            for kind in ("component", "shared"):
+                if f"fill:{_ms.C4_PALETTE[kind]}" in mermaid:
+                    used.add(kind)
+            continue
+        if "stroke-dasharray:6 4" in mermaid:
+            used.add("boundary")
+        for line in mermaid.splitlines():
+            words = line.split()
+            if len(words) == 3 and words[0] == "class" and words[2] in _KEY_CLASSES:
+                used.add(words[2])
+            if "[(" in line:
+                used.add("database")
+            if "-.->" in line:
+                used.add("dashed")
+            elif "-->" in line:
+                used.add("arrow")
+    return used
+
+
+def _key_section(diagrams):
+    """The one Key block for the report: the shapes and lines these diagrams use."""
+    used = _key_symbols(diagrams)
+    rows = [f"| {symbol} | {meaning} |" for kind, symbol, meaning in _KEY_ROWS if kind in used]
+    if not rows:
+        return []
+    return ["### Key", "", "What the shapes and lines in the diagrams below mean.", "",
+            "| Symbol | Meaning |", "|---|---|"] + rows + [""]
+
+
 def _cell(text):
     return str(text).replace("|", "\\|").replace("\n", " ")
 
 
 def _assumptions(model):
+    """Everything a reader should confirm with the team.
+
+    Elements marked `"assumption": true`, and — because the safe default is
+    that anything unproven is an assumption — elements that carry neither
+    evidence nor a marking. That second group catches the `"assumptions"`
+    typo, which otherwise drops the element out of this list silently.
+    """
     items = []
+    unmarked = not model.get("_facts_only")
     for section in ("people", "containers", "external_systems"):
         for element in model.get(section) or []:
+            description = element.get("description") or "no description"
             if element.get("assumption"):
-                items.append(f"- **{element['name']}**: {element.get('description') or 'no description'}")
+                items.append(f"- **{element['name']}**: {description}")
+            elif unmarked and not element.get("evidence"):
+                items.append(f"- **{element['name']}** (unmarked, no evidence): {description}")
     for r in model.get("relationships") or []:
         if r.get("assumption"):
             items.append(f"- **{r['from']} → {r['to']}**: {r.get('description', '')}")
@@ -1123,6 +1385,7 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
     for stem, _, mermaid, _ in flows:
         diagrams[stem] = mermaid
     for entry in code_entries:
+        entry["mermaid"] = _with_title(entry["mermaid"], entry["title"])
         diagrams[entry["stem"]] = entry["mermaid"]
     deployment = deployment_diagram(facts, use_model)
     if deployment:
@@ -1153,6 +1416,8 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
                   "Build the model from the source by hand, or see the dependency graph appendix.", ""]
     elif use_model["system"].get("description") and not use_model.get("_facts_only"):
         block += [_prose(use_model["system"]["description"]), ""]
+
+    block += _key_section(diagrams.values())
 
     if "c4-context" in diagrams:
         block.append(_section("### Level 1: System context", "c4-context", diagrams["c4-context"], rendered.get("c4-context")))
@@ -1205,9 +1470,15 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
             re.DOTALL,
         )
         if pattern.search(text):
-            report.write_text(pattern.sub(lambda _: "\n".join(block), text), encoding="utf-8")
+            text = pattern.sub(lambda _: "\n".join(block), text)
         else:
             result.warnings.append("ArchitectureReport.md has no C4 block; re-run analyze_repository.py")
+        if not use_model.get("_facts_only"):
+            # The analyzer writes the report before the model is read, so its
+            # Executive Summary can only count projects. Now that the model is
+            # loaded and valid, say what the system is made of instead.
+            text = generate_docs.replace_summary(text, generate_docs.model_summary(use_model))
+        report.write_text(text, encoding="utf-8")
 
     # Per-diagram SVG status for summary.json.
     svg_status = {}
@@ -1223,6 +1494,7 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
         "svg_failed": [stem for stem, ok in rendered.items() if not ok] if svg else [],
         "facts_only": bool(use_model.get("_facts_only")),
         "svg": svg_status,
+        "coverage": _coverage(use_model, facts, result),
     }
 
 
@@ -1251,6 +1523,11 @@ def main():
     print("Diagrams: " + ", ".join(result["diagrams"]))
     for message in result["drift"]:
         print(f"DRIFT: {message}")
+    coverage = result["coverage"]
+    print(COVERAGE_LINE.format(
+        *coverage["facts"], *coverage["containers_described"],
+        *coverage["components_described"],
+        coverage["people"], coverage["flows"], coverage["code"]))
     svg_status = result.get("svg", {})
     missing_tool = False
     for stem in result["svg_failed"]:

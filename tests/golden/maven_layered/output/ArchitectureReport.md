@@ -12,7 +12,13 @@
 
 ## Executive Summary
 
-maven_layered has 4 projects (4 production, 0 test) with 4 project references between them. The analysis found no structural concerns.
+[//]: # (summary:start)
+
+maven_layered has 4 projects (4 production, 0 test) with 4 project references between them.
+
+[//]: # (summary:end)
+
+The automated dependency checks found no structural concerns.
 
 ---
 
@@ -22,9 +28,24 @@ maven_layered has 4 projects (4 production, 0 test) with 4 project references be
 
 > Drawn from code facts only: no `c4-model.json` yet, so people, external purposes, descriptions and key flows are missing and the System Context level is left out. Write `c4-model.json` and run `render_c4.py` to complete it.
 
+### Key
+
+What the shapes and lines in the diagrams below mean.
+
+| Symbol | Meaning |
+|---|---|
+| Blue box | **Container** — an application or service that runs on its own. |
+| Blue cylinder | **Data store** — a database, cache or queue. |
+| Light blue box | **Component** — a module, package or namespace inside one container. |
+| Dashed grey outline | The system or the container the diagram is about. |
+| Solid arrow | A dependency or a call, labelled with what it does and the technology it uses. |
+
 ### Level 2: Containers
 
 ```mermaid
+---
+title: "maven_layered · Containers"
+---
 flowchart TB
     subgraph boundary["maven_layered [Software System]"]
         shop_api["shop-api<br/>[Container: Spring Boot]<br/>web api"]
@@ -53,6 +74,9 @@ For each container: the modules it is built from (when it has several), then the
 #### shop-api
 
 ```mermaid
+---
+title: "shop-api"
+---
 flowchart TB
     subgraph boundary["shop-api [Container]"]
         shop_api["shop-api<br/>[Component]"]
@@ -80,6 +104,9 @@ flowchart TB
 #### shop-api · code structure
 
 ```mermaid
+---
+title: "shop-api · code structure"
+---
 flowchart TB
     subgraph boundary["shop-api · code structure [Container]"]
         subgraph module_shop_api["shop-api"]
@@ -98,6 +125,8 @@ flowchart TB
     shop_api__api --> shop_application__application
     shop_application__application --> shop_domain__domain
     shop_infrastructure__infrastructure --> shop_domain__domain
+    db_redis[("Redis<br/>[Container: Redis]")]
+    boundary -->|"Reads/writes"| db_redis
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff
@@ -105,6 +134,7 @@ flowchart TB
     classDef external fill:#999999,stroke:#6b6b6b,color:#ffffff
     classDef shared fill:#dbe9f6,stroke:#5d82a8,color:#000000,stroke-dasharray:4 3
     class shop_api__api,shop_application__application,shop_domain__domain,shop_infrastructure__infrastructure component
+    class db_redis container
     style boundary fill:none,stroke:#444444,stroke-dasharray:6 4
     style module_shop_api fill:#f4f8fc,stroke:#9fb6cc
     style module_shop_application fill:#f4f8fc,stroke:#9fb6cc

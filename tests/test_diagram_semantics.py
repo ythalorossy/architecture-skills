@@ -1,6 +1,7 @@
 """
 What the C4 diagrams say, not just whether they parse.
 """
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -86,7 +87,9 @@ class LayoutHeaderTest(unittest.TestCase):
     def test_no_diagram_carries_a_layout_header(self):
         for name, mermaid in self._every_flowchart().items():
             with self.subTest(diagram=name):
-                self.assertTrue(mermaid.startswith("flowchart TB"), mermaid[:80])
+                # Past the front matter, which carries the title and nothing else.
+                body = mermaid.split("---\n")[-1] if mermaid.startswith("---\n") else mermaid
+                self.assertTrue(body.startswith("flowchart TB"), mermaid[:120])
                 self.assertNotIn("layout:", mermaid)
                 self.assertNotIn("elk", mermaid)
 
@@ -116,17 +119,66 @@ class RowStackingTest(unittest.TestCase):
         )
 
 
-class SharedComponentTest(unittest.TestCase):
-    def test_hub_is_found_even_when_reduction_hides_its_edges(self):
-        # A chain n0 -> n1 -> ... -> n23 where every node also uses util. The
-        # graph is dense, so reduction keeps only n23 -> util; util is still
-        # used by all 24 others and belongs in the Shared box.
+class FlatGroupSplitTest(unittest.TestCase):
+    """A container with no folders is split into readable parts too.
+
+    44 components in a single group came out as one 44-node diagram with a
+    note saying it was too big to read: splitting only ever looked at
+    folders, and so did the search for the components everything else uses.
+    """
+
+    def _flat(self, count=44, edges=(), reverse=False):
+        members = [f"n{i:02}" for i in range(count)]
+        return _graph({"": list(reversed(members)) if reverse else members}, list(edges))
+
+    def _drawn(self, views):
+        """{suffix: [component, ...]} per view, stubs for other parts left out."""
+        return {suffix: sorted(n for n, info in nodes.items() if not info.get("stub"))
+                for suffix, _, nodes, _, _ in views}
+
+    def test_every_part_stays_within_the_limit(self):
+        views = render_c4._component_views(self._flat())
+        parts = self._drawn(views)
+        self.assertGreater(len(parts), 1)
+        for suffix, members in parts.items():
+            self.assertLessEqual(len(members), render_c4.MAX_COMPONENTS, suffix)
+        self.assertEqual(sorted(n for members in parts.values() for n in members),
+                         sorted(self._flat()["nodes"]))
+
+    def test_the_parts_do_not_depend_on_the_order_the_components_arrive_in(self):
+        self.assertEqual(self._drawn(render_c4._component_views(self._flat())),
+                         self._drawn(render_c4._component_views(self._flat(reverse=True))))
+
+    def test_a_hub_is_still_found_when_the_view_is_split(self):
+        # A chain n00 -> n01 -> ... -> n23 where every node also uses util.
+        # The graph is dense, so reduction keeps only n23 -> util; util is
+        # still used by all 24 others and belongs in the Shared box, and the
+        # split must not be what hides it.
         chain = [f"n{i:02}" for i in range(24)]
         edges = list(zip(chain, chain[1:])) + [(n, "util") for n in chain]
-        [(_, _, nodes, drawn, notes)] = render_c4._component_views(_graph({"": chain + ["util"]}, edges))
-        self.assertTrue(nodes["util"]["shared"])
-        self.assertIn("util (24)", " ".join(notes))
-        self.assertFalse(any("util" in targets for targets in drawn.values()))
+        views = render_c4._component_views(_graph({"": chain + ["util"]}, edges))
+        self.assertGreater(len(views), 1)
+        marked = [n for _, _, nodes, _, _ in views for n, info in nodes.items() if info.get("shared")]
+        self.assertEqual(marked, ["util"])
+        self.assertIn("util (24)", " ".join(n for _, _, _, _, notes in views for n in notes))
+        for _, _, _, drawn, _ in views:
+            self.assertFalse(any("util" in targets for targets in drawn.values()))
+
+    def test_the_container_gets_one_file_per_part(self):
+        facts = {
+            "repository": "demo",
+            "containers": [{"id": "api", "name": "API", "kind": "service", "technology": "Go",
+                            "evidence": [], "used_by": [], "components": self._flat()}],
+            "data_stores": [], "external_systems": [], "relationships": [],
+        }
+        model = render_c4.facts_only_model(facts)
+        self.assertEqual([stem for stem, _, _, _, _ in render_c4.component_diagrams(model, facts)],
+                         ["c4-component-api-part1", "c4-component-api-part2", "c4-component-api-part3"])
+
+    def test_components_that_share_a_folder_prefix_are_split_by_it(self):
+        groups = {"": [f"src/{folder}/f{i:02}" for folder in ("api", "ui") for i in range(12)]}
+        views = render_c4._component_views(_graph(groups, []))
+        self.assertEqual([subtitle for _, subtitle, _, _, _ in views], ["folders", "api", "ui"])
 
 
 # One Go-style module graph, and two code-structure graphs for it: one that
@@ -265,6 +317,111 @@ class SplitPartsTest(unittest.TestCase):
         boundary_end = mermaid.index("\n    end\n")
         self.assertGreater(mermaid.index("b00["), boundary_end, "stub must be outside the container boundary")
         self.assertIn("a00 -.-> b00", mermaid)
+
+
+class ContainerContextTest(unittest.TestCase):
+    """Level 3 shows who calls the container and what the container calls.
+
+    Level 2 draws the Reader using the Web app and the Web app calling the
+    API; the Web app's own component diagram drew neither, so the two levels
+    contradicted each other. The neighbours are now drawn around the
+    container boundary, with the relationship label from the model.
+    """
+
+    MODEL = {
+        "system": {"name": "Bookshop"},
+        "people": [{"id": "reader", "name": "Reader", "description": "Buys books"}],
+        "containers": [
+            {"id": "web", "name": "Web app", "technology": "React"},
+            {"id": "api", "name": "API", "technology": "FastAPI"},
+            {"id": "db", "name": "Orders database", "technology": "PostgreSQL", "type": "database"},
+        ],
+        "external_systems": [{"id": "payments", "name": "Payment provider"}],
+        "relationships": [
+            {"from": "reader", "to": "web", "description": "Buys books using", "technology": "HTTPS"},
+            {"from": "web", "to": "api", "description": "Calls", "technology": "JSON/HTTPS"},
+            {"from": "api", "to": "db", "description": "Stores orders in"},
+            {"from": "api", "to": "payments", "description": "Charges cards with"},
+        ],
+    }
+
+    def _diagram(self, container_id, facts=None, nodes=None, usage_key="used_by_components"):
+        facts = facts or {"data_stores": [], "external_systems": []}
+        nodes = nodes or {"src/api": {"group": ""}}
+        return render_c4._graph_diagram(
+            self.MODEL, facts, {"id": container_id}, {"id": container_id},
+            "Web app", nodes, {}, {}, usage_key)
+
+    def test_the_caller_and_the_callee_are_drawn_around_the_boundary(self):
+        mermaid = self._diagram("web")
+        boundary_end = mermaid.index("\n    end\n")
+        self.assertGreater(mermaid.index("Reader"), boundary_end, "context belongs outside the boundary")
+        self.assertIn('reader -->|"Buys books using<br/>[HTTPS]"| boundary', mermaid)
+        self.assertIn('boundary -->|"Calls<br/>[JSON/HTTPS]"| api', mermaid)
+        self.assertIn("class reader person", mermaid)
+
+    def test_a_neighbour_of_another_container_is_left_out(self):
+        mermaid = self._diagram("web")
+        self.assertNotIn("Orders database", mermaid)
+        self.assertNotIn("Payment provider", mermaid)
+
+    def test_a_store_the_components_use_is_not_drawn_twice(self):
+        facts = {
+            "data_stores": [{"id": "db", "name": "Orders database", "technology": "PostgreSQL",
+                             "used_by_components": {"api": ["bookshop.orders"]}}],
+            "external_systems": [],
+        }
+        mermaid = self._diagram("api", facts, nodes={"bookshop.orders": {"group": ""}})
+        self.assertEqual(mermaid.count("Orders database"), 1)
+        # The component-level edge says more than one from the boundary.
+        self.assertIn("bookshop_orders -->", mermaid)
+        self.assertNotIn("boundary -->|\"Stores orders in\"| db", mermaid)
+
+
+class TitleAndKeyTest(unittest.TestCase):
+    """Every diagram says what it is, and the report says what the shapes mean.
+
+    A `.mmd` file shared on its own used to be an unlabelled box diagram,
+    and nothing in the report explained the colours, the cylinders or the
+    dashed outlines.
+    """
+
+    def _rendered(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_analyzer(FIXTURES / "bookshop", tmp)
+            shutil.copy(FIXTURES / "bookshop" / "c4-model.json", tmp)
+            render_c4.render(tmp, svg=False)
+            out = Path(tmp)
+            return ({p.name: p.read_text(encoding="utf-8") for p in out.glob("c4-*.mmd")},
+                    (out / "ArchitectureReport.md").read_text(encoding="utf-8"))
+
+    def test_every_diagram_carries_a_title(self):
+        diagrams, _ = self._rendered()
+        self.assertIn("c4-flow-place-order.mmd", diagrams)
+        for name, mermaid in diagrams.items():
+            with self.subTest(diagram=name):
+                self.assertRegex(mermaid, r'\A---\ntitle: "[^\n]+"\n')
+        self.assertIn('title: "Bookshop \u00b7 System context"', diagrams["c4-context.mmd"])
+        self.assertIn('title: "Web app"', diagrams["c4-component-bookshop-web.mmd"])
+
+    def test_a_title_is_quoted_so_punctuation_cannot_break_the_front_matter(self):
+        self.assertEqual(render_c4._with_title("flowchart TB\n", 'A "quoted": title'),
+                         '---\ntitle: "A \\"quoted\\": title"\n---\nflowchart TB\n')
+
+    def test_a_title_joins_front_matter_the_diagram_already_has(self):
+        titled = render_c4._with_title("---\nconfig:\n  class:\n    x: true\n---\nclassDiagram\n", "Orders")
+        self.assertEqual(titled, '---\ntitle: "Orders"\nconfig:\n  class:\n    x: true\n---\nclassDiagram\n')
+
+    def test_the_report_has_one_key_for_the_shapes_it_draws(self):
+        _, report = self._rendered()
+        # "### Key flows" is a different heading; the legend is the one "### Key".
+        self.assertEqual(report.count("### Key\n"), 1)
+        key = report[report.index("### Key\n"):]
+        key = key[:key.index("### Level 1")]
+        for kind in ("Person", "Container", "Data store", "Component", "External system"):
+            self.assertIn(f"**{kind}**", key)
+        # Nothing in the bookshop is split into parts, so that line is left out.
+        self.assertNotIn("another part", key)
 
 
 class ComposeTest(unittest.TestCase):

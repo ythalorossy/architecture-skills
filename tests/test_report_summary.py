@@ -90,5 +90,55 @@ class ReportSummaryTest(unittest.TestCase):
         self.assertIn("summary: unknown key 'finding' (did you mean 'findings'?); it is ignored", result["warnings"])
 
 
+class ExecutiveSummaryTest(unittest.TestCase):
+    """The Executive Summary describes the system when a model describes one."""
+
+    def render(self, model):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__("shutil").rmtree(tmp, ignore_errors=True))
+        with contextlib.redirect_stdout(io.StringIO()):
+            run_analyzer(FIXTURE, tmp)
+            if model is not None:
+                (Path(tmp) / "c4-model.json").write_text(json.dumps(model), encoding="utf-8")
+            render_c4.render(tmp, svg=False)
+        return Path(tmp)
+
+    def summary(self, out):
+        report = (out / "ArchitectureReport.md").read_text(encoding="utf-8")
+        start = report.index("## Executive Summary")
+        return report[start:report.index("[//]: # (c4:start)", start)]
+
+    def reference(self):
+        return json.loads((FIXTURE / "c4-model.json").read_text(encoding="utf-8"))
+
+    def test_the_model_replaces_the_project_count(self):
+        section = self.summary(self.render(self.reference()))
+        self.assertIn("Online shop where readers find books and buy them.", section)
+        self.assertIn("The model of Bookshop describes 2 containers, 2 data stores, 1 external system, "
+                      "1 person, 5 relationships and 1 key flow.", section)
+        self.assertNotIn("6 projects", section)
+        # The dependency checks still report what they found.
+        self.assertIn("no structural concerns", section)
+
+    def test_without_a_model_the_projects_are_described(self):
+        section = self.summary(self.render(None))
+        self.assertIn("bookshop has 6 projects (6 production, 0 test) with 4 project references between them.",
+                      section)
+
+    def test_rerendering_keeps_one_summary(self):
+        out = self.render(self.reference())
+        with contextlib.redirect_stdout(io.StringIO()):
+            render_c4.render(str(out), svg=False)
+        report = (out / "ArchitectureReport.md").read_text(encoding="utf-8")
+        self.assertEqual(report.count("The model of Bookshop describes"), 1)
+        self.assertEqual(report.count("[//]: # (summary:start)"), 1)
+
+    def test_a_facts_only_render_leaves_the_summary_alone(self):
+        out = self.render(self.reference())
+        with contextlib.redirect_stdout(io.StringIO()):
+            render_c4.render(str(out), facts_only=True, svg=False)
+        self.assertIn("The model of Bookshop describes", self.summary(out))
+
+
 if __name__ == "__main__":
     unittest.main()

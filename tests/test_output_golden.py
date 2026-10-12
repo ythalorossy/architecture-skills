@@ -30,7 +30,8 @@ GOLDEN_ROOT = TESTS / "golden"
 UPDATE = os.environ.get("C4_UPDATE_GOLDEN") == "1"
 
 # Analyzer-only fixtures: one per ecosystem, plus the multi-module JVM shape
-# that crashed 3.3.2.
+# that crashed 3.3.2 and the `freight` eval fixture (whose diagrams are the
+# only committed proof that its traps still look the way the gold expects).
 FIXTURES = [
     "dotnet_sln",
     "maven_multi",
@@ -41,6 +42,7 @@ FIXTURES = [
     "python_dist",
     "compose_poly",
     "bookshop",
+    "freight",
 ]
 
 

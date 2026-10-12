@@ -1,0 +1,11 @@
+graph TD
+    freight_shared["@freight/shared"]
+    freight_worker["freight-worker"]
+    subgraph group_api["api"]
+        freight_main["freight.main"]
+        freight_storage["freight.storage"]
+        freight_tracking["freight.tracking"]
+    end
+    freight_worker --> freight_shared
+    freight_main --> freight_tracking
+    freight_tracking --> freight_storage
