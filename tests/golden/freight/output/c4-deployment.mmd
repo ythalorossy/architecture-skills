@@ -1,0 +1,18 @@
+flowchart TB
+    subgraph host["Docker host [docker compose]"]
+        svc_db[("db<br/>[Container instance]<br/>postgres:16")]
+        svc_api["api (freight-api)<br/>[Container instance]<br/>build ./api<br/>ports 8080:8080"]
+        svc_worker["worker (freight-worker)<br/>[Container instance]<br/>build ./worker"]
+        svc_adminer["adminer<br/>[Container instance]<br/>adminer:4<br/>ports 8081:8080"]
+    end
+    svc_api -->|"depends on"| svc_db
+    svc_worker -->|"depends on"| svc_db
+    svc_adminer -->|"depends on"| svc_db
+    classDef person fill:#08427b,stroke:#052e56,color:#ffffff
+    classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
+    classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff
+    classDef component fill:#85bbf0,stroke:#5d82a8,color:#000000
+    classDef external fill:#999999,stroke:#6b6b6b,color:#ffffff
+    classDef shared fill:#dbe9f6,stroke:#5d82a8,color:#000000,stroke-dasharray:4 3
+    class svc_db,svc_api,svc_worker,svc_adminer container
+    style host fill:none,stroke:#444444,stroke-dasharray:6 4

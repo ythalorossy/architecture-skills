@@ -1,0 +1,14 @@
+{
+  "name": "@freight/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Helpers shared by the freight services. A library: it never runs on its own.",
+  "main": "src/index.ts",
+  "dependencies": {
+    "redis": "^4.7.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4"
+  }
+}

@@ -6,21 +6,48 @@ agent writes, and whether the skill fires on the right requests.
 This is a development tool. Nothing here ships to a user of the skill, and
 nothing here is imported by `skills/c4-diagrams` at runtime.
 
-## Read this first: the baseline is contaminated
+## Read this first: which fixture a score came from
 
-`skills/c4-diagrams/SKILL.md:83` tells the agent to write `c4-model.json` by
+**bookshop scores are contaminated. freight scores are not.** The two golds
+are read differently, and mixing them up is the easiest mistake to make here.
+
+**bookshop.** SKILL.md Step 3 tells the agent to write `c4-model.json` by
 following `<skill>/assets/c4-model-reference.md`. That asset is a verbatim copy
 of `tests/fixtures/repos/bookshop/c4-model.json`, kept in sync by
 `tests/test_reference_example.py`. **The bookshop reference answer ships inside
 the skill's own instructions**, so any faithful run on bookshop has already
-read it. That is why the recorded baseline scores a perfect 1.00.
+read it. That is why its baseline scores a perfect 1.00. It is an **upper bound
+and a regression anchor only** — a later run carries the same contamination, so
+a drop still means something changed in the pipeline, but the number is never a
+quality measurement and must not be compared with a score from a real
+repository.
 
-The baseline is therefore an **upper bound and a regression anchor only** —
-a later run on the same fixture carries the same contamination, so a drop
-still means something changed in the pipeline. It is **never a quality
-measurement**, and a score from a real repository must not be compared with
-it. A real quality baseline needs a gold for a fixture that is *not* the
-skill's worked example. That fixture does not exist yet.
+**freight** (`tests/fixtures/repos/freight`) exists because of that. It ships
+**no** `c4-model.json`, nothing in `skills/` describes it, and it was built to
+discriminate: see below. Its scores are real measurements.
+
+## The freight fixture, and the traps in it
+
+A gold only measures something if a bad answer can fail it. The eight
+regression fixtures cannot carry one — they are 2–4 manifest files each, so a
+gold over any of them covers about two elements and reports 1.00 for almost
+any answer. freight is 17 files and is built the other way round: small, but
+with three things planted that a careless reading gets wrong.
+
+| Trap | What a careless answer does | How the gold catches it |
+|---|---|---|
+| **An external system the detectors cannot see.** The carrier network is called through `shared/src/http.ts` with its URL in `CARRIER_API_URL`, so no file that names a host also imports an HTTP client. `external_systems` in the facts is `[]`. | Mirrors the facts and draws a system with no outside dependency at all. | `carrier` is a required element, with a required relationship and a required flow step: missing it costs 3/14. |
+| **A development-only container.** `adminer` is a compose service, so it is a container fact like any other. Nothing in the facts marks it dev-only. | Draws it, putting a tool nobody deploys in the container diagram. | `adminer` is a `forbidden` term, so drawing it is a hallucination. Ignoring it instead is drift, which is *also* counted. Only `excluded` with a reason is clean. |
+| **A store reached only through wrappers.** Redis is not a compose service; the API reaches it through `freight.storage` and the poller through `@freight/shared`. | Misses it, or hangs it off the wrong container. | `status-cache` is a required element with two required relationships, one per container. |
+
+A library (`@freight/shared`) and a dev-only dependency (`json-server`) are
+there to be *not* drawn as containers; both are `forbidden` terms.
+
+The separation is checked, not asserted: `tests/test_eval_fixture_freight.py`
+grades an answer that only mirrors `c4-facts.json` and fails if it scores
+better than **recall 0.43 with 1 hallucination**. The same file pins the shape
+of each trap, so a detector improvement that quietly hands the agent one of
+these answers turns the suite red instead of inflating the score.
 
 ## The grader
 
@@ -132,12 +159,17 @@ No threshold here can turn CI red on a quality number.
 
 ## Limits
 
-- **The baseline is contaminated** — see the top of this file. It is not a
-  quality measurement.
-- **One repository.** bookshop is a 17-file synthetic fixture. A good score
-  here does not predict a good score on a real repository.
-- **One run.** The recorded baseline is a reference point, not a statistical
-  claim.
+- **The bookshop baseline is contaminated** — see the top of this file. It is
+  not a quality measurement.
+- **The freight baseline has no headroom.** Two independent blind runs, on
+  different models and with differently-worded requests, both score 1.00.
+  That is a real result — the gold does mark a careless answer down to 0.43 —
+  but it means a prompt change can only be checked for *regression* here, not
+  for improvement. Buying headroom needs a harder fixture, not a stricter gold.
+- **Two repositories, both synthetic.** Both are 17-file fixtures. A good
+  score here does not predict a good score on a real repository.
+- **One run per baseline.** Each recorded baseline is a reference point, not a
+  statistical claim.
 - **One host.** The trigger runner speaks to Claude only.
 - **A tolerant matcher can be too tolerant.** `match: ["api"]` also matches
   "Payments API". The at-most-one-role rule is the guard; if a real run shows
@@ -145,7 +177,7 @@ No threshold here can turn CI red on a quality number.
 
 ## Baselines
 
-`baselines/<date>-<fixture>/` holds the agent's `c4-model.json`, the
+`baselines/<date>-<fixture>[-<model>]/` holds the agent's `c4-model.json`, the
 `scores.json` it produced, and a README with the commands, the skill version
 and what stood out. The graded artifact is kept with its scores so a later
 change in a number has a cause that can be read.

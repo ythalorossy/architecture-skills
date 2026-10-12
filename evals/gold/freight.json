@@ -1,0 +1,36 @@
+{
+  "repo": "tests/fixtures/repos/freight",
+  "required_elements": [
+    {"role": "dispatcher",   "kind": "person",    "match": ["dispatcher", "operator", "logistics staff"]},
+    {"role": "tracking-api", "kind": "container", "match": ["freight-api", "tracking api", "tracking service"]},
+    {"role": "poller",       "kind": "container", "match": ["worker", "poller", "polling"]},
+    {"role": "shipments-db", "kind": "database",  "match": ["postgres", "shipments db", "shipments database"]},
+    {"role": "status-cache", "kind": "database",  "match": ["redis", "cache"]},
+    {"role": "carrier",      "kind": "external",  "match": ["carrier", "parcel network", "tracking provider"]}
+  ],
+  "required_relationships": [
+    ["dispatcher", "tracking-api"],
+    ["tracking-api", "shipments-db"],
+    ["tracking-api", "status-cache"],
+    ["poller", "shipments-db"],
+    ["poller", "status-cache"],
+    ["poller", "carrier"]
+  ],
+  "required_flow_steps": [
+    ["poller", "carrier"],
+    ["poller", "status-cache"]
+  ],
+  "forbidden": [
+    "adminer",
+    "json-server",
+    "mock",
+    "@freight/shared",
+    "shared library",
+    "shared helpers",
+    "kafka",
+    "rabbit",
+    "mongo",
+    "nginx",
+    "message queue"
+  ]
+}

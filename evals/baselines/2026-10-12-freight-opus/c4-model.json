@@ -1,0 +1,180 @@
+{
+  "system": {
+    "name": "Freight",
+    "description": "Parcel tracking: tells dispatchers where a shipment is, and keeps the answer fresh by polling the carrier network"
+  },
+  "people": [
+    {
+      "id": "dispatcher",
+      "name": "Dispatcher",
+      "description": "Looks up where a shipment is and pulls the list of late shipments at the start of a shift",
+      "evidence": ["README.md:11", "api/freight/main.py:9"]
+    }
+  ],
+  "containers": [
+    {
+      "id": "freight-api",
+      "name": "Tracking API",
+      "technology": "Python, FastAPI",
+      "description": "Answers shipment status questions over HTTP: status cache first, shipments database second",
+      "evidence": ["api/freight/main.py:5", "api/pyproject.toml:6", "docker-compose.yml:9"]
+    },
+    {
+      "id": "freight-worker",
+      "name": "Shipment poller",
+      "technology": "Node.js, TypeScript",
+      "description": "Timer-driven job: asks the carrier network for the latest scans of shipments due a check and writes them to the database and the cache",
+      "evidence": ["worker/src/poller.ts:22", "worker/package.json:6", "docker-compose.yml:19"]
+    },
+    {
+      "id": "db-postgresql",
+      "name": "Shipments database",
+      "technology": "PostgreSQL 16",
+      "type": "database",
+      "description": "The shipment rows: reference, carrier, state and the due/checked timestamps the poller works from",
+      "evidence": ["api/freight/tracking/service.py:17", "worker/src/shipments.ts:16", "docker-compose.yml:2"]
+    },
+    {
+      "id": "db-redis",
+      "name": "Status cache",
+      "technology": "Redis",
+      "type": "database",
+      "description": "Shipment status cached under shipment:{reference} for 120 seconds; a managed instance in every environment, reached through CACHE_URL",
+      "evidence": ["api/freight/storage/cache.py:14", "shared/src/cache.ts:8", "README.md:27"]
+    }
+  ],
+  "external_systems": [
+    {
+      "id": "ext-carrier-network",
+      "name": "Carrier network",
+      "description": "The carriers' tracking API: returns the latest scan for a batch of tracking numbers (POST /track/batch at CARRIER_API_URL)",
+      "evidence": ["worker/src/carriers.ts:15", "worker/src/carriers.ts:9", "docker-compose.yml:24"]
+    }
+  ],
+  "relationships": [
+    {
+      "from": "dispatcher",
+      "to": "freight-api",
+      "description": "Looks up shipment status and late shipments through",
+      "technology": "JSON/HTTP"
+    },
+    {
+      "from": "freight-api",
+      "to": "db-redis",
+      "description": "Reads and refills cached shipment status in",
+      "technology": "redis-py"
+    },
+    {
+      "from": "freight-api",
+      "to": "db-postgresql",
+      "description": "Reads shipments from on a cache miss, and always for the late list",
+      "technology": "psycopg"
+    },
+    {
+      "from": "freight-worker",
+      "to": "db-postgresql",
+      "description": "Selects the shipments due a check and records their new state in",
+      "technology": "pg"
+    },
+    {
+      "from": "freight-worker",
+      "to": "ext-carrier-network",
+      "description": "Asks for the latest scan of each tracking number from",
+      "technology": "JSON/HTTPS"
+    },
+    {
+      "from": "freight-worker",
+      "to": "db-redis",
+      "description": "Refreshes the cached status in, so the API does not serve a stale state",
+      "technology": "node-redis"
+    }
+  ],
+  "components": {
+    "freight-api": {
+      "freight.main": "FastAPI app and the two shipment routes; hands each request to the tracking service",
+      "freight.tracking": "TrackingService answers cache-first; ShipmentRepository runs the SQL over psycopg",
+      "freight.storage": "StatusCache: the only place the API talks to the status cache"
+    },
+    "freight-worker": {
+      "freight-worker": "The poll loop, the carrier client and the Postgres shipment store",
+      "@freight/shared": "Library both services' TypeScript shares: the scan shape, the JSON-over-HTTP helper and the cache writer"
+    }
+  },
+  "flows": [
+    {
+      "id": "shipment-status",
+      "name": "Dispatcher asks where a shipment is",
+      "description": "GET /api/shipments/{reference}: served from the status cache, falling back to the shipments database and refilling the cache.",
+      "steps": [
+        { "from": "dispatcher", "to": "freight.main", "description": "GET /api/shipments/{reference}", "technology": "JSON/HTTP" },
+        { "from": "freight.main", "to": "freight.tracking", "description": "tracking.status(reference)" },
+        { "from": "freight.tracking", "to": "freight.storage", "description": "Looks the reference up in the cache first" },
+        { "from": "freight.storage", "to": "db-redis", "description": "GET shipment:{reference}", "technology": "redis-py" },
+        { "from": "freight.tracking", "to": "db-postgresql", "description": "On a miss, SELECT the shipment row by reference", "technology": "psycopg" },
+        { "from": "freight.tracking", "to": "freight.storage", "description": "Caches the row for 120 seconds" },
+        { "from": "freight.storage", "to": "db-redis", "description": "SETEX shipment:{reference} 120", "technology": "redis-py" },
+        { "from": "freight.main", "to": "dispatcher", "description": "Shipment reference, carrier, state and updated_at", "reply": true }
+      ]
+    },
+    {
+      "id": "poll-carriers",
+      "name": "Poller refreshes shipment states",
+      "description": "Every POLL_SECONDS the worker asks the carrier network for new scans of the shipments that are due a check, then writes them to the database and the cache.",
+      "steps": [
+        { "from": "freight-worker", "to": "db-postgresql", "description": "SELECT references not checked for 15 minutes", "technology": "pg" },
+        { "from": "freight-worker", "to": "@freight/shared", "description": "Posts the tracking numbers through the shared HTTP helper" },
+        { "from": "@freight/shared", "to": "ext-carrier-network", "description": "POST {CARRIER_API_URL}/track/batch", "technology": "JSON/HTTPS" },
+        { "from": "@freight/shared", "to": "freight-worker", "description": "The latest scan per tracking number", "reply": true },
+        { "from": "freight-worker", "to": "db-postgresql", "description": "UPDATE state, updated_at and checked_at for each scan", "technology": "pg" },
+        { "from": "freight-worker", "to": "@freight/shared", "description": "putStatus(reference, scan)" },
+        { "from": "@freight/shared", "to": "db-redis", "description": "SETEX shipment:{reference} 120, so the API stops serving the old state", "technology": "node-redis" }
+      ]
+    }
+  ],
+  "code": [
+    {
+      "container": "freight-api",
+      "component": "freight.tracking",
+      "description": "Cache-first status answering and the SQL that backs it",
+      "types": ["TrackingService", "ShipmentRepository"]
+    },
+    {
+      "container": "freight-api",
+      "component": "freight.storage",
+      "description": "The API's single point of contact with the status cache",
+      "types": ["StatusCache"]
+    },
+    {
+      "container": "freight-worker",
+      "component": "freight-worker",
+      "description": "The carrier client and the shipment store the poll loop drives",
+      "types": ["CarrierClient", "ShipmentStore"]
+    }
+  ],
+  "excluded": [
+    {
+      "id": "adminer",
+      "reason": "Local development only: a database console the team opens by hand. The compose file and the README both say it is never deployed, so it is not part of the running system (docker-compose.yml:29, README.md:22)."
+    }
+  ],
+  "summary": {
+    "overview": "Freight tracks parcels that other companies carry. A FastAPI service answers dispatchers' shipment-status questions, reading a Redis status cache first and the PostgreSQL shipments database on a miss. A Node.js poller runs on a timer, asks the carrier network for the latest scans of the shipments that are due a check, writes them back to the same database and refreshes the cached status so the API stops serving the old state. A small TypeScript library (`shared/`) carries the scan shape, a JSON-over-HTTP helper and the cache writer; it is a library, not a deployed container. The carrier network is the system's only outside dependency, and the analyzer did not detect it, because the call goes through the shared helper rather than an HTTP client named in the worker.",
+    "findings": [
+      "Two services write the same cache key with two different payload shapes: the API caches the full shipment row (`api/freight/storage/cache.py:21`) while the poller caches a scan with `scannedAt` and no carrier (`shared/src/cache.ts:11`). The API returns whatever it finds straight to the caller (`api/freight/tracking/service.py:44`), so a dispatcher gets a different response shape depending on which writer touched the key last.",
+      "The poller's cache writer never connects: `shared/src/cache.ts:8` creates the node-redis client at module load and nothing calls `client.connect()`, unlike the Postgres store, which connects explicitly (`worker/src/shipments.ts:11`). Every `putStatus` would fail, leaving the API to serve the stale cached status for the full 120-second TTL.",
+      "`worker/src/poller.ts:1` deep-imports `@freight/shared/cache`, but `shared/package.json` declares only `main` (`shared/package.json:7`) with no `exports` map and no build, and `shared/src/index.ts:1` exports only `events` and `http` — the cache module is reachable by no declared entry point.",
+      "The carrier call has no credentials and no retry: `shared/src/http.ts:5` posts with only a Content-Type header and a 10s timeout, and `worker/src/carriers.ts:9` defaults `CARRIER_API_URL` to an empty string, so a missing variable turns the call into a POST to a relative `/track/batch` instead of failing loudly.",
+      "The poll loop has no error handling (`worker/src/poller.ts:26`): one carrier timeout or database error escapes `pollOnce` and ends the process, since the loop is a bare top-level `await main()` (`worker/src/poller.ts:31`).",
+      "The API opens a new PostgreSQL connection per query (`api/freight/tracking/service.py:17` and `:25`) — no pool — and the late-shipment list bypasses the cache entirely (`api/freight/tracking/service.py:51`), so every shift start runs a fresh unindexed-looking scan over `shipments`.",
+      "Database credentials are literals in the compose file (`docker-compose.yml:12`), and the same value is reused by the API, the worker and the Adminer console."
+    ],
+    "recommendations": [
+      "Make the cached value one shape owned by one writer: either have the poller write the full shipment row the API expects, or have it only invalidate the key and let the API refill it (backs the two-writers finding).",
+      "Connect the node-redis client before the first `putStatus` and let the failure surface, so a broken cache write is visible rather than silently leaving stale status behind (backs the never-connects finding).",
+      "Give `shared/package.json` an `exports` map covering `./cache`, `./http` and `./events`, or route the poller through `@freight/shared` only via `index.ts` (backs the deep-import finding).",
+      "Fail fast when `CARRIER_API_URL` is unset and add authentication plus a bounded retry to the carrier call (backs the no-credentials/no-retry finding).",
+      "Wrap `pollOnce` in a try/catch inside the loop so a single bad cycle is logged and the poller keeps running (backs the no-error-handling finding).",
+      "Hold one pooled PostgreSQL connection in the API and move the database password out of `docker-compose.yml` into an environment file or secret (backs the per-query-connection and credentials findings)."
+    ]
+  }
+}
