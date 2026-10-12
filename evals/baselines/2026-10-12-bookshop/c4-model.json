@@ -1,0 +1,88 @@
+{
+  "system": {"name": "Bookshop", "description": "Online bookshop: readers search a book catalogue and buy books by card"},
+  "people": [
+    {"id": "reader", "name": "Reader", "description": "Searches for books and buys them in the browser", "evidence": ["web/src/main.tsx:15"]}
+  ],
+  "containers": [
+    {"id": "bookshop-web", "name": "Web app", "technology": "React, Vite",
+     "description": "Single-page UI with a search box and a Buy button per result",
+     "evidence": ["web/src/main.tsx:23", "docker-compose.yml:20"]},
+    {"id": "bookshop-api", "name": "Bookshop API", "technology": "Python, FastAPI",
+     "description": "Serves book search and order placement under /api",
+     "evidence": ["api/bookshop/main.py:6", "docker-compose.yml:9"]},
+    {"id": "db-postgresql", "name": "Orders database", "technology": "PostgreSQL 16", "type": "database",
+     "description": "Owned by the API; holds the orders table (book, quantity, charge id)",
+     "evidence": ["api/bookshop/orders/service.py:17", "docker-compose.yml:2"]},
+    {"id": "db-elasticsearch", "name": "Catalogue index", "technology": "Elasticsearch", "type": "database", "external": true,
+     "description": "Book search index in the 'books' index; run and populated by the catalogue team, not deployed by this repo",
+     "evidence": ["api/bookshop/search/index.py:6", "api/bookshop/search/index.py:13"]}
+  ],
+  "external_systems": [
+    {"id": "ext-payments-example", "name": "Payment provider",
+     "description": "Charges the reader's card token via its /v1/charges API",
+     "evidence": ["api/bookshop/payments/client.py:3", "api/bookshop/payments/client.py:10"]}
+  ],
+  "relationships": [
+    {"from": "reader", "to": "bookshop-web", "description": "Searches and buys books using", "technology": "HTTPS", "evidence": ["web/src/main.tsx:15"]},
+    {"from": "bookshop-web", "to": "bookshop-api", "description": "Searches books and places orders through", "technology": "JSON/HTTP", "evidence": ["web/src/api/client.ts:8", "web/src/api/client.ts:13"]},
+    {"from": "bookshop-api", "to": "db-postgresql", "description": "Saves orders in", "technology": "psycopg", "evidence": ["api/bookshop/orders/service.py:15"]},
+    {"from": "bookshop-api", "to": "db-elasticsearch", "description": "Searches book titles in", "technology": "Elasticsearch client", "evidence": ["api/bookshop/search/index.py:13"]},
+    {"from": "bookshop-api", "to": "ext-payments-example", "description": "Charges cards with", "technology": "HTTPS, httpx", "evidence": ["api/bookshop/payments/client.py:10"]}
+  ],
+  "components": {
+    "bookshop-web": {
+      "web/src (files)": "App component and entry point: search box, result list, Buy button",
+      "web/src/api": "fetch wrappers for GET /api/books and POST /api/orders"
+    },
+    "bookshop-api": {
+      "bookshop.main": "FastAPI routes; builds the services at import time and delegates",
+      "bookshop.orders": "Takes payment for an order, then stores it in PostgreSQL",
+      "bookshop.payments": "Client for the payment provider's charges endpoint",
+      "bookshop.search": "Title match search against the catalogue index"
+    }
+  },
+  "flows": [
+    {"id": "place-order", "name": "Reader buys a book",
+     "description": "Buy click to a charged and stored order",
+     "steps": [
+       {"from": "reader", "to": "bookshop-web", "description": "Clicks Buy on a search result"},
+       {"from": "web/src/api", "to": "bookshop.main", "description": "POST /api/orders", "technology": "JSON/HTTP"},
+       {"from": "bookshop.main", "to": "bookshop.orders", "description": "place(book_id, quantity, card_token)"},
+       {"from": "bookshop.orders", "to": "bookshop.payments", "description": "charge(card_token, quantity * 1200)"},
+       {"from": "bookshop.payments", "to": "ext-payments-example", "description": "POST /v1/charges", "technology": "HTTPS"},
+       {"from": "bookshop.orders", "to": "db-postgresql", "description": "INSERT order with charge id", "technology": "psycopg"},
+       {"from": "bookshop.main", "to": "web/src/api", "description": "order_id and charge_id", "reply": true}
+     ]},
+    {"id": "search-books", "name": "Reader searches the catalogue",
+     "steps": [
+       {"from": "reader", "to": "bookshop-web", "description": "Types in the search box"},
+       {"from": "web/src/api", "to": "bookshop.main", "description": "GET /api/books?q=", "technology": "JSON/HTTP"},
+       {"from": "bookshop.main", "to": "bookshop.search", "description": "search(q)"},
+       {"from": "bookshop.search", "to": "db-elasticsearch", "description": "match query on title", "technology": "Elasticsearch client"},
+       {"from": "bookshop.main", "to": "web/src/api", "description": "List of books", "reply": true}
+     ]}
+  ],
+  "code": [
+    {"container": "bookshop-api", "component": "bookshop.orders", "description": "Order placement and persistence", "types": ["OrderService", "OrderRepository"]},
+    {"container": "bookshop-api", "component": "bookshop.payments", "description": "Payment provider client", "types": ["PaymentsClient"]}
+  ],
+  "excluded": [
+    {"id": "ext-covers-example", "reason": "Only used by api/tools/import_covers.py, a one-off script run by hand; the running system never calls it"}
+  ],
+  "summary": {
+    "overview": "Bookshop is a React web app calling a FastAPI service. The API searches a catalogue index run by another team, and places orders by charging the card at an external payment provider and then inserting the order into its own PostgreSQL database. Docker compose deploys the web app, API and database; the search index and payment provider are outside this repo.",
+    "findings": [
+      "The card is charged before the order is saved (api/bookshop/orders/service.py:31-32); a failed insert leaves a paid order that was never recorded.",
+      "PAYMENTS_URL is set in docker-compose.yml:12 but the code ignores it: the charges URL is hardcoded (api/bookshop/payments/client.py:3), so the setting does nothing.",
+      "The web app sends a hardcoded placeholder card token (web/src/main.tsx:15), so checkout is not real payment collection yet.",
+      "Services are built at import time (api/bookshop/main.py:7-8) and read DATABASE_URL and SEARCH_URL then, so the API cannot start without them.",
+      "POST /api/orders accepts an untyped dict and indexes keys directly (api/bookshop/main.py:17-18); missing fields raise a 500 rather than a validation error.",
+      "Neither the payment call nor the search call sets a timeout or handles failure (api/bookshop/payments/client.py:10, api/bookshop/search/index.py:13)."
+    ],
+    "recommendations": [
+      "Save the order as pending before charging, then mark it paid, so a failed insert is recoverable.",
+      "Read the payments URL from PAYMENTS_URL, or remove the unused setting.",
+      "Use a pydantic model for the order request and set timeouts on outbound calls."
+    ]
+  }
+}

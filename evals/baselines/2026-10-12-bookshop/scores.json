@@ -1,0 +1,38 @@
+{
+  "evidence": {
+    "problems": [],
+    "score": 1.0,
+    "total": 11,
+    "valid": 11
+  },
+  "hallucination": {
+    "count": 0,
+    "problems": []
+  },
+  "recall": {
+    "hits": 13,
+    "missed": [],
+    "parts": {
+      "elements": [
+        6,
+        6
+      ],
+      "flow_steps": [
+        2,
+        2
+      ],
+      "relationships": [
+        5,
+        5
+      ]
+    },
+    "score": 1.0,
+    "total": 13
+  },
+  "render": {
+    "drift": [],
+    "ok": true,
+    "problems": [],
+    "status": "ok"
+  }
+}
