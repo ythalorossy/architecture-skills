@@ -774,5 +774,77 @@ class TestTriggerRunner(unittest.TestCase):
         self.assertEqual(summary["scored"], 1)
 
 
+class TestTriggerRunnerReporting(unittest.TestCase):
+    def test_all_cases_errored_gives_no_ratios_not_a_perfect_score(self):
+        results = [{"id": "a", "should_fire": True, "fired": False, "status": "error"}]
+        summary = run_triggers.score(results)
+        self.assertIsNone(summary["precision"])
+        self.assertIsNone(summary["recall"])
+        self.assertEqual(summary["scored"], 0)
+
+    def test_no_positive_cases_means_recall_is_none(self):
+        summary = run_triggers.score([{"id": "a", "should_fire": False, "fired": False, "status": "ok"}])
+        self.assertIsNone(summary["recall"])
+
+    def test_no_predicted_fires_means_precision_is_none(self):
+        summary = run_triggers.score([{"id": "a", "should_fire": True, "fired": False, "status": "ok"}])
+        self.assertIsNone(summary["precision"])
+
+    def test_run_prints_na_and_exits_nonzero_when_nothing_was_measured(self):
+        argv = sys.argv
+        sys.argv = ["run_triggers.py", "--run", "--limit", "2"]
+        buffer = io.StringIO()
+        try:
+            with mock.patch.object(run_triggers.subprocess, "run", side_effect=FileNotFoundError("claude")):
+                with contextlib.redirect_stdout(buffer):
+                    code = run_triggers.main()
+        finally:
+            sys.argv = argv
+        self.assertEqual(code, 1)
+        self.assertIn("precision n/a  recall n/a  (scored 0, errors 2)", buffer.getvalue())
+
+
+class TestRunCase(unittest.TestCase):
+    CASE = {"id": "t01", "prompt": "Draw the C4 diagram", "should_fire": True}
+
+    def completed(self, returncode=0, stdout="", stderr=""):
+        return subprocess.CompletedProcess([], returncode, stdout, stderr)
+
+    def test_the_sandbox_cwd_is_an_existing_temp_directory(self):
+        seen = {}
+
+        def fake(command, **kwargs):
+            seen["cwd"] = kwargs.get("cwd")
+            seen["is_dir"] = kwargs.get("cwd") is not None and Path(kwargs["cwd"]).is_dir()
+            return self.completed()
+
+        with mock.patch.object(run_triggers.subprocess, "run", side_effect=fake):
+            run_triggers.run_case(self.CASE)
+        self.assertIsNotNone(seen["cwd"])
+        self.assertTrue(seen["is_dir"])
+        self.assertNotEqual(Path(seen["cwd"]).resolve(), REPO_ROOT.resolve())
+
+    def test_the_spawned_command_disallows_bash(self):
+        with mock.patch.object(run_triggers.subprocess, "run", return_value=self.completed()) as spawn:
+            run_triggers.run_case(self.CASE)
+        command = spawn.call_args.args[0]
+        self.assertIn("Bash", command[command.index("--disallowedTools") + 1])
+
+    def test_a_timeout_is_an_error_not_a_miss(self):
+        boom = subprocess.TimeoutExpired("claude", 1)
+        with mock.patch.object(run_triggers.subprocess, "run", side_effect=boom):
+            self.assertEqual(run_triggers.run_case(self.CASE)["status"], "error")
+
+    def test_a_missing_claude_is_an_error(self):
+        with mock.patch.object(run_triggers.subprocess, "run", side_effect=FileNotFoundError("claude")):
+            self.assertEqual(run_triggers.run_case(self.CASE)["status"], "error")
+
+    def test_a_nonzero_exit_is_an_error(self):
+        with mock.patch.object(run_triggers.subprocess, "run", return_value=self.completed(2, "", "boom")):
+            result = run_triggers.run_case(self.CASE)
+        self.assertEqual(result["status"], "error")
+        self.assertIn("boom", result["detail"])
+
+
 if __name__ == "__main__":
     unittest.main()

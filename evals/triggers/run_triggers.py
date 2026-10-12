@@ -101,7 +101,8 @@ def score(results):
 
     A case whose `claude` invocation failed is counted under `errors` and left
     out of both ratios: an infrastructure failure says nothing about whether
-    the skill's description is right.
+    the skill's description is right. A ratio with a zero denominator is None,
+    never a perfect 1.0: nothing was measured.
     """
     scored = [result for result in results if result["status"] == "ok"]
     true_positive = sum(1 for r in scored if r["should_fire"] and r["fired"])
@@ -117,9 +118,13 @@ def score(results):
         "false_positive": false_positive,
         "false_negative": false_negative,
         "true_negative": true_negative,
-        "precision": true_positive / predicted if predicted else 1.0,
-        "recall": true_positive / actual if actual else 1.0,
+        "precision": true_positive / predicted if predicted else None,
+        "recall": true_positive / actual if actual else None,
     }
+
+
+def ratio(value):
+    return "n/a" if value is None else f"{value:.2f}"
 
 
 def main():
@@ -157,7 +162,7 @@ def main():
 
     summary = score(results)
     print(
-        f"\nprecision {summary['precision']:.2f}  recall {summary['recall']:.2f}  "
+        f"\nprecision {ratio(summary['precision'])}  recall {ratio(summary['recall'])}  "
         f"(scored {summary['scored']}, errors {summary['errors']})"
     )
     print(
@@ -180,6 +185,10 @@ def main():
         print("\nerrors (excluded from the scores):")
         for result in errored:
             print(f"  {result['id']}: {result['detail']}")
+    if summary["scored"] == 0:
+        print("\nNothing was measured: every case errored. This is a runner failure, not a score.")
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
