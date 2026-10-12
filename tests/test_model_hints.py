@@ -101,6 +101,14 @@ class ModelHintsTest(unittest.TestCase):
         self.assertIn("bookshop-api is covered by both bookshop-api and bookshop-web; it is drawn once, "
                       "as bookshop-api", result.warnings)
 
+    def test_duplicate_relationship_pair(self):
+        def change(model):
+            model["relationships"].append({"from": "bookshop-web", "to": "bookshop-api",
+                                           "description": "Also calls", "technology": "WebSocket"})
+        result = self.check(change)
+        self.assertIn("bookshop-web -> bookshop-api is listed twice (relationships[1], relationships[5]); "
+                      "they are drawn as one arrow", result.warnings)
+
     def test_excluded_needs_a_reason(self):
         result = self.check(lambda m: m["excluded"][0].pop("reason"))
         self.assertIn("excluded ext-covers-example: give a reason, so readers know why it is left out", result.warnings)

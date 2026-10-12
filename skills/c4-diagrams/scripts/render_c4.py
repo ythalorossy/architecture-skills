@@ -253,8 +253,10 @@ def validate(model, facts, result=None, repo=None):
     component_ids = all_component_ids(model, facts)
     components = {c for ids in component_ids.values() for c in ids}
 
+    pairs = {}
     for index, relationship in enumerate(model.get("relationships") or []):
         _unknown_keys(relationship, RELATIONSHIP_KEYS, f"relationships[{index}]", warnings)
+        pairs.setdefault((relationship.get("from"), relationship.get("to")), []).append(index)
         for end in ("from", "to"):
             value = relationship.get(end)
             if value not in elements:
@@ -279,6 +281,14 @@ def validate(model, facts, result=None, repo=None):
         for component in descriptions:
             if component not in component_ids.get(container_id, set()):
                 warnings.append(f"components.{container_id}: {component!r} is not a component of that container; its description is ignored")
+
+    for (source, target), indexes in pairs.items():
+        if len(indexes) > 1:
+            # _merge_relationships keeps one edge per (from, to), so the second
+            # description is never drawn.
+            times = "twice" if len(indexes) == 2 else f"{len(indexes)} times"
+            listed = ", ".join(f"relationships[{index}]" for index in indexes)
+            warnings.append(f"{source} -> {target} is listed {times} ({listed}); they are drawn as one arrow")
 
     known = set(elements) | components
     for flow_index, flow in enumerate(model.get("flows") or []):
