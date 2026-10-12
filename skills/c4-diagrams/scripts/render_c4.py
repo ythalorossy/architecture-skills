@@ -342,6 +342,31 @@ def all_component_ids(model, facts):
     return result
 
 
+COVERAGE_LINE = ("Coverage: facts {}/{}, containers described {}/{}, "
+                 "components described {}/{}, people {}, flows {}, code {}")
+
+
+def _coverage(model, facts, result):
+    """How much of the judgement work the model carries.
+
+    `validate` answers "is this model consistent?"; this answers "is it
+    finished?" -- a model can be `ok` and say nothing.
+    """
+    fact_ids = {f["id"] for kind in ("containers", "data_stores", "external_systems") for f in facts[kind]}
+    containers = [c for c in model.get("containers") or [] if c.get("id")]
+    component_ids = all_component_ids(model, facts)
+    return {
+        "facts": [len(fact_ids) - len(result.drift), len(fact_ids)],
+        "containers_described": [sum(1 for c in containers if str(c.get("description") or "").strip()),
+                                 len(containers)],
+        "components_described": [sum(len(d) for d in (model.get("components") or {}).values()),
+                                 sum(len(ids) for ids in component_ids.values())],
+        "people": len(model.get("people") or []),
+        "flows": len(model.get("flows") or []),
+        "code": len(model.get("code") or []),
+    }
+
+
 # ---------- mermaid ----------
 
 def _clean(text):
@@ -1469,6 +1494,7 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
         "svg_failed": [stem for stem, ok in rendered.items() if not ok] if svg else [],
         "facts_only": bool(use_model.get("_facts_only")),
         "svg": svg_status,
+        "coverage": _coverage(use_model, facts, result),
     }
 
 
@@ -1497,6 +1523,11 @@ def main():
     print("Diagrams: " + ", ".join(result["diagrams"]))
     for message in result["drift"]:
         print(f"DRIFT: {message}")
+    coverage = result["coverage"]
+    print(COVERAGE_LINE.format(
+        *coverage["facts"], *coverage["containers_described"],
+        *coverage["components_described"],
+        coverage["people"], coverage["flows"], coverage["code"]))
     svg_status = result.get("svg", {})
     missing_tool = False
     for stem in result["svg_failed"]:

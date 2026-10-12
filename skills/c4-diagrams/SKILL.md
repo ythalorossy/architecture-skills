@@ -88,7 +88,7 @@ If `c4-model.json` already exists it was kept and may have been user-edited: upd
 
 ### When Step 3 is finished
 
-Stop when `render_c4.py` reports `ok` with no `DRIFT:` line and every warning fixed or justified — **and** the model has a person, a description for every container and important component, 1–3 `flows` and 2–5 `code` entries. A `DRIFT:` line, an empty `flows` or an undescribed container means the model is unfinished, not that the script is fussy; an empty Level 3 is how "bare package names" reaches the user.
+Stop when `render_c4.py` reports `ok` with no `DRIFT:` line, every warning fixed or justified, and a `Coverage:` line whose `facts`, `containers described` and `components described` are complete and whose `people`, `flows` and `code` counts are all non-zero. A short number there means the model is unfinished, not that the script is fussy; an undescribed component is how "bare package names" reaches the user.
 
 ## Step 4 — Report to the user
 
