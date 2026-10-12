@@ -33,7 +33,7 @@ The script does the objective parts, with `file:line` evidence on everything it 
 
 `<skill>` is the folder holding this `SKILL.md`; the harness prints its absolute path when the skill loads. Use that path wherever `<skill>` appears — the working directory is the user's repository, so a bare `scripts/…` path does not resolve.
 
-Commands use `python3`; where it isn't on the PATH (common on Windows) use `python` or `py -3`. The scripts need Python 3.11+ and say so if it's older.
+Commands use `python3`; where it isn't on the PATH (common on Windows) use `python` or `py -3`. The scripts need Python 3.11+ and say so if it's older. When one fails, its message is in [Troubleshooting](https://github.com/ythalorossy/architecture-skills/blob/main/README.md#troubleshooting).
 
 ## Step 1 — Run the analysis
 

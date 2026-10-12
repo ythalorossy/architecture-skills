@@ -13,7 +13,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from helpers import REPO_ROOT, run_analyzer
+from helpers import REPO_ROOT, SKILL, run_analyzer
 
 from scripts import render_c4
 
@@ -63,6 +63,52 @@ class ExampleOutputTest(unittest.TestCase):
         report = (EXAMPLE / "ArchitectureReport.md").read_text(encoding="utf-8")
         self.assertIn("![c4-context](c4-context.svg)", report)
         self.assertIn("## Architecture overview", report)
+
+
+class SupportedEcosystemsTest(unittest.TestCase):
+    """Every place that lists what the skill reads lists the same ecosystems."""
+
+    ECOSYSTEMS = ("NET", "Node", "Python", "Maven", "Gradle", "Go")
+
+    def test_the_empty_run_message_names_go(self):
+        from scripts import generate_docs
+
+        report = generate_docs.generate_report(project_name="x", stacks=[], graph={}, scan={},
+                                               groups={}, mermaid="")
+        described = report[report.index("## Executive Summary"):]
+        for ecosystem in self.ECOSYSTEMS:
+            self.assertIn(ecosystem, described, f"the report's empty-run message does not name {ecosystem}")
+
+    def test_the_analyzer_warning_names_go(self):
+        source = (SCRIPTS / "analyze_repository.py").read_text(encoding="utf-8")
+        start = source.index("No supported projects found")
+        warning = source[start:source.index("Analyze this repository manually", start)]
+        for ecosystem in ("NET", "Node", "Python", "Maven", "Gradle", "Go"):
+            self.assertIn(ecosystem, warning, f"the analyzer's warning does not name {ecosystem}")
+
+    def test_the_plugin_description_names_go(self):
+        plugin = json.loads((REPO_ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
+        long_description = plugin["interface"]["longDescription"]
+        for ecosystem in (".NET", "Node", "Python", "Java", "Go"):
+            self.assertIn(ecosystem, long_description)
+
+
+class SkillAndReadmeAgreeTest(unittest.TestCase):
+    """The two documents a user and an agent read must not disagree."""
+
+    def test_every_web_framework_the_readme_lists_is_in_the_detection_coverage(self):
+        readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        row = next(line for line in readme.splitlines() if line.startswith("| API endpoints "))
+        coverage = (SKILL / "assets" / "detection-coverage.md").read_text(encoding="utf-8")
+        for framework in ("Spring", "JAX-RS", "ASP.NET", "Express", "Fastify", "Koa", "NestJS",
+                          "FastAPI", "Flask", "Django"):
+            self.assertIn(framework, row, f"the README endpoints row no longer lists {framework}")
+            self.assertIn(framework.replace("NestJS", "Nest"), coverage,
+                          f"detection-coverage.md does not list {framework}")
+
+    def test_the_skill_points_at_the_readme_when_a_script_fails(self):
+        skill = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("README.md#troubleshooting", skill)
 
 
 if __name__ == "__main__":

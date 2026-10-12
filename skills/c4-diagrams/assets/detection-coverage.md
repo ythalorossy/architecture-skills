@@ -11,7 +11,7 @@ there: the facts are a floor, not a ceiling.
 - **External systems:** SDKs (Anthropic, OpenAI, AWS, Stripe, Sentry, Microsoft Graph…), URL hosts in files that use an HTTP or SOAP client (URLs in comments are skipped), and URL settings in `appsettings*.json`, `application*.yml`/`.properties` and `config.yml`.
 - **Links between containers:** compose `depends_on`, and front-end dev-server proxies (Vite, webpack, Next.js rewrites, CRA `proxy`) to the back end.
 - **Components:** the modules each container is built from (projects, Maven/Gradle modules, Go packages, Python/TS folders), and inside them the code structure: Java/Kotlin packages, C# namespaces and Go packages grouped below each module's root, with import edges. Stores and external systems attach to the package that uses them. Tests and third-party code (`vendor/`, `wwwroot/lib`, `*.min.js`) are left out; dense graphs hide shortcut edges; more than 20 components are split per module or folder.
-- **Report sections:** HTTP endpoints (Spring, JAX-RS, ASP.NET attribute and conventional `{controller}/{action}` routes, Express/Fastify/Nest, FastAPI/Flask/Django, Go), deployment (compose, Dockerfiles, Kubernetes, CI, hosting), environment variables with defaults, and a technology inventory per container.
+- **Report sections:** HTTP endpoints (Spring, JAX-RS, ASP.NET attribute and conventional `{controller}/{action}` routes, Express/Fastify/Koa/Nest, FastAPI/Flask/Django, Go net/http, gin, echo and chi), deployment (compose, Dockerfiles, Kubernetes, CI, hosting), environment variables with defaults, and a technology inventory per container.
 
 ## Known blind spots
 

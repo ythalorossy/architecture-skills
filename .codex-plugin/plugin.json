@@ -21,7 +21,7 @@
   "interface": {
     "displayName": "Architecture Skills",
     "shortDescription": "C4 diagrams and an architecture report for a local repository",
-    "longDescription": "Analyze a .NET, Node.js/TypeScript, Python or Java repository and produce C4 model diagrams (system context, containers, components), a Markdown architecture report with the full dependency graph, and recommendations backed by evidence from the code.",
+    "longDescription": "Analyze a .NET, Java/Kotlin, Go, Node.js/TypeScript or Python repository and produce C4 model diagrams (system context, containers, components), a Markdown architecture report with the full dependency graph, and recommendations backed by evidence from the code.",
     "developerName": "Ythalo Saldanha",
     "category": "Developer Tools",
     "capabilities": [

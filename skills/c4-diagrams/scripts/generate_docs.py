@@ -434,8 +434,9 @@ def generate_report(
         # An empty graph is "not analyzed", not "healthy".
         described = (
             f"No supported projects were found in {project_name} (.NET projects, "
-            "package.json packages, Python packages, Maven or Gradle modules), so "
-            "this report says nothing about its structure. Analyze it directly."
+            "Node.js package.json packages, Python packages, Maven or Gradle "
+            "modules, Go modules), so this report says nothing about its "
+            "structure. Analyze it directly."
         )
         checks = ""
 

@@ -520,7 +520,7 @@ class RepositoryAnalyzer:
         if not summary["dependency_graph_available"]:
             print(
                 "WARNING: No supported projects found (.NET, Node.js, Python, "
-                "Maven, Gradle). Analyze this repository manually."
+                "Maven, Gradle, Go). Analyze this repository manually."
             )
 
         c4 = summary["c4"]
