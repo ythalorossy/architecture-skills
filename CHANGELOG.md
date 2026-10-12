@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Three kinds of unreadable manifest no longer stop the run.** A `pyproject.toml` or `pnpm-workspace.yaml` saved in Latin-1, or a `.csproj` the OS refuses to open, ended the analysis with `ERROR: internal error …` and exit 1. Each is now read through the tolerant reader, recorded, and the run finishes as `degraded`.
+- **A repository where nothing is recognised is no longer reported as a clean run.** No manifest and no entry point gave `containers: 0` with `status: ok` and an empty `warnings` list, which looks like an empty repository rather than a failed detection. It now carries a `detection` warning saying what to check, and the run is `degraded`. A repository that is understood but has no runnable part keeps reporting `ok`.
+- **A lone `requirements.txt` no longer claims the repository is Python.** A `docs/requirements.txt` pinning a Sphinx build put `Python` in `technology_stack` with no Python source anywhere.
+- **The folder overview no longer drops dependencies.** It was built from the reduced edge set, so a dependency hidden at component level because a longer path showed it disappeared from the folder diagram too, where that longer path is not drawn.
+- **A code-structure diagram that repeats the module diagram is no longer written.** A container whose modules each hold one package of the same name produced two files, one report section and one `summary.json` entry for the same picture.
+- **A missing key in `c4-facts.json` is named.** Dropping `endpoints`, `configuration` or `deployment` silently removed that section from the report and still exited 0; dropping `data_stores` gave `internal error in __main__:validate: 'data_stores'`. All seven required keys are checked up front and reported as `c4-facts.json: <key> missing; re-run analyze_repository.py`, exit 1.
+
+### Changed
+
+- **The `layout: elk` header is gone from every diagram.** No pinned renderer ever applied it: rendering with and without it produces byte-identical SVGs, because the bundled mermaid-cli has no ELK engine. The header, and a comment describing a layout that never ran, are removed. Diagrams are unchanged.
+
 ## 3.3.7 — 2026-10-11
 
 ### Fixed
@@ -57,7 +72,7 @@ Recovery release. 3.3.0–3.3.2 hardened the analyzer but also crashed on a comm
 
 - **Crash on multi-module Maven/Gradle repositories** (3.3.2). A module with framework dependencies but no `main` class next to a runnable module stopped the analysis with `internal error in scripts.c4_facts:_has_jvm_main: … is not in the subpath of …`, so no C4 output was written.
 - **C4 diagrams are rendered to SVG by default again.** Since 3.3.0 the analyzer only rendered `dependency-graph.svg` unless `--svg` was passed, so a report from the analyzer alone showed the C4 diagrams as Mermaid source. `--no-svg` or `C4_SVG=0` turns rendering off; `--svg` is still accepted and does nothing.
-- **Diagram quality.** mermaid-cli is pinned to 12.0.0 (it was 10.9.1, which ignored `layout: elk` and clipped subgraph titles). A system font replaces the embedded web font, so SVGs stay around 50 KB.
+- **Diagram quality.** mermaid-cli is pinned to 12.0.0 (it was 10.9.1, which clipped subgraph titles). A system font replaces the embedded web font, so SVGs stay around 50 KB. (Corrected in 3.3.8: this entry originally said 12.0.0 honours `layout: elk`. It does not — neither version applies it.)
 - **SVG rendering is about 2.5× faster.** The batch render introduced in 3.3.0 never worked with the real mermaid-cli and fell back to serial rendering; diagrams now render four at a time. Timeouts are back to 180 s per diagram and 600 s for the first `npx` download.
 - **Mermaid ids are unique and readable again.** Two elements whose ids slug alike (`orders-api`, `orders_api`) could merge into one box; ids had become `db_dash_sql_dash_server`. A participant named `box` in a key flow is safe now.
 - **Backticks in names and descriptions** no longer break a diagram (they render as apostrophes).
