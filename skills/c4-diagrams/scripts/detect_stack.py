@@ -20,18 +20,26 @@ def detect_stack(repo_path, index=None):
     indicators = {
         ".NET": (".sln", ".slnx", ".csproj", ".fsproj", ".vbproj"),
         "Node.js": ("package.json",),
-        "Python": ("requirements.txt", "pyproject.toml", "setup.py"),
+        "Python": ("pyproject.toml", "setup.py"),
         "Java": ("pom.xml", "build.gradle", "build.gradle.kts"),
         "Go": ("go.mod",)
     }
 
     index = RepoIndex.ensure(index, repo)
     files = index.files()
-    found = [
-        stack
-        for stack, suffixes in indicators.items()
-        if any(f.name.endswith(suffixes) for f in files)
-    ]
+
+    def has(*suffixes):
+        return any(f.name.endswith(suffixes) for f in files)
+
+    found = []
+    for stack, suffixes in indicators.items():
+        if has(*suffixes):
+            found.append(stack)
+        elif stack == "Python" and has("requirements.txt") and has(".py"):
+            # A requirements.txt is only evidence of Python with Python source
+            # beside it: a lone docs/requirements.txt pins a Sphinx build, and
+            # a repository with no .py file is not a Python project.
+            found.append(stack)
     for rel in index.by_suffix(".json"):
         if rel.name == "package.json":
             data = index.read_json(rel)

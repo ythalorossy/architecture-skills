@@ -7,11 +7,13 @@ to a detector's output shows up here. Multi-module structure must
 be asserted, not just membership, so each fixture has at least one
 producer and one consumer, and the consumer's edge list is checked.
 """
+import tempfile
 import unittest
 from pathlib import Path
 
-from helpers import SKILL  # noqa: F401  -- sets up sys.path so `scripts` is importable
+from helpers import SKILL, write  # noqa: F401  -- SKILL sets up sys.path so `scripts` is importable
 from scripts.build_graph import build_dependency_graph
+from scripts.detect_stack import detect_stack
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "repos"
 
@@ -77,6 +79,36 @@ class DetectorTest(unittest.TestCase):
         self.assertEqual(set(graph), {"acme-core", "acme-web"})
         self.assertEqual(graph["acme-core"], [])
         self.assertEqual(graph["acme-web"], ["acme-core"])
+
+
+class StackDetectionTest(unittest.TestCase):
+    """detect_stack names a language only on evidence that it is used here."""
+
+    def _detect(self, files):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            write(repo, files)
+            return detect_stack(repo)
+
+    def test_docs_requirements_alone_is_not_python(self):
+        # A Sphinx build pins its own dependencies; that is not a Python project.
+        self.assertEqual(self._detect({
+            "README.md": "# Handbook\n",
+            "docs/requirements.txt": "sphinx==7.2\n",
+            "docs/index.rst": "Handbook\n========\n",
+        }), [])
+
+    def test_requirements_with_python_source_is_python(self):
+        self.assertEqual(self._detect({
+            "requirements.txt": "flask\n",
+            "app.py": "from flask import Flask\n",
+        }), ["Python"])
+
+    def test_pyproject_alone_is_python(self):
+        # A distribution declares itself; no .py file is needed to believe it.
+        self.assertEqual(self._detect({
+            "pyproject.toml": '[project]\nname = "acme"\nversion = "1"\n',
+        }), ["Python"])
 
 
 if __name__ == "__main__":
