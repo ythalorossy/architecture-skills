@@ -117,7 +117,7 @@ GO_WEB = ("net/http", "github.com/gin-gonic/gin", "github.com/labstack/echo", "g
 
 
 def main_packages(repo, index=None):
-    """Folders holding `package main` code: [(dir, kind, technology)]."""
+    """Folders holding `package main` code: [(dir, module, kind, technology)]."""
     found = []
     for module in _modules(repo, index):
         dirs = {}

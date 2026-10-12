@@ -274,17 +274,6 @@ def _config_urls(text):
     return found
 
 
-def registry_get(registry, key, entry):
-    return registry.setdefault(key, entry)
-
-
-def _add(registry, key, entry, evidence):
-    item = registry.setdefault(key, entry)
-    if evidence and evidence not in item["evidence"] and len(item["evidence"]) < MAX_EVIDENCE:
-        item["evidence"].append(evidence)
-    return item
-
-
 # ---------- containers ----------
 
 def _dotnet_containers(repo, projects):
@@ -866,7 +855,7 @@ def _collect_facts(repo_path, graph, index=None, discovery=None):
         hosts = sorted({h for h, _, _ in hits})
         key = hosts[0] if len(hosts) == 1 else setting
         entry = new_entry(key)
-        item = registry_get(externals, key, entry)
+        item = externals.setdefault(key, entry)
         item.setdefault("hosts", set()).update(hosts)
         if len(hosts) == 1:
             item.setdefault("settings", set()).add(setting)

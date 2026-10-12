@@ -5,7 +5,7 @@ def build_dependency_graph(repo_path, include_orphans=False, index=None, discove
     """
     Map each project name to the names of the projects it references.
 
-    Covers .NET, Node.js, Python and Java projects (see projects.py). Projects
+    Covers .NET, Node.js, Python, Java and Go projects (see projects.py). Projects
     outside every solution/workspace/aggregator are left out unless
     include_orphans is set. A reference to a project that cannot be found keeps
     its name (or file stem), so it shows up as a target that is not itself a

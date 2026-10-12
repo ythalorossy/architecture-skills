@@ -457,7 +457,7 @@ class Diagram:
         for cls, ids in self.classes.items():
             out.append(f"    class {','.join(ids)} {cls}")
         for boundary in boundaries:
-            out.append(f"    style {boundary} fill:none,stroke:#444444,stroke-dasharray:6 4")
+            out.append(f"    style {boundary} {_ms.boundary_style()}")
         return "\n".join(out) + "\n"
 
 
@@ -908,7 +908,7 @@ def _graph_diagram(model, facts, container, container_fact, title, nodes, edges,
 
     out = d.text([boundary])
     for box in boxes:
-        out += f"    style {box} fill:#f4f8fc,stroke:#9fb6cc\n"
+        out += f"    style {box} {_ms.folder_style()}\n"
     return out
 
 

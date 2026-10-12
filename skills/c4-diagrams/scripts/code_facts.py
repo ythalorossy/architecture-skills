@@ -367,17 +367,6 @@ def endpoints(repo, files, owner_of):
 
 # ---------- deployment ----------
 
-def _yaml_block(lines, start, indent):
-    """Lines of a YAML block that starts after `start` and is indented more than `indent`."""
-    block = []
-    for line in lines[start:]:
-        if line.strip() and not line.lstrip().startswith("#"):
-            if len(line) - len(line.lstrip()) <= indent:
-                break
-        block.append(line)
-    return block
-
-
 def compose_services(index):
     """Every docker-compose service with image, build, ports, depends_on and environment keys."""
     services = []

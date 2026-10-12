@@ -277,7 +277,23 @@ C4_PALETTE = {
     "shared":     "#dbe9f6",
     "shared_stroke": "#5d82a8",
     "shared_text": "#000000",
+
+    # The dashed outline around a system or container boundary, and the
+    # pale box a folder of components is drawn in.
+    "boundary_stroke": "#444444",
+    "folder":     "#f4f8fc",
+    "folder_stroke": "#9fb6cc",
 }
+
+
+def boundary_style() -> str:
+    """Mermaid ``style`` body for a system or container boundary."""
+    return f"fill:none,stroke:{C4_PALETTE['boundary_stroke']},stroke-dasharray:6 4"
+
+
+def folder_style() -> str:
+    """Mermaid ``style`` body for the box around one folder of components."""
+    return f"fill:{C4_PALETTE['folder']},stroke:{C4_PALETTE['folder_stroke']}"
 
 # Formatted classDef lines (flowchart)
 def flowchart_classdef_lines() -> list[str]:

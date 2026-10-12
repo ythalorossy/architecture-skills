@@ -425,13 +425,3 @@ def generate_report(
     )
 
     return report
-
-
-def save_report(
-    report,
-    output_file
-):
-    Path(output_file).write_text(
-        report,
-        encoding="utf-8"
-    )
