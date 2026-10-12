@@ -76,7 +76,8 @@ Matching rules, in full:
   substring of its `id` or `name`;
 - roles are tried in gold order, candidates in document order, and **an
   element can satisfy at most one role** — otherwise one box called
-  "Bookshop API Web" claims two and recall is inflated;
+  "Bookshop API Web" claims two and recall is inflated. Matching is greedy
+  with no backtracking, so it can under-report recall but never over-report it;
 - relationships match by resolved role, **direction significant**;
 - a flow-step end is mapped through `components` to its owning container
   *before* the role lookup, because steps name components. The order matters

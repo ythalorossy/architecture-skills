@@ -35,7 +35,7 @@ def load_gold(path):
     Raises UserError naming the file for: unreadable or non-JSON content, an
     empty `required_elements`, a duplicate role, a relationship or flow-step
     end that is not a declared role, a `match` term claimed by two roles, or
-    a `forbidden` term that overlaps a `match` term.
+    a `forbidden` term that overlaps a `match` term, or a missing `repo`.
 
     The last two matter most: a shared match term makes role resolution
     depend on gold order, and an overlapping forbidden term scores a correct
@@ -51,6 +51,9 @@ def load_gold(path):
         raise UserError(f"not valid JSON: {exc}", path=label) from exc
     if not isinstance(gold, dict):
         raise UserError("expected a JSON object", path=label)
+
+    if not isinstance(gold.get("repo"), str) or not gold["repo"].strip():
+        raise UserError("repo is missing or empty; a gold must name the repository its evidence is checked against", path=label)
 
     elements = gold.get("required_elements") or []
     if not elements:
@@ -123,6 +126,11 @@ def _haystack(element):
     return f"{element.get('id') or ''}\n{element.get('name') or ''}".lower()
 
 
+def _is_id(value):
+    """True for a non-empty string; anything else cannot name a relationship end."""
+    return isinstance(value, str) and bool(value)
+
+
 def resolve_roles(model, gold):
     """{role: element id} for the gold roles this model satisfies.
 
@@ -131,6 +139,13 @@ def resolve_roles(model, gold):
     last rule one container called "Bookshop API Web" would satisfy both
     `web-ui` and `api`, and recall would be inflated by a model that is
     missing a container.
+
+    Matching is greedy with no backtracking, so it can under-report recall
+    (ids `payments-api` and `gateway` give `api` the first and leave
+    `payments` missed) but never over-report it.
+
+    An element whose id is not a non-empty string is skipped: it cannot take
+    part in a relationship.
 
     `kind` is not checked. Calling the catalogue index an external system
     rather than a database is a modelling choice, not a miss.
@@ -141,7 +156,7 @@ def resolve_roles(model, gold):
     for entry in gold["required_elements"]:
         terms = [str(term).lower() for term in entry.get("match") or []]
         for section, index, element in candidates:
-            if (section, index) in claimed or not element.get("id"):
+            if (section, index) in claimed or not _is_id(element.get("id")):
                 continue
             text = _haystack(element)
             if any(term in text for term in terms):
@@ -277,6 +292,8 @@ def score_hallucination(model, gold, drift):
     problems = []
     forbidden = [str(term).lower() for term in gold["forbidden"]]
     for _, _, element in _elements(model):
+        if "id" in element and not _is_id(element["id"]):
+            problems.append(f"invalid id {element['id']!r}: {element.get('name') or '?'}")
         text = _haystack(element)
         hit = next((term for term in forbidden if term in text), None)
         if hit:
@@ -304,6 +321,8 @@ def _own_evidence_problem(entry):
         return "is an absolute path, not a path inside the repository"
     if ".." in re.split(r"[\\/]", path):
         return "escapes the repository with '..'"
+    if any(len(part.encode("utf-8", "replace")) > 255 for part in re.split(r"[\\/]", path)):
+        return "does not look like a `path` or `path:line` reference"
     return None
 
 
@@ -355,8 +374,10 @@ def score_render(output_dir, repo):
         shutil.copytree(output_dir, work)
         try:
             result = render_c4.render(work, svg=False, repo_override=str(repo))
-        except UserError as exc:
-            return {"ok": False, "status": "error", "problems": [str(exc)], "drift": []}
+        except (UserError, OSError) as exc:
+            # OSError: the shipped checker stats evidence strings as paths, so
+            # an over-long one raises. That is a failed render, not a crash.
+            return {"ok": False, "status": "error", "problems": [f"render raised: {exc}"[:300]], "drift": []}
     return {
         "ok": result["status"] != "invalid",
         "status": result["status"],
@@ -455,7 +476,7 @@ def main():
     args = parser.parse_args()
 
     gold = load_gold(args.gold)
-    repo = Path(args.repo) if args.repo else REPO_ROOT / gold.get("repo", ".")
+    repo = Path(args.repo) if args.repo else REPO_ROOT / gold["repo"]
     if not repo.is_dir():
         raise UserError("repository not found; pass --repo", path=str(repo))
 

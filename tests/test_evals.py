@@ -49,6 +49,15 @@ def minimal_gold(**overrides):
 
 
 class TestLoadGold(unittest.TestCase):
+    def test_a_gold_without_repo_is_rejected(self):
+        bad = minimal_gold()
+        del bad["repo"]
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(UserError) as caught:
+                grade.load_gold(write_gold(tmp, bad))
+        self.assertIn("repo", str(caught.exception))
+        self.assertIn("gold.json", str(caught.exception))
+
     def test_the_committed_gold_is_well_formed(self):
         gold = grade.load_gold(GOLD_FILE)
         roles = [element["role"] for element in gold["required_elements"]]
@@ -500,6 +509,23 @@ class TestGrade(unittest.TestCase):
     def setUp(self):
         self.gold = grade.load_gold(GOLD_FILE)
 
+    def _grade_with(self, container):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = analyzed(tmp, json.dumps(model(containers=[container])))
+            return grade.grade(output, self.gold, BOOKSHOP)
+
+    def test_a_prose_evidence_string_is_invalid_evidence_not_a_crash(self):
+        sentence = "The API is defined in the main module and handles orders " * 6
+        scores = self._grade_with({"id": "x", "name": "X", "evidence": [sentence]})
+        self.assertEqual(scores["evidence"]["valid"], 0)
+        self.assertEqual(scores["evidence"]["total"], 1)
+        self.assertIn("path", scores["evidence"]["problems"][0])
+
+    def test_an_unhashable_id_is_reported_not_a_crash(self):
+        scores = self._grade_with({"id": ["a", "b"], "name": "Bookshop API"})
+        self.assertIn("score", scores["recall"])
+        self.assertTrue(any("invalid id" in p for p in scores["hallucination"]["problems"]))
+
     def test_the_fixture_model_scores_perfectly(self):
         with tempfile.TemporaryDirectory() as tmp:
             output = analyzed(tmp, (BOOKSHOP / "c4-model.json").read_text(encoding="utf-8"))
@@ -710,7 +736,7 @@ class TestTriggerRunner(unittest.TestCase):
     def test_bash_is_disallowed_so_the_analyzer_never_runs(self):
         command = run_triggers.command_for({"id": "t01", "prompt": "x"})
         self.assertIn("--disallowedTools", command)
-        self.assertIn("Bash", command[command.index("--disallowedTools") + 1])
+        self.assertIn("Bash", command[command.index("--disallowedTools") + 1].split(","))
 
     def test_fired_detects_the_skill_by_name(self):
         events = '{"type":"assistant","message":{"content":[{"type":"tool_use",' \
@@ -822,13 +848,13 @@ class TestRunCase(unittest.TestCase):
             run_triggers.run_case(self.CASE)
         self.assertIsNotNone(seen["cwd"])
         self.assertTrue(seen["is_dir"])
-        self.assertNotEqual(Path(seen["cwd"]).resolve(), REPO_ROOT.resolve())
+        self.assertTrue(Path(seen["cwd"]).resolve().is_relative_to(Path(tempfile.gettempdir()).resolve()))
 
     def test_the_spawned_command_disallows_bash(self):
         with mock.patch.object(run_triggers.subprocess, "run", return_value=self.completed()) as spawn:
             run_triggers.run_case(self.CASE)
         command = spawn.call_args.args[0]
-        self.assertIn("Bash", command[command.index("--disallowedTools") + 1])
+        self.assertIn("Bash", command[command.index("--disallowedTools") + 1].split(","))
 
     def test_a_timeout_is_an_error_not_a_miss(self):
         boom = subprocess.TimeoutExpired("claude", 1)
