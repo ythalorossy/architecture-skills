@@ -26,7 +26,7 @@ No supported projects were found in compose_poly (.NET projects, package.json pa
 
 > Drawn from code facts only: no `c4-model.json` yet, so people, external purposes, descriptions and key flows are missing and the System Context level is left out. Write `c4-model.json` and run `render_c4.py` to complete it.
 
-### Key
+### Diagram key
 
 What the shapes and lines in the diagrams below mean.
 
@@ -113,7 +113,11 @@ No CI pipeline or hosting configuration was found in the repository.
 
 ### Strengths
 
+[//]: # (strengths:start)
+
 No notable strengths detected automatically.
+
+[//]: # (strengths:end)
 
 ### Concerns
 
@@ -139,6 +143,9 @@ Every project or module and every reference between them, tests included. The au
 <summary>Full dependency graph</summary>
 
 ```mermaid
+---
+title: "compose_poly · Project dependency graph"
+---
 graph TD
 ```
 

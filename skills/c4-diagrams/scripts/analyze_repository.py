@@ -243,7 +243,8 @@ class RepositoryAnalyzer:
 
         mermaid = generate_mermaid(
             dependency_graph,
-            groups
+            groups,
+            title=f"{self.repo_path.name} \u00b7 Project dependency graph",
         )
 
         mermaid_file = self._work_path / "dependency-graph.mmd"

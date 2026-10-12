@@ -175,6 +175,24 @@ class FlatGroupSplitTest(unittest.TestCase):
         self.assertEqual([stem for stem, _, _, _, _ in render_c4.component_diagrams(model, facts)],
                          ["c4-component-api-part1", "c4-component-api-part2", "c4-component-api-part3"])
 
+    def test_a_folder_bigger_than_one_view_is_split_too(self):
+        """B-10 capped the flat path; a large folder beside a small one was not."""
+        groups = {"api": [f"api/f{i:02}" for i in range(26)], "ui": [f"ui/f{i:02}" for i in range(3)]}
+        views = render_c4._component_views(_graph(groups, []))
+
+        parts = self._drawn(views[1:])  # view 0 is the folder overview
+        self.assertGreater(len(parts), 1)
+        for suffix, members in parts.items():
+            self.assertLessEqual(len(members), render_c4.MAX_COMPONENTS, suffix)
+        self.assertEqual(sorted(n for members in parts.values() for n in members),
+                         sorted(n for members in groups.values() for n in members))
+
+    def test_a_split_folder_says_which_part_of_it_a_view_is(self):
+        groups = {"api": [f"api/f{i:02}" for i in range(26)], "ui": [f"ui/f{i:02}" for i in range(3)]}
+        views = render_c4._component_views(_graph(groups, []))
+
+        self.assertIn("api (1 of 2)", [subtitle for _, subtitle, _, _, _ in views])
+
     def test_components_that_share_a_folder_prefix_are_split_by_it(self):
         groups = {"": [f"src/{folder}/f{i:02}" for folder in ("api", "ui") for i in range(12)]}
         views = render_c4._component_views(_graph(groups, []))
@@ -404,6 +422,15 @@ class TitleAndKeyTest(unittest.TestCase):
         self.assertIn('title: "Bookshop \u00b7 System context"', diagrams["c4-context.mmd"])
         self.assertIn('title: "Web app"', diagrams["c4-component-bookshop-web.mmd"])
 
+    def test_the_dependency_graph_carries_a_title_too(self):
+        """It is written by the analyzer, outside the C4 renderer."""
+        with tempfile.TemporaryDirectory() as tmp:
+            run_analyzer(FIXTURES / "bookshop", tmp)
+            mermaid = (Path(tmp) / "dependency-graph.mmd").read_text(encoding="utf-8")
+
+        self.assertRegex(mermaid, r'\A---\ntitle: "[^\n]+"\n---\n')
+        self.assertIn('title: "bookshop \u00b7 Project dependency graph"', mermaid)
+
     def test_a_title_is_quoted_so_punctuation_cannot_break_the_front_matter(self):
         self.assertEqual(render_c4._with_title("flowchart TB\n", 'A "quoted": title'),
                          '---\ntitle: "A \\"quoted\\": title"\n---\nflowchart TB\n')
@@ -414,9 +441,10 @@ class TitleAndKeyTest(unittest.TestCase):
 
     def test_the_report_has_one_key_for_the_shapes_it_draws(self):
         _, report = self._rendered()
-        # "### Key flows" is a different heading; the legend is the one "### Key".
-        self.assertEqual(report.count("### Key\n"), 1)
-        key = report[report.index("### Key\n"):]
+        # The legend reads "Diagram key", so it is not mistaken for "Key flows".
+        self.assertEqual(report.count("### Diagram key\n"), 1)
+        self.assertNotIn("### Key\n", report)
+        key = report[report.index("### Diagram key\n"):]
         key = key[:key.index("### Level 1")]
         for kind in ("Person", "Container", "Data store", "Component", "External system"):
             self.assertIn(f"**{kind}**", key)

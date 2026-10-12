@@ -412,18 +412,8 @@ def _edge_label(description, technology=""):
 
 
 def _with_title(mermaid, title):
-    """The diagram with a front-matter ``title``, so a shared `.mmd` says what it is.
-
-    JSON quoting is YAML's double-quoted scalar: a colon, a quote or a
-    backslash in a container name cannot end the header early. Non-ASCII
-    characters are left as they are, so a name stays readable in the file.
-    A diagram that already carries front matter (Level 4 sets a renderer
-    option) gets the title added to it rather than a second header.
-    """
-    header = f"title: {json.dumps(str(title), ensure_ascii=False)}\n"
-    if mermaid.startswith("---\n"):
-        return "---\n" + header + mermaid[len("---\n"):]
-    return "---\n" + header + "---\n" + mermaid
+    """The diagram with a front-matter ``title`` (see mermaid_syntax.with_title)."""
+    return _ms.with_title(mermaid, title)
 
 
 class Diagram:
@@ -739,6 +729,10 @@ def _component_views(graph, overview=True, full_list="the dependency graph appen
             edges = {n: [t for t in targets if t not in shared] for n, targets in edges.items()}
         groups, named = _flat_groups(nodes, edges)
         overview = overview and named
+    elif len(nodes) > MAX_COMPONENTS:
+        # Folders, but one of them can still be too large to read on its own.
+        rank = {node: index for index, node in enumerate(_dependency_order(nodes, edges))}
+        groups = _capped({g: sorted(m, key=rank.__getitem__) for g, m in groups.items()})
 
     if len(nodes) > MAX_COMPONENTS:
         group_of = {n: g for g, members in groups.items() for n in members}
@@ -1124,7 +1118,7 @@ def _key_section(diagrams):
     rows = [f"| {symbol} | {meaning} |" for kind, symbol, meaning in _KEY_ROWS if kind in used]
     if not rows:
         return []
-    return ["### Key", "", "What the shapes and lines in the diagrams below mean.", "",
+    return ["### Diagram key", "", "What the shapes and lines in the diagrams below mean.", "",
             "| Symbol | Meaning |", "|---|---|"] + rows + [""]
 
 
@@ -1498,6 +1492,16 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
             # Executive Summary can only count projects. Now that the model is
             # loaded and valid, say what the system is made of instead.
             text = generate_docs.replace_summary(text, generate_docs.model_summary(use_model))
+            # Same reason as the summary: the analyzer could only describe the
+            # package graph, where a leaf package reads as a strength.
+            text = generate_docs.replace_strengths(
+                text,
+                generate_docs.model_strengths(
+                    use_model,
+                    _coverage(use_model, facts, result),
+                    generate_docs.graph_strengths(text),
+                ),
+            )
         report.write_text(text, encoding="utf-8")
 
     # Per-diagram SVG status for summary.json.

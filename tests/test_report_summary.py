@@ -140,5 +140,54 @@ class ExecutiveSummaryTest(unittest.TestCase):
         self.assertIn("The model of Bookshop describes", self.summary(out))
 
 
+class StrengthsTest(ExecutiveSummaryTest):
+    """With a model, a strength is a property of the model, not of the package graph."""
+
+    def strengths(self, out):
+        report = (out / "ArchitectureReport.md").read_text(encoding="utf-8")
+        start = report.index("### Strengths")
+        return report[start:report.index("### Concerns", start)]
+
+    def test_leaf_packages_are_not_strengths_of_a_modelled_system(self):
+        section = self.strengths(self.render(self.reference()))
+        self.assertNotIn("Projects with no project references", section)
+        self.assertNotIn("web/src/api", section)
+
+    def test_the_model_is_what_the_strengths_describe(self):
+        section = self.strengths(self.render(self.reference()))
+        self.assertIn("Every container says what it is responsible for.", section)
+        self.assertIn("Every container and external system points at the code that proves it.", section)
+        self.assertIn("1 key flow", section)
+
+    def test_an_undescribed_container_is_not_claimed_as_a_strength(self):
+        model = self.reference()
+        model["containers"][0].pop("description", None)
+        section = self.strengths(self.render(model))
+        self.assertNotIn("Every container says what it is responsible for.", section)
+
+    def test_an_unproven_element_is_not_claimed_as_a_strength(self):
+        model = self.reference()
+        model["containers"][0]["evidence"] = []
+        model["containers"][0]["assumption"] = True
+        section = self.strengths(self.render(model))
+        self.assertNotIn("points at the code that proves it", section)
+
+    def test_the_graph_checks_keep_their_own_line(self):
+        section = self.strengths(self.render(self.reference()))
+        self.assertIn("No circular project references.", section)
+
+    def test_without_a_model_the_graph_strengths_are_kept(self):
+        section = self.strengths(self.render(None))
+        self.assertIn("Projects with no project references", section)
+
+    def test_rerendering_keeps_one_strengths_section(self):
+        out = self.render(self.reference())
+        with contextlib.redirect_stdout(io.StringIO()):
+            render_c4.render(str(out), svg=False)
+        report = (out / "ArchitectureReport.md").read_text(encoding="utf-8")
+        self.assertEqual(report.count("Every container says what it is responsible for."), 1)
+        self.assertEqual(report.count("[//]: # (strengths:start)"), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,7 +1,9 @@
 """
 Mermaid syntax in one place:
-id allocation per diagram kind, text escaping per diagram kind, and the C4 palette.
+id allocation per diagram kind, text escaping per diagram kind, the front-matter
+title, and the C4 palette.
 """
+import json
 import re
 
 
@@ -320,3 +322,18 @@ def shared_style() -> str:
         f"fill:{C4_PALETTE['shared']},stroke:{C4_PALETTE['shared_stroke']},"
         f"color:{C4_PALETTE['shared_text']},stroke-dasharray:4 3"
     )
+
+
+def with_title(mermaid: str, title: str) -> str:
+    """The diagram with a front-matter ``title``, so a shared `.mmd` says what it is.
+
+    JSON quoting is YAML's double-quoted scalar: a colon, a quote or a
+    backslash in a container name cannot end the header early. Non-ASCII
+    characters are left as they are, so a name stays readable in the file.
+    A diagram that already carries front matter (Level 4 sets a renderer
+    option) gets the title added to it rather than a second header.
+    """
+    header = f"title: {json.dumps(str(title), ensure_ascii=False)}\n"
+    if mermaid.startswith("---\n"):
+        return "---\n" + header + mermaid[len("---\n"):]
+    return "---\n" + header + "---\n" + mermaid

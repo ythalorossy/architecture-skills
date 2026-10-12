@@ -30,6 +30,11 @@ ASSETS_DIR = (
 SUMMARY_START = "[//]: # (summary:start)"
 SUMMARY_END = "[//]: # (summary:end)"
 
+# The Strengths list is written twice for the same reason, from the graph
+# here and from the model once it has been read.
+STRENGTHS_START = "[//]: # (strengths:start)"
+STRENGTHS_END = "[//]: # (strengths:end)"
+
 TEST_PROJECT = re.compile(
     r"(^|[.\-_])(Unit|Integration|Functional|Acceptance|E2E)?(Tests?|Specs?)$",
     re.IGNORECASE
@@ -90,6 +95,82 @@ def model_summary(model):
         paragraphs.append(description if description.endswith((".", "!", "?")) else description + ".")
     paragraphs.append(f"The model of {name} describes {_listed(counts)}.")
     return "\n\n".join(paragraphs)
+
+
+def model_strengths(model, coverage, graph_strengths=()):
+    """What a reader can rely on in a repository that has a model.
+
+    The graph-derived list answers "which packages depend on nothing?",
+    which is a fact about packaging, not a strength of the architecture: a
+    leaf package is not a good sign or a bad one. With a model, a strength
+    is something the model proves — every container explained, every
+    element backed by code, the flows written down. Each line is checked,
+    so the section stays empty rather than flattering a thin model.
+    """
+    strengths = []
+
+    covered, total = coverage.get("facts") or [0, 0]
+    if total and covered == total:
+        strengths.append("Every container, data store and external system found in the code is in the model.")
+
+    described, containers = coverage.get("containers_described") or [0, 0]
+    if containers and described == containers:
+        strengths.append("Every container says what it is responsible for.")
+
+    described, components = coverage.get("components_described") or [0, 0]
+    if components and described == components:
+        strengths.append("Every component says what it does.")
+
+    people = model.get("people") or []
+    if people:
+        names = [str(p.get("name") or p.get("id") or "").strip() for p in people]
+        strengths.append("The model names who the system is for: " + _listed([n for n in names if n]) + ".")
+
+    flows = model.get("flows") or []
+    if flows:
+        titles = [str(f.get("name") or f.get("title") or f.get("id") or "").strip() for f in flows]
+        named = _listed([t for t in titles if t])
+        verb = "is" if len(flows) == 1 else "are"
+        strengths.append(f"{_count(len(flows), 'key flow')} {verb} written down end to end: {named}.")
+
+    if not _unproven(model):
+        strengths.append("Every container and external system points at the code that proves it.")
+
+    return strengths + [s for s in graph_strengths if s.startswith("No circular")]
+
+
+def _unproven(model):
+    """Containers or systems a reader would have to take on trust.
+
+    People are left out: a role is a judgement about the world, not
+    something a repository can prove, and every model would lose the line.
+    """
+    for section in ("containers", "external_systems"):
+        for element in model.get(section) or []:
+            if element.get("assumption") or not element.get("evidence"):
+                return True
+    return False
+
+
+def graph_strengths(text):
+    """The strengths already in the report, so the dependency-graph checks survive a rewrite."""
+    marked = re.compile(re.escape(STRENGTHS_START) + "(.*?)" + re.escape(STRENGTHS_END), re.DOTALL)
+    found = marked.search(text)
+    if not found:
+        return []
+    return [line.lstrip("- ").strip() for line in found.group(1).splitlines() if line.startswith("- ")]
+
+
+def replace_strengths(text, strengths):
+    """Swap the marked Strengths list in `text`. Unmarked text is left alone."""
+    marked = re.compile(re.escape(STRENGTHS_START) + ".*?" + re.escape(STRENGTHS_END), re.DOTALL)
+    if not marked.search(text):
+        return text
+    body = "\n".join(f"- {line}" for line in strengths) if strengths else (
+        "The model does not show one yet; see the Coverage line under Architecture (C4 model)."
+    )
+    block = "\n\n".join([STRENGTHS_START, body, STRENGTHS_END])
+    return marked.sub(lambda _: block, text)
 
 
 def replace_summary(text, paragraph):
