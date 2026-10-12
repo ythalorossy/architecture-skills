@@ -113,5 +113,85 @@ class TestLoadGold(unittest.TestCase):
         self.assertIn("not valid JSON", str(caught.exception))
 
 
+def model(**overrides):
+    """A small candidate model; override any section for a specific case."""
+    base = {
+        "system": {"name": "Bookshop"},
+        "people": [{"id": "reader", "name": "Reader"}],
+        "containers": [
+            {"id": "bookshop-web", "name": "Web app"},
+            {"id": "bookshop-api", "name": "Bookshop API"},
+            {"id": "db-postgresql", "name": "Orders database", "type": "database"},
+            {"id": "db-elasticsearch", "name": "Catalogue index", "type": "database"},
+        ],
+        "external_systems": [{"id": "ext-payments", "name": "Payment provider"}],
+        "relationships": [
+            {"from": "reader", "to": "bookshop-web"},
+            {"from": "bookshop-web", "to": "bookshop-api"},
+            {"from": "bookshop-api", "to": "db-postgresql"},
+            {"from": "bookshop-api", "to": "db-elasticsearch"},
+            {"from": "bookshop-api", "to": "ext-payments"},
+        ],
+        "components": {
+            "bookshop-web": {"web/src/api": "Fetch wrappers"},
+            "bookshop-api": {"bookshop.orders": "Places an order"},
+        },
+        "flows": [{"id": "place-order", "name": "Buy", "steps": [
+            {"from": "bookshop.orders", "to": "ext-payments"},
+            {"from": "bookshop.orders", "to": "db-postgresql"},
+        ]}],
+    }
+    base.update(overrides)
+    return base
+
+
+class TestResolveRoles(unittest.TestCase):
+    def setUp(self):
+        self.gold = grade.load_gold(GOLD_FILE)
+
+    def test_every_role_resolves_on_a_good_model(self):
+        matched = grade.resolve_roles(model(), self.gold)
+        self.assertEqual(matched, {
+            "reader": "reader",
+            "web-ui": "bookshop-web",
+            "api": "bookshop-api",
+            "orders-db": "db-postgresql",
+            "catalogue-index": "db-elasticsearch",
+            "payments": "ext-payments",
+        })
+
+    def test_a_synonym_name_still_matches(self):
+        candidate = model(containers=[
+            {"id": "c1", "name": "Storefront"},
+            {"id": "c2", "name": "Backend"},
+        ])
+        matched = grade.resolve_roles(candidate, self.gold)
+        self.assertEqual(matched.get("web-ui"), "c1")
+        self.assertEqual(matched.get("api"), "c2")
+
+    def test_one_element_cannot_satisfy_two_roles(self):
+        """'Bookshop API Web' matches both web-ui and api; it may claim one."""
+        candidate = model(containers=[{"id": "only", "name": "Bookshop API Web"}])
+        matched = grade.resolve_roles(candidate, self.gold)
+        claimed = [role for role, element_id in matched.items() if element_id == "only"]
+        self.assertEqual(len(claimed), 1, matched)
+        self.assertEqual(claimed, ["web-ui"], "gold order decides: web-ui is listed first")
+
+    def test_the_id_is_matched_as_well_as_the_name(self):
+        candidate = model(containers=[{"id": "bookshop-api", "name": "Service"}])
+        self.assertEqual(grade.resolve_roles(candidate, self.gold).get("api"), "bookshop-api")
+
+    def test_matching_is_case_insensitive(self):
+        candidate = model(containers=[{"id": "x", "name": "ELASTICSEARCH"}])
+        self.assertEqual(grade.resolve_roles(candidate, self.gold).get("catalogue-index"), "x")
+
+    def test_an_empty_model_resolves_nothing(self):
+        self.assertEqual(grade.resolve_roles({}, self.gold), {})
+
+    def test_a_non_dict_element_is_skipped(self):
+        candidate = model(containers=["oops", {"id": "bookshop-api", "name": "API"}])
+        self.assertEqual(grade.resolve_roles(candidate, self.gold).get("api"), "bookshop-api")
+
+
 if __name__ == "__main__":
     unittest.main()

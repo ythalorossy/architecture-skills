@@ -89,3 +89,58 @@ def load_gold(path):
     gold.setdefault("required_flow_steps", [])
     gold.setdefault("forbidden", [])
     return gold
+
+
+SECTIONS = ("people", "containers", "external_systems")
+
+
+def _elements(model):
+    """[(section, index, element)] in document order, skipping non-dict entries.
+
+    Document order is people, then containers, then external_systems, each in
+    file order. It is what makes "the first candidate wins" reproducible.
+    """
+    found = []
+    for section in SECTIONS:
+        for index, element in enumerate(model.get(section) or []):
+            if isinstance(element, dict):
+                found.append((section, index, element))
+    return found
+
+
+def _haystack(element):
+    """The element's id and name, lower-cased, for substring matching."""
+    return f"{element.get('id') or ''}\n{element.get('name') or ''}".lower()
+
+
+def resolve_roles(model, gold):
+    """{role: element id} for the gold roles this model satisfies.
+
+    Roles are tried in gold order; candidates in document order; the first
+    unclaimed match wins and is then unavailable to later roles. Without that
+    last rule one container called "Bookshop API Web" would satisfy both
+    `web-ui` and `api`, and recall would be inflated by a model that is
+    missing a container.
+
+    `kind` is not checked. Calling the catalogue index an external system
+    rather than a database is a modelling choice, not a miss.
+    """
+    candidates = _elements(model)
+    claimed = set()
+    matched = {}
+    for entry in gold["required_elements"]:
+        terms = [str(term).lower() for term in entry.get("match") or []]
+        for section, index, element in candidates:
+            if (section, index) in claimed:
+                continue
+            text = _haystack(element)
+            if any(term in text for term in terms):
+                matched[entry["role"]] = element.get("id")
+                claimed.add((section, index))
+                break
+    return matched
+
+
+def _role_of(matched):
+    """{element id: role}, the reverse of resolve_roles' result."""
+    return {element_id: role for role, element_id in matched.items() if element_id}
