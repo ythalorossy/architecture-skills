@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- **Level 3 says who calls the container.** A container's component diagram drew only its own components and the stores they use: the Web app's Level 3 showed neither the Reader who uses it nor the API it calls, so Level 2 and Level 3 described different systems. The people, containers and systems the model relates to the container are now drawn around its boundary, with the labels Level 2 already uses.
 - **Three kinds of unreadable manifest no longer stop the run.** A `pyproject.toml` or `pnpm-workspace.yaml` saved in Latin-1, or a `.csproj` the OS refuses to open, ended the analysis with `ERROR: internal error …` and exit 1. Each is now read through the tolerant reader, recorded, and the run finishes as `degraded`.
 - **A repository where nothing is recognised is no longer reported as a clean run.** No manifest and no entry point gave `containers: 0` with `status: ok` and an empty `warnings` list, which looks like an empty repository rather than a failed detection. It now carries a `detection` warning saying what to check, and the run is `degraded`. A repository that is understood but has no runnable part keeps reporting `ok`.
 - **A lone `requirements.txt` no longer claims the repository is Python.** A `docs/requirements.txt` pinning a Sphinx build put `Python` in `technology_stack` with no Python source anywhere.

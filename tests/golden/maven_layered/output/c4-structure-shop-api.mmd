@@ -16,6 +16,8 @@ flowchart TB
     shop_api__api --> shop_application__application
     shop_application__application --> shop_domain__domain
     shop_infrastructure__infrastructure --> shop_domain__domain
+    db_redis[("Redis<br/>[Container: Redis]")]
+    boundary -->|"Reads/writes"| db_redis
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff
@@ -23,6 +25,7 @@ flowchart TB
     classDef external fill:#999999,stroke:#6b6b6b,color:#ffffff
     classDef shared fill:#dbe9f6,stroke:#5d82a8,color:#000000,stroke-dasharray:4 3
     class shop_api__api,shop_application__application,shop_domain__domain,shop_infrastructure__infrastructure component
+    class db_redis container
     style boundary fill:none,stroke:#444444,stroke-dasharray:6 4
     style module_shop_api fill:#f4f8fc,stroke:#9fb6cc
     style module_shop_application fill:#f4f8fc,stroke:#9fb6cc

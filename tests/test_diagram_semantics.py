@@ -267,6 +267,65 @@ class SplitPartsTest(unittest.TestCase):
         self.assertIn("a00 -.-> b00", mermaid)
 
 
+class ContainerContextTest(unittest.TestCase):
+    """Level 3 shows who calls the container and what the container calls.
+
+    Level 2 draws the Reader using the Web app and the Web app calling the
+    API; the Web app's own component diagram drew neither, so the two levels
+    contradicted each other. The neighbours are now drawn around the
+    container boundary, with the relationship label from the model.
+    """
+
+    MODEL = {
+        "system": {"name": "Bookshop"},
+        "people": [{"id": "reader", "name": "Reader", "description": "Buys books"}],
+        "containers": [
+            {"id": "web", "name": "Web app", "technology": "React"},
+            {"id": "api", "name": "API", "technology": "FastAPI"},
+            {"id": "db", "name": "Orders database", "technology": "PostgreSQL", "type": "database"},
+        ],
+        "external_systems": [{"id": "payments", "name": "Payment provider"}],
+        "relationships": [
+            {"from": "reader", "to": "web", "description": "Buys books using", "technology": "HTTPS"},
+            {"from": "web", "to": "api", "description": "Calls", "technology": "JSON/HTTPS"},
+            {"from": "api", "to": "db", "description": "Stores orders in"},
+            {"from": "api", "to": "payments", "description": "Charges cards with"},
+        ],
+    }
+
+    def _diagram(self, container_id, facts=None, nodes=None, usage_key="used_by_components"):
+        facts = facts or {"data_stores": [], "external_systems": []}
+        nodes = nodes or {"src/api": {"group": ""}}
+        return render_c4._graph_diagram(
+            self.MODEL, facts, {"id": container_id}, {"id": container_id},
+            "Web app", nodes, {}, {}, usage_key)
+
+    def test_the_caller_and_the_callee_are_drawn_around_the_boundary(self):
+        mermaid = self._diagram("web")
+        boundary_end = mermaid.index("\n    end\n")
+        self.assertGreater(mermaid.index("Reader"), boundary_end, "context belongs outside the boundary")
+        self.assertIn('reader -->|"Buys books using<br/>[HTTPS]"| boundary', mermaid)
+        self.assertIn('boundary -->|"Calls<br/>[JSON/HTTPS]"| api', mermaid)
+        self.assertIn("class reader person", mermaid)
+
+    def test_a_neighbour_of_another_container_is_left_out(self):
+        mermaid = self._diagram("web")
+        self.assertNotIn("Orders database", mermaid)
+        self.assertNotIn("Payment provider", mermaid)
+
+    def test_a_store_the_components_use_is_not_drawn_twice(self):
+        facts = {
+            "data_stores": [{"id": "db", "name": "Orders database", "technology": "PostgreSQL",
+                             "used_by_components": {"api": ["bookshop.orders"]}}],
+            "external_systems": [],
+        }
+        mermaid = self._diagram("api", facts, nodes={"bookshop.orders": {"group": ""}})
+        self.assertEqual(mermaid.count("Orders database"), 1)
+        # The component-level edge says more than one from the boundary.
+        self.assertIn("bookshop_orders -->", mermaid)
+        self.assertNotIn("boundary -->|\"Stores orders in\"| db", mermaid)
+
+
 class ComposeTest(unittest.TestCase):
     """docker-compose.yml is read the same way everywhere, comments included."""
 

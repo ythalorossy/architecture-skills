@@ -650,6 +650,39 @@ def _container_lookup(model):
     return by_fact
 
 
+def _context_nodes(diagram, model, container, boundary_key):
+    """Draw the people, containers and systems this container talks to, around its boundary.
+
+    Level 2 shows who calls the container and what it calls; without the
+    same neighbours on Level 3 the two levels contradict each other. Only
+    direct model relationships are drawn — the facts say which component
+    uses a store, and those edges are already on the diagram, so a neighbour
+    already drawn is left alone.
+    """
+    by_id = {}
+    for section in ("people", "containers", "external_systems"):
+        for element in model.get(section) or []:
+            by_id.setdefault(element.get("id"), (element, section))
+    for r in _merge_relationships(model.get("relationships") or []):
+        if r["from"] == container["id"]:
+            other, inbound = r["to"], False
+        elif r["to"] == container["id"]:
+            other, inbound = r["from"], True
+        else:
+            continue
+        found = by_id.get(other)
+        if found is None or other in diagram:
+            continue
+        element, section = found
+        if section == "containers" and element.get("external"):
+            diagram.node(element["id"], _label(element["name"], "Software System", element.get("description")), "external")
+        else:
+            _element_node(diagram, element, section)
+        label = _edge_label(r.get("description"), r.get("technology"))
+        ends = (other, boundary_key) if inbound else (boundary_key, other)
+        diagram.edge(*ends, label)
+
+
 def _graph_diagram(model, facts, container, container_fact, title, nodes, edges, texts, usage_key):
     """One component-style diagram: nodes inside the container boundary (grouped by module when
     there are several), edges between them, and the stores/external systems they use."""
@@ -657,7 +690,8 @@ def _graph_diagram(model, facts, container, container_fact, title, nodes, edges,
     relationship_text = {(r["from"], r["to"]): r for r in model["relationships"]}
     d = Diagram()
     short = _short_names(list(nodes))
-    boundary = d.internal("boundary")
+    boundary_key = _ms.IdAllocator.internal_key("boundary")
+    boundary = d.id(boundary_key)
     d.lines.append(f'    subgraph {boundary}["{_clean(title)} [Container]"]')
     regular = [n for n, info in nodes.items() if not info.get("shared") and not info.get("stub")]
     shared = [n for n, info in nodes.items() if info.get("shared")]
@@ -718,6 +752,8 @@ def _graph_diagram(model, facts, container, container_fact, title, nodes, edges,
             r = relationship_text.get((container["id"], element["id"]), {})
             for user in users:
                 d.edge(user, element["id"], _edge_label(r.get("description", "Uses"), r.get("technology")))
+
+    _context_nodes(d, model, container, boundary_key)
 
     out = d.text([boundary])
     for box in boxes:

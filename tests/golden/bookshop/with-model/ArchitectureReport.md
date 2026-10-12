@@ -120,6 +120,8 @@ flowchart TB
     bookshop_orders -->|"Stores orders in<br/>[psycopg]"| db_postgresql
     ext_payments_example["Payment provider<br/>[Software System]<br/>Charges the reader's card for an<br/>order"]
     bookshop_payments -->|"Charges cards with<br/>[HTTPS, httpx]"| ext_payments_example
+    bookshop_web["Web app<br/>[Container: React, Vite]<br/>Search and checkout pages in the<br/>browser"]
+    bookshop_web -->|"Searches books and places<br/>orders through<br/>[JSON/HTTPS]"| boundary
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff
@@ -127,7 +129,7 @@ flowchart TB
     classDef external fill:#999999,stroke:#6b6b6b,color:#ffffff
     classDef shared fill:#dbe9f6,stroke:#5d82a8,color:#000000,stroke-dasharray:4 3
     class bookshop_main,bookshop_orders,bookshop_payments,bookshop_search component
-    class db_elasticsearch,db_postgresql container
+    class db_elasticsearch,db_postgresql,bookshop_web container
     class ext_payments_example external
     style boundary fill:none,stroke:#444444,stroke-dasharray:6 4
 ```
@@ -141,6 +143,10 @@ flowchart TB
         web_src_api["src/api<br/>[Component]<br/>Fetch wrappers for the API's book<br/>and order endpoints"]
     end
     web_src__files --> web_src_api
+    reader("Reader<br/>[Person]<br/>Searches the catalogue and buys<br/>books")
+    reader -->|"Finds and buys books using<br/>[HTTPS]"| boundary
+    bookshop_api["Bookshop API<br/>[Container: Python, FastAPI]<br/>Searches the catalogue and places<br/>orders"]
+    boundary -->|"Searches books and places<br/>orders through<br/>[JSON/HTTPS]"| bookshop_api
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff
@@ -148,6 +154,8 @@ flowchart TB
     classDef external fill:#999999,stroke:#6b6b6b,color:#ffffff
     classDef shared fill:#dbe9f6,stroke:#5d82a8,color:#000000,stroke-dasharray:4 3
     class web_src__files,web_src_api component
+    class reader person
+    class bookshop_api container
     style boundary fill:none,stroke:#444444,stroke-dasharray:6 4
 ```
 
