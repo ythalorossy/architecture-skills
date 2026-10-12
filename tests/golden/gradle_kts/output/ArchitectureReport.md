@@ -25,10 +25,6 @@ gradle_kts has 2 projects (2 production, 0 test) with 1 project references betwe
 ### Level 2: Containers
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
     subgraph boundary["`**gradle_kts** [Software System]`"]
         gradle_kts["`**gradle_kts**
@@ -55,10 +51,6 @@ For each container: the modules it is built from (when it has several), then the
 #### gradle_kts
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
     subgraph boundary["`**gradle_kts** [Container]`"]
         core["`**core**

@@ -25,10 +25,6 @@ node_workspace has 2 projects (2 production, 0 test) with 1 project references b
 ### Level 2: Containers
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
     subgraph boundary["`**node_workspace** [Software System]`"]
         node_workspace["`**node_workspace**
@@ -55,10 +51,6 @@ For each container: the modules it is built from (when it has several), then the
 #### node_workspace
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
     subgraph boundary["`**node_workspace** [Container]`"]
         acme_core["`**core**

@@ -27,10 +27,6 @@ bookshop has 6 projects (6 production, 0 test) with 4 project references between
 ### Level 2: Containers
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
     subgraph boundary["`**bookshop** [Software System]`"]
         bookshop_api["`**bookshop-api**
@@ -80,10 +76,6 @@ For each container: the modules it is built from (when it has several), then the
 #### bookshop-api
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
     subgraph boundary["`**bookshop-api** [Container]`"]
         bookshop_main["`**main**
@@ -122,10 +114,6 @@ flowchart TB
 #### bookshop-web
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
     subgraph boundary["`**bookshop-web** [Container]`"]
         web_src__files["`**src (root files)**
@@ -149,10 +137,6 @@ flowchart TB
 #### docker compose
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
     subgraph host["`**Docker host** [docker compose]`"]
         svc_db[("`**db**

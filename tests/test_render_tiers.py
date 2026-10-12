@@ -25,7 +25,11 @@ from scripts.render_c4 import validate  # noqa: E402
 
 
 def _facts_with_two_containers():
-    """Tiny c4-facts.json with two containers and no other sections."""
+    """Tiny c4-facts.json with two containers and every other section empty.
+
+    Every key render() needs is present: a missing one is a hard error now
+    (see tests/test_cli.py FactsKeyContractTest).
+    """
     return {
         "repository": "demo",
         "containers": [
@@ -39,6 +43,9 @@ def _facts_with_two_containers():
         "data_stores": [],
         "external_systems": [],
         "relationships": [],
+        "endpoints": [],
+        "deployment": {},
+        "configuration": {},
     }
 
 

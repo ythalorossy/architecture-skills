@@ -25,10 +25,6 @@ python_dist has 2 projects (2 production, 0 test) with 1 project references betw
 ### Level 2: Containers
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
     subgraph boundary["`**python_dist** [Software System]`"]
         python_dist["`**python_dist**
@@ -55,10 +51,6 @@ For each container: the modules it is built from (when it has several), then the
 #### python_dist
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
     subgraph boundary["`**python_dist** [Container]`"]
         acme_core["`**acme-core**

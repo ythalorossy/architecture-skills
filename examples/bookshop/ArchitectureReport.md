@@ -47,10 +47,6 @@ Online shop where readers find books and buy them
 <summary>Mermaid source</summary>
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
     reader("`**Reader**
 [Person]
@@ -95,10 +91,6 @@ and filled by the catalogue team`"]
 <summary>Mermaid source</summary>
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
     reader("`**Reader**
 [Person]
@@ -170,10 +162,6 @@ For each container: the modules it is built from (when it has several), then the
 <summary>Mermaid source</summary>
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
     subgraph boundary["`**Bookshop API** [Container]`"]
         bookshop_main["`**main**
@@ -236,10 +224,6 @@ order`"]
 <summary>Mermaid source</summary>
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
     subgraph boundary["`**Web app** [Container]`"]
         web_src__files["`**src (root files)**
@@ -340,10 +324,6 @@ sequenceDiagram
 <summary>Mermaid source</summary>
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
     subgraph host["`**Docker host** [docker compose]`"]
         svc_db[("`**db**

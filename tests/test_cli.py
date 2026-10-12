@@ -1,4 +1,6 @@
-"""CLI contract tests: the Python 3.11 guard, file-qualified errors, --debug."""
+"""CLI contract tests: the Python 3.11 guard, file-qualified errors, --debug,
+and the c4-facts.json key contract render_c4 checks before it draws anything."""
+import json
 import subprocess
 import sys
 import tempfile
@@ -129,6 +131,79 @@ class CliTest(unittest.TestCase):
             )
             self.assertEqual(code, 0, err)
             self.assertFalse(any(out_dir.rglob("*.svg")), err)
+
+
+# Every key render() reads out of c4-facts.json without a default.
+REQUIRED_FACTS_KEYS = (
+    "containers", "data_stores", "external_systems", "relationships",
+    "endpoints", "deployment", "configuration",
+)
+
+# A c4-facts.json with every required key present and nothing to draw.
+MINIMAL_FACTS = {
+    "repository": "demo",
+    "containers": [],
+    "data_stores": [],
+    "external_systems": [],
+    "relationships": [],
+    "endpoints": [],
+    "deployment": {},
+    "configuration": {},
+}
+
+
+class FactsKeyContractTest(unittest.TestCase):
+    """A c4-facts.json missing a key render() needs is named, not ignored.
+
+    Before this check, dropping `endpoints`, `configuration` or `deployment`
+    made render() exit 0 with those report sections silently gone, and
+    dropping `data_stores` raised an opaque internal KeyError.
+    """
+
+    def _write_facts(self, folder, drop=None):
+        facts = dict(MINIMAL_FACTS)
+        if drop is not None:
+            del facts[drop]
+        (folder / "c4-facts.json").write_text(json.dumps(facts), encoding="utf-8")
+
+    def test_complete_facts_render(self):
+        from scripts.render_c4 import render
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            self._write_facts(out)
+            self.assertEqual(render(out, svg=False)["status"], "ok")
+
+    def test_every_missing_key_is_reported(self):
+        from scripts.cli_support import UserError
+        from scripts.render_c4 import render
+
+        for key in REQUIRED_FACTS_KEYS:
+            with self.subTest(key=key), tempfile.TemporaryDirectory() as tmp:
+                out = Path(tmp)
+                self._write_facts(out, drop=key)
+                with self.assertRaises(UserError) as raised:
+                    render(out, svg=False)
+                self.assertEqual(
+                    str(raised.exception),
+                    f"c4-facts.json: {key} missing; re-run analyze_repository.py",
+                )
+
+    def test_cli_exits_1_without_a_traceback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            self._write_facts(out, drop="data_stores")
+
+            code, stdout, err = run(RENDER, str(out), "--no-svg")
+
+            self.assertEqual(code, 1, err)
+            self.assertIn(
+                "ERROR: c4-facts.json: data_stores missing; re-run analyze_repository.py",
+                err,
+            )
+            self.assertNotIn("internal error", err)
+            self.assertNotIn("Traceback", err)
+            self.assertNotIn("Traceback", stdout)
 
 
 if __name__ == "__main__":

@@ -25,10 +25,6 @@ maven_multi has 2 projects (2 production, 0 test) with 1 project references betw
 ### Level 2: Containers
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
     subgraph boundary["`**maven_multi** [Software System]`"]
         maven_multi["`**maven_multi**
@@ -55,10 +51,6 @@ For each container: the modules it is built from (when it has several), then the
 #### maven_multi
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
     subgraph boundary["`**maven_multi** [Container]`"]
         acme_core["`**acme-core**

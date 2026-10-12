@@ -25,10 +25,6 @@ maven_layered has 4 projects (4 production, 0 test) with 4 project references be
 ### Level 2: Containers
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
     subgraph boundary["`**maven_layered** [Software System]`"]
         shop_api["`**shop-api**
@@ -60,10 +56,6 @@ For each container: the modules it is built from (when it has several), then the
 #### shop-api
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
     subgraph boundary["`**shop-api** [Container]`"]
         shop_api["`**shop-api**
@@ -96,10 +88,6 @@ flowchart TB
 #### shop-api · code structure
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
     subgraph boundary["`**shop-api · code structure** [Container]`"]
         subgraph module_shop_api["`shop-api`"]

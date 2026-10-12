@@ -41,6 +41,15 @@ BLOCK_START = "[//]: # (c4:start)"
 BLOCK_END = "[//]: # (c4:end)"
 OLD_MARKERS = ("<!-- c4:start -->", "<!-- c4:end -->")
 
+# Every key rendering reads out of c4-facts.json without a default. A missing
+# one used to go unnoticed (`endpoints`, `configuration` and `deployment` just
+# dropped their report section) or surface as an opaque KeyError
+# (`data_stores`), so they are checked once, up front, by name.
+REQUIRED_FACTS = (
+    "containers", "data_stores", "external_systems", "relationships",
+    "endpoints", "deployment", "configuration",
+)
+
 # C4 colours, defined once in mermaid_syntax.
 STYLES = _ms.flowchart_classdef_lines()
 
@@ -347,7 +356,7 @@ class Diagram:
         self.lines.append(f"    {self.id(source)} {arrow}{label} {self.id(target)}")
 
     def text(self, boundaries=()):
-        out = ["---", "config:", "  layout: elk", "---", "flowchart TB"] + self.lines + ["    " + s for s in STYLES]
+        out = ["flowchart TB"] + self.lines + ["    " + s for s in STYLES]
         for cls, ids in self.classes.items():
             out.append(f"    class {','.join(ids)} {cls}")
         for boundary in boundaries:
@@ -466,6 +475,31 @@ def _short_names(nodes):
     return {n: (n[len(prefix):] if prefix and n.startswith(prefix) and len(n) > len(prefix) else n) for n in nodes}
 
 
+def _component_label(node, info, short):
+    """The text drawn in a component box."""
+    return (info.get("label") or short[node]).replace(" (files)", " (root files)")
+
+
+def _drawn_graph(graph):
+    """What a component-style diagram of ``graph`` shows: box labels and the
+    edges between them.
+
+    The node keys are left out on purpose. A container's modules and the code
+    structure inside them are keyed differently (``internal/store`` against
+    ``internal/store::internal/store``) while drawing the very same picture,
+    and that is what makes one of the two views worth skipping.
+    """
+    nodes = graph.get("nodes") or {}
+    short = _short_names(list(nodes))
+    labels = {node: _component_label(node, info, short) for node, info in nodes.items()}
+    edges = {
+        (labels[source], labels[target])
+        for source, targets in (graph.get("edges") or {}).items() if source in labels
+        for target in targets if target in labels
+    }
+    return set(labels.values()), edges
+
+
 def _transitive_reduction(edges):
     """Drop an edge only while another path still connects its ends (safe with cycles)."""
     current = {a: list(targets) for a, targets in edges.items()}
@@ -524,7 +558,10 @@ def _component_views(graph, overview=True, full_list="the dependency graph appen
     if len(nodes) > MAX_COMPONENTS and len(groups) > 1:
         group_of = {n: (nodes[n]["group"] or "(root)") for n in nodes}
         group_edges = {}
-        for source, targets in edges.items():
+        # From the raw edges, not the reduced ones: hiding A → C is only
+        # readable when A → B → C is drawn beside it, and the folder overview
+        # draws neither, so a reduced edge would silently drop a folder arrow.
+        for source, targets in all_edges.items():
             for target in targets:
                 a, b = group_of[source], group_of[target]
                 if a != b:
@@ -612,7 +649,7 @@ def _graph_diagram(model, facts, container, container_fact, title, nodes, edges,
     stubs = [n for n, info in nodes.items() if info.get("stub")]
 
     def label_of(node):
-        return (nodes[node].get("label") or short[node]).replace(" (files)", " (root files)")
+        return _component_label(node, nodes[node], short)
 
     modules = {}
     for node in regular:
@@ -644,8 +681,9 @@ def _graph_diagram(model, facts, container, container_fact, title, nodes, edges,
             if source in nodes and target in nodes:
                 d.edge(source, target, dashed=bool(nodes[target].get("stub")))
 
-    # ELK puts every top-level component in one row; invisible links
-    # stack them in rows of ROW_WIDTH so wide diagrams stay readable.
+    # A component nothing points at shares the first row with every other
+    # one, so a container with many of them comes out as a single very wide
+    # strip. Invisible links stack them in rows of ROW_WIDTH instead.
     if not boxes:
         targeted = {t for targets in edges.values() for t in targets}
         roots = [n for n in regular if n not in targeted]
@@ -688,7 +726,8 @@ def component_diagrams(model, facts):
         texts = descriptions.get(container["id"]) or {}
 
         components = container_fact.get("components") or {}
-        if len(components.get("nodes", {})) >= 2:
+        has_modules = len(components.get("nodes", {})) >= 2
+        if has_modules:
             for suffix, subtitle, nodes, edges, notes in _component_views(components):
                 title = container["name"] + (f" / {subtitle}" if subtitle else "")
                 stem = f"c4-component-{container['id']}{suffix}"
@@ -696,8 +735,11 @@ def component_diagrams(model, facts):
                 results.append((stem, title, mermaid, notes, "modules"))
 
         code = container_fact.get("code_components") or {}
-        if len(code.get("nodes", {})) >= 2:
-            has_modules = len(components.get("nodes", {})) >= 2
+        # A module holding one package named after it draws the same boxes and
+        # the same arrows as the module view above; a second copy of a diagram
+        # is not a second level of detail, so it is left out.
+        echoes_modules = has_modules and _drawn_graph(code) == _drawn_graph(components)
+        if len(code.get("nodes", {})) >= 2 and not echoes_modules:
             for suffix, subtitle, nodes, edges, notes in _component_views(
                 code, overview=not has_modules, full_list="c4-facts.json (`code_components`)"
             ):
@@ -989,6 +1031,11 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
             f"{facts_file} not found; run analyze_repository.py first"
         )
     facts = json.loads(facts_file.read_text(encoding="utf-8"))
+    for key in REQUIRED_FACTS:
+        if key not in facts:
+            raise UserError(
+                f"{key} missing; re-run analyze_repository.py", path="c4-facts.json"
+            )
     model_file = output / "c4-model.json"
 
     result = ValidationResult(model=None)
