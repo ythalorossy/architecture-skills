@@ -14,7 +14,9 @@ at runtime, and the shipped skill stays stdlib-only scripts.
 """
 import json
 import re
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -326,4 +328,29 @@ def score_evidence(model, repo):
         "valid": valid,
         "total": total,
         "problems": problems,
+    }
+
+
+def score_render(output_dir, repo):
+    """Does this model render? `ok` unless it is invalid or render refuses.
+
+    Rendering is done on a copy: `render()` rewrites the c4-*.mmd files in the
+    folder it is given, and a recorded baseline must come back byte-identical.
+    SVGs are off, so no Node.js and no mermaid-cli.
+
+    A UserError — a missing or malformed c4-facts.json, for instance — is a
+    failed render pass with its message, not a crashed grader.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        work = Path(tmp) / "output"
+        shutil.copytree(output_dir, work)
+        try:
+            result = render_c4.render(work, svg=False, repo_override=str(repo))
+        except UserError as exc:
+            return {"ok": False, "status": "error", "problems": [str(exc)], "drift": []}
+    return {
+        "ok": result["status"] != "invalid",
+        "status": result["status"],
+        "problems": list(result["errors"]),
+        "drift": list(result["drift"]),
     }

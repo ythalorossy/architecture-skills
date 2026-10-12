@@ -427,5 +427,69 @@ class TestEvidence(unittest.TestCase):
         self.assertGreater(result["total"], 0)
 
 
+from scripts import analyze_repository  # noqa: E402  (sys.path is set at the top)
+
+
+def analyzed(tmp, model_text=None):
+    """Run the analyzer on the bookshop fixture; optionally drop in a model."""
+    output = Path(tmp) / "out"
+    argv = sys.argv
+    sys.argv = ["analyze_repository.py", str(BOOKSHOP), "--output", str(output), "--no-svg"]
+    try:
+        analyze_repository.main()
+    except SystemExit:
+        pass
+    finally:
+        sys.argv = argv
+    if model_text is not None:
+        (output / "c4-model.json").write_text(model_text, encoding="utf-8")
+    return output
+
+
+class TestRenderPass(unittest.TestCase):
+    def test_the_fixture_model_renders(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = analyzed(tmp, (BOOKSHOP / "c4-model.json").read_text(encoding="utf-8"))
+            result = grade.score_render(output, BOOKSHOP)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["drift"], [])
+
+    def test_an_invalid_model_does_not_pass(self):
+        broken = json.dumps({
+            "system": {"name": "X"},
+            "containers": [{"id": "a", "name": "A"}],
+            "relationships": [{"from": "a", "to": "ghost"}],
+        })
+        with tempfile.TemporaryDirectory() as tmp:
+            result = grade.score_render(analyzed(tmp, broken), BOOKSHOP)
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["status"], "invalid")
+        self.assertTrue(any("ghost" in problem for problem in result["problems"]))
+
+    def test_a_missing_facts_key_is_reported_not_raised(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = analyzed(tmp, (BOOKSHOP / "c4-model.json").read_text(encoding="utf-8"))
+            facts = json.loads((output / "c4-facts.json").read_text(encoding="utf-8"))
+            del facts["data_stores"]
+            (output / "c4-facts.json").write_text(json.dumps(facts), encoding="utf-8")
+            result = grade.score_render(output, BOOKSHOP)
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["status"], "error")
+        self.assertTrue(any("data_stores" in problem for problem in result["problems"]))
+
+    def test_grading_does_not_touch_the_folder(self):
+        """render() writes c4-*.mmd; a baseline folder must come back unchanged."""
+        with tempfile.TemporaryDirectory() as tmp:
+            output = analyzed(tmp, (BOOKSHOP / "c4-model.json").read_text(encoding="utf-8"))
+            before = {path.name: path.read_bytes() for path in sorted(output.iterdir())
+                      if path.is_file()}
+            grade.score_render(output, BOOKSHOP)
+            after = {path.name: path.read_bytes() for path in sorted(output.iterdir())
+                     if path.is_file()}
+        self.assertEqual(before.keys(), after.keys())
+        self.assertEqual(before, after)
+
+
 if __name__ == "__main__":
     unittest.main()
