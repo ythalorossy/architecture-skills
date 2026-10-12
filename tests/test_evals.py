@@ -294,5 +294,44 @@ class TestRecall(unittest.TestCase):
         self.assertEqual(result["score"], 1.0, result["missed"])
 
 
+class TestHallucination(unittest.TestCase):
+    def setUp(self):
+        self.gold = grade.load_gold(GOLD_FILE)
+
+    def test_a_clean_model_has_none(self):
+        result = grade.score_hallucination(model(), self.gold, [])
+        self.assertEqual(result["count"], 0)
+        self.assertEqual(result["problems"], [])
+
+    def test_a_forbidden_element_is_counted(self):
+        candidate = model(containers=model()["containers"] + [{"id": "c", "name": "Redis cache"}])
+        result = grade.score_hallucination(candidate, self.gold, [])
+        self.assertEqual(result["count"], 1)
+        self.assertIn("redis", result["problems"][0].lower())
+        self.assertIn("Redis cache", result["problems"][0])
+
+    def test_an_element_is_counted_once_however_many_terms_it_hits(self):
+        candidate = model(containers=[{"id": "c", "name": "Redis and Kafka bus"}])
+        self.assertEqual(grade.score_hallucination(candidate, self.gold, [])["count"], 1)
+
+    def test_drift_from_validate_is_counted(self):
+        drift = ["container 'ghost' is not in the facts"]
+        result = grade.score_hallucination(model(), self.gold, drift)
+        self.assertEqual(result["count"], 1)
+        self.assertIn("ghost", result["problems"][0])
+
+    def test_forbidden_and_drift_add_up(self):
+        candidate = model(containers=model()["containers"] + [{"id": "c", "name": "Kafka"}])
+        result = grade.score_hallucination(candidate, self.gold, ["drifted"])
+        self.assertEqual(result["count"], 2)
+
+    def test_the_fixture_model_has_none(self):
+        """Verified against the real render(): status ok, no drift, no warnings."""
+        fixture = json.loads(
+            (REPO_ROOT / "tests" / "fixtures" / "repos" / "bookshop" / "c4-model.json")
+            .read_text(encoding="utf-8"))
+        self.assertEqual(grade.score_hallucination(fixture, self.gold, [])["count"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

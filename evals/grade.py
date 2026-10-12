@@ -249,3 +249,25 @@ def score_recall(model, gold):
         "parts": parts,
         "missed": missed,
     }
+
+
+def score_hallucination(model, gold, drift):
+    """Count the things in this model that are not in the repository.
+
+    Two sources: an element whose id or name hits a `forbidden` term from the
+    gold, and the `drift` lines `render_c4.validate` already produces for
+    elements that cover no fact and are not marked `assumption`.
+
+    A count, not a ratio. The denominator would be arbitrary, and dividing by
+    the number of elements would reward padding the model with correct boxes.
+    """
+    problems = []
+    forbidden = [str(term).lower() for term in gold["forbidden"]]
+    for _, _, element in _elements(model):
+        text = _haystack(element)
+        hit = next((term for term in forbidden if term in text), None)
+        if hit:
+            name = element.get("name") or element.get("id") or "?"
+            problems.append(f"forbidden {hit!r}: {name}")
+    problems.extend(f"drift: {message}" for message in drift or [])
+    return {"count": len(problems), "problems": problems}
