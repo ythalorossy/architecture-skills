@@ -42,7 +42,12 @@ class ModelHintsTest(unittest.TestCase):
 
     def test_unknown_relationship_id_suggests_the_close_one(self):
         result = self.check(lambda m: m["relationships"][0].update({"to": "bookshop-wb"}))
-        self.assertTrue(any("unknown to id 'bookshop-wb' (did you mean 'bookshop-web'?)" in e
+        self.assertTrue(any("unknown 'to' id 'bookshop-wb' (did you mean 'bookshop-web'?)" in e
+                            for e in result.errors), result.errors)
+
+    def test_component_id_as_a_relationship_end_points_at_flows(self):
+        result = self.check(lambda m: m["relationships"][1].update({"to": "bookshop.orders"}))
+        self.assertTrue(any("unknown 'to' id 'bookshop.orders'" in e and "use a flow step" in e
                             for e in result.errors), result.errors)
 
     def test_unknown_flow_participant_suggests_the_close_one(self):
@@ -100,6 +105,31 @@ class ModelHintsTest(unittest.TestCase):
         result = self.check(lambda m: m["excluded"][0].pop("reason"))
         self.assertIn("excluded ext-covers-example: give a reason, so readers know why it is left out", result.warnings)
 
+    def test_owned_data_store_filed_as_an_external_system(self):
+        def change(model):
+            store = self.container(model, "db-postgresql")
+            model["containers"].remove(store)
+            model["external_systems"].append(store)
+        result = self.check(change)
+        self.assertIn("db-postgresql: db-postgresql is a data store found in this repository; move it to "
+                      "containers with \"type\": \"database\", and add \"external\": true if the system "
+                      "does not own it", result.warnings)
+
+    def test_unknown_key_on_a_relationship(self):
+        result = self.check(lambda m: m["relationships"][0].update({"technolgy": "HTTPS"}))
+        self.assertIn("relationships[0]: unknown key 'technolgy' (did you mean 'technology'?); it is ignored",
+                      result.warnings)
+
+    def test_unknown_key_on_a_flow(self):
+        result = self.check(lambda m: m["flows"][0].update({"descripton": "x"}))
+        self.assertIn("flows[0]: unknown key 'descripton' (did you mean 'description'?); it is ignored",
+                      result.warnings)
+
+    def test_unknown_key_on_a_flow_step(self):
+        result = self.check(lambda m: m["flows"][0]["steps"][0].update({"notes": "x"}))
+        self.assertIn("flows[0].steps[0]: unknown key 'notes' (did you mean 'note'?); it is ignored",
+                      result.warnings)
+
     def test_excluded_unknown_fact(self):
         result = self.check(lambda m: m["excluded"].append({"id": "ext-coverz-example", "reason": "x"}))
         self.assertIn("excluded ext-coverz-example is not in c4-facts.json (did you mean 'ext-covers-example'?)",
@@ -118,6 +148,40 @@ class RenderReportsEvidenceTest(unittest.TestCase):
         self.assertEqual(result["status"], "ok")
         self.assertIn("ext-payments-example: evidence 'api/bookshop/stripe.py:1' does not exist in the repository",
                       result["warnings"])
+
+class ReportAssumptionsTest(unittest.TestCase):
+    """Anything unproven is shown as an assumption, marked or not."""
+
+    def render(self, change):
+        model = json.loads((FIXTURE / "c4-model.json").read_text(encoding="utf-8"))
+        change(model)
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__("shutil").rmtree(tmp, ignore_errors=True))
+        with contextlib.redirect_stdout(io.StringIO()):
+            run_analyzer(FIXTURE, tmp)
+            (Path(tmp) / "c4-model.json").write_text(json.dumps(model), encoding="utf-8")
+            render_c4.render(tmp, svg=False)
+        report = (Path(tmp) / "ArchitectureReport.md").read_text(encoding="utf-8")
+        start = report.index("### Assumptions")
+        return report[start:report.index("###", start + 3)]
+
+    def test_misspelled_assumption_still_reaches_the_assumptions_list(self):
+        def change(model):
+            person = model["people"][0]
+            person["assumptions"] = person.pop("assumption")
+        section = self.render(change)
+        self.assertIn("- **Reader** (unmarked, no evidence): Searches the catalogue and buys books", section)
+
+    def test_an_element_with_neither_evidence_nor_marking_is_listed(self):
+        section = self.render(lambda m: next(c for c in m["containers"]
+                                             if c["id"] == "bookshop-api").pop("evidence"))
+        self.assertIn("- **Bookshop API** (unmarked, no evidence):", section)
+
+    def test_an_evidenced_element_is_not_listed(self):
+        section = self.render(lambda m: None)
+        self.assertNotIn("Bookshop API", section)
+        self.assertIn("- **Reader**: Searches the catalogue and buys books", section)
+
 
 if __name__ == "__main__":
     unittest.main()

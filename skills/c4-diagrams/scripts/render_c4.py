@@ -109,6 +109,11 @@ def _covers(element):
 ELEMENT_KEYS = ("id", "name", "description", "technology", "type", "evidence", "assumption", "external", "facts")
 ELEMENT_TYPES = ("container", "database", "queue")
 SUMMARY_KEYS = ("overview", "findings", "recommendations")
+# The keys c4-model-reference.md documents, and the only ones anything reads.
+# Everything else is dropped on the floor, so say so.
+RELATIONSHIP_KEYS = ("from", "to", "description", "technology", "assumption")
+FLOW_KEYS = ("id", "name", "description", "steps")
+STEP_KEYS = ("from", "to", "description", "technology", "reply", "async", "note")
 
 
 def _did_you_mean(value, candidates):
@@ -116,6 +121,13 @@ def _did_you_mean(value, candidates):
     import difflib
     match = difflib.get_close_matches(str(value), [str(c) for c in candidates], n=1, cutoff=0.75)
     return f" (did you mean {match[0]!r}?)" if match else ""
+
+
+def _unknown_keys(item, allowed, label, warnings):
+    """Warn about every key nothing reads, with the closest documented one."""
+    for key in item:
+        if key not in allowed:
+            warnings.append(f"{label}: unknown key {key!r}{_did_you_mean(key, allowed)}; it is ignored")
 
 
 def _evidence_problem(entry, repo):
@@ -177,9 +189,7 @@ def validate(model, facts, result=None, repo=None):
             elements[element["id"]] = section
             if not element.get("evidence") and not element.get("assumption"):
                 warnings.append(f"{element['id']}: no evidence and not marked as an assumption")
-            for key in element:
-                if key not in ELEMENT_KEYS:
-                    warnings.append(f"{element['id']}: unknown key {key!r}{_did_you_mean(key, ELEMENT_KEYS)}; it is ignored")
+            _unknown_keys(element, ELEMENT_KEYS, element["id"], warnings)
             if "type" in element and element["type"] not in ELEMENT_TYPES:
                 warnings.append(f"{element['id']}: unknown type {element['type']!r}"
                                 f"{_did_you_mean(element['type'], ELEMENT_TYPES)}; use container, database or queue")
@@ -194,11 +204,22 @@ def validate(model, facts, result=None, repo=None):
         invalid("system.name is missing")
 
     fact_ids = [f["id"] for kind in ("containers", "data_stores", "external_systems") for f in facts[kind]]
+    store_ids = {f["id"] for f in facts["data_stores"]}
     covered_by = {}
     for section in ("containers", "external_systems"):
         for element in model.get(section) or []:
             if "id" not in element:
                 continue
+            if section == "external_systems":
+                for fact in _covers(element):
+                    if fact in store_ids:
+                        # A store the repository runs is a container of the
+                        # system, not a system someone else owns.
+                        warnings.append(
+                            f"{element['id']}: {fact} is a data store found in this repository; "
+                            'move it to containers with "type": "database", and add "external": true '
+                            "if the system does not own it"
+                        )
             for fact in element.get("facts") or []:
                 if fact not in fact_ids:
                     warnings.append(f"{element['id']}: facts lists {fact!r}, which is not in c4-facts.json"
@@ -229,16 +250,25 @@ def validate(model, facts, result=None, repo=None):
                     "add it (or list it in `facts` of an element) or put it in `excluded` with a reason"
                 )
 
+    component_ids = all_component_ids(model, facts)
+    components = {c for ids in component_ids.values() for c in ids}
+
     for index, relationship in enumerate(model.get("relationships") or []):
+        _unknown_keys(relationship, RELATIONSHIP_KEYS, f"relationships[{index}]", warnings)
         for end in ("from", "to"):
-            if relationship.get(end) not in elements:
+            value = relationship.get(end)
+            if value not in elements:
+                # A component only exists inside a container, so it can be a
+                # flow step but never an end of a Level 2 relationship.
+                hint = (
+                    "; it is a component, so use a flow step to show calls inside a container"
+                    if value in components else _did_you_mean(value, elements)
+                )
                 invalid(
                     f"relationships[{index}]: {relationship.get('from')!r} -> "
-                    f"{relationship.get('to')!r}: unknown {end} id {relationship.get(end)!r}"
-                    f"{_did_you_mean(relationship.get(end), elements)}"
+                    f"{relationship.get('to')!r}: unknown {end!r} id {value!r}{hint}"
                 )
 
-    component_ids = all_component_ids(model, facts)
     for container_id, descriptions in (model.get("components") or {}).items():
         if elements.get(container_id) != "containers":
             invalid(
@@ -250,8 +280,9 @@ def validate(model, facts, result=None, repo=None):
             if component not in component_ids.get(container_id, set()):
                 warnings.append(f"components.{container_id}: {component!r} is not a component of that container; its description is ignored")
 
-    known = set(elements) | {c for ids in component_ids.values() for c in ids}
+    known = set(elements) | components
     for flow_index, flow in enumerate(model.get("flows") or []):
+        _unknown_keys(flow, FLOW_KEYS, f"flows[{flow_index}]", warnings)
         if not flow.get("name") or not flow.get("steps"):
             invalid(
                 f"flows[{flow_index}]: every flow needs a name and steps "
@@ -259,6 +290,7 @@ def validate(model, facts, result=None, repo=None):
             )
             continue
         for number, step in enumerate(flow["steps"], 1):
+            _unknown_keys(step, STEP_KEYS, f"flows[{flow_index}].steps[{number - 1}]", warnings)
             for end in ("from", "to"):
                 if step.get(end) not in known:
                     invalid(
@@ -874,11 +906,22 @@ def _cell(text):
 
 
 def _assumptions(model):
+    """Everything a reader should confirm with the team.
+
+    Elements marked `"assumption": true`, and — because the safe default is
+    that anything unproven is an assumption — elements that carry neither
+    evidence nor a marking. That second group catches the `"assumptions"`
+    typo, which otherwise drops the element out of this list silently.
+    """
     items = []
+    unmarked = not model.get("_facts_only")
     for section in ("people", "containers", "external_systems"):
         for element in model.get(section) or []:
+            description = element.get("description") or "no description"
             if element.get("assumption"):
-                items.append(f"- **{element['name']}**: {element.get('description') or 'no description'}")
+                items.append(f"- **{element['name']}**: {description}")
+            elif unmarked and not element.get("evidence"):
+                items.append(f"- **{element['name']}** (unmarked, no evidence): {description}")
     for r in model.get("relationships") or []:
         if r.get("assumption"):
             items.append(f"- **{r['from']} → {r['to']}**: {r.get('description', '')}")
