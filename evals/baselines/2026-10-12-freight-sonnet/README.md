@@ -49,3 +49,17 @@ wart, it is not in the backlog, and it was found by an eval run rather than by
 a test — which is the first thing these runs have paid for beyond a number.
 
 **Caveat:** one run, not a statistical claim.
+
+## After B-13
+
+The same prompt, the same model and the same fixture, re-run against the
+SKILL.md that B-13 produced (2,091 words → 1,694, the component-graph line
+scoped to Level 3, the detection list and the degraded-run table moved to
+assets, a stopping criterion added): **recall 1.00, hallucination 0, evidence
+1.00 (13/13), render ok.** Unchanged, which is the whole claim B-13 can make
+here — see the headroom note in the sibling Opus baseline.
+
+One qualitative difference worth keeping: that run named the carrier network's
+invisibility as "a known blind spot", which is the language of the new
+`assets/detection-coverage.md`. The asset is being read and used, not just
+linked.
