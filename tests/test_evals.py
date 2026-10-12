@@ -192,6 +192,30 @@ class TestResolveRoles(unittest.TestCase):
         candidate = model(containers=["oops", {"id": "bookshop-api", "name": "API"}])
         self.assertEqual(grade.resolve_roles(candidate, self.gold).get("api"), "bookshop-api")
 
+    def test_an_element_without_an_id_cannot_claim_a_role(self):
+        for bad_id in ({}, {"id": ""}):
+            with self.subTest(bad_id=bad_id):
+                candidate = model(containers=[
+                    {"name": "Bookshop API", **bad_id},
+                    {"id": "real-api", "name": "API"},
+                ])
+                matched = grade.resolve_roles(candidate, self.gold)
+                self.assertEqual(matched.get("api"), "real-api")
+                self.assertNotIn(None, matched.values())
+
+    def test_document_order_and_first_match_decide(self):
+        gold = {"required_elements": [{"role": "api", "match": ["api"]}]}
+        containers = [{"id": "c1", "name": "API one"}, {"id": "c2", "name": "API two"}]
+        person = {"id": "p1", "name": "API user"}
+        self.assertEqual(grade.resolve_roles({"containers": containers}, gold), {"api": "c1"})
+        both = {"people": [person], "containers": containers}
+        self.assertEqual(grade.resolve_roles(both, gold), {"api": "p1"}, "people come before containers")
+
+    def test_match_terms_are_lowercased_too(self):
+        gold = {"required_elements": [{"role": "api", "match": ["API"]}]}
+        candidate = {"containers": [{"id": "c1", "name": "the api service"}]}
+        self.assertEqual(grade.resolve_roles(candidate, gold), {"api": "c1"})
+
 
 if __name__ == "__main__":
     unittest.main()

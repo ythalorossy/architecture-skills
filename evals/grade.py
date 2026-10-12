@@ -131,7 +131,7 @@ def resolve_roles(model, gold):
     for entry in gold["required_elements"]:
         terms = [str(term).lower() for term in entry.get("match") or []]
         for section, index, element in candidates:
-            if (section, index) in claimed:
+            if (section, index) in claimed or not element.get("id"):
                 continue
             text = _haystack(element)
             if any(term in text for term in terms):
