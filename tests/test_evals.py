@@ -665,6 +665,11 @@ class TestPrompts(unittest.TestCase):
         for case in self.cases:
             self.assertIsInstance(case["should_fire"], bool, case)
 
+    def test_every_prompt_is_a_real_sentence(self):
+        for case in self.cases:
+            self.assertIsInstance(case["prompt"], str, case)
+            self.assertGreaterEqual(len(case["prompt"].strip()), 15, case)
+
     def test_every_case_explains_its_label(self):
         for case in self.cases:
             self.assertGreaterEqual(len(case["why"]), 15, case)
