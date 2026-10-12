@@ -1,0 +1,33 @@
+{"id": "t01", "prompt": "Draw the C4 container diagram for this repo", "should_fire": true, "why": "an explicit C4 request against a local repository"}
+{"id": "t02", "prompt": "I need architecture documentation for this codebase", "should_fire": true, "why": "architecture documentation is the first clause of the description"}
+{"id": "t03", "prompt": "Show me the key request flows in this service as sequence diagrams", "should_fire": true, "why": "key request flows as sequence diagrams, named in the description"}
+{"id": "t04", "prompt": "What does the deployment look like for this project?", "should_fire": true, "why": "the deployment overview is one of the generated views; deliberately relies on working-directory context rather than an explicit repository mention, so the ambiguity is intentional"}
+{"id": "t05", "prompt": "Give me an overview of this API's endpoints and configuration", "should_fire": true, "why": "API and configuration overview, named in the description"}
+{"id": "t06", "prompt": "Generate a dependency graph of the modules in this repository", "should_fire": true, "why": "a dependency graph of a codebase is a named output"}
+{"id": "t07", "prompt": "Can you do an architecture review of this repo?", "should_fire": true, "why": "architecture review is named in the description"}
+{"id": "t08", "prompt": "How do the projects in this monorepo fit together?", "should_fire": true, "why": "explaining how a repository's projects fit together is a named use"}
+{"id": "t09", "prompt": "Explain the structure of this .NET solution and how the layers depend on each other", "should_fire": true, "why": "a supported ecosystem plus a structure-and-dependency question"}
+{"id": "t10", "prompt": "Document how this Go service is put together, with diagrams", "should_fire": true, "why": "architecture documentation with diagrams on a supported ecosystem"}
+{"id": "t11", "prompt": "I'm onboarding onto this codebase - can you map out the components and what talks to what?", "should_fire": true, "why": "a component map and the links between them is the container and component view"}
+{"id": "t12", "prompt": "Produce a C4 model for /home/me/work/billing", "should_fire": true, "why": "an explicit C4 request naming a local repository path"}
+{"id": "t13", "prompt": "What external systems and data stores does this application use?", "should_fire": true, "why": "external systems and data stores are detected and drawn at container level"}
+{"id": "t14", "prompt": "Diagram the architecture of this Spring Boot project", "should_fire": true, "why": "architecture diagram on a supported ecosystem"}
+{"id": "t15", "prompt": "Walk me through what happens when a user places an order in this codebase", "should_fire": true, "why": "tracing one important request end to end is the key-flow sequence diagram"}
+{"id": "t16", "prompt": "What does this import on line 3 of main.py do?", "should_fire": false, "why": "a quick question about one file or import, excluded by the description"}
+{"id": "t17", "prompt": "Rename the OrderService class to PurchaseService across the repo", "should_fire": false, "why": "changing code, which the description excludes"}
+{"id": "t18", "prompt": "Draw me an ER diagram of the users and orders tables", "should_fire": false, "why": "a data-model diagram, not a C4 or codebase-structure view"}
+{"id": "t19", "prompt": "Make me a flowchart of our customer refund policy", "should_fire": false, "why": "a diagram unrelated to a codebase, which the description excludes"}
+{"id": "t20", "prompt": "Explain what this regex does", "should_fire": false, "why": "a single-expression question with no repository scope"}
+{"id": "t21", "prompt": "Fix the failing test in tests/test_orders.py", "should_fire": false, "why": "changing code, not documenting architecture"}
+{"id": "t22", "prompt": "Draw an org chart for a team of eight engineers", "should_fire": false, "why": "a diagram with no codebase involved at all"}
+{"id": "t23", "prompt": "Why is this function returning None?", "should_fire": false, "why": "debugging one function, far below architecture level"}
+{"id": "t24", "prompt": "What is the C4 model? Explain the four levels.", "should_fire": false, "why": "a conceptual question about C4 with no repository to analyze"}
+{"id": "t25", "prompt": "Write a unit test for the payment client", "should_fire": false, "why": "writing code, which the description excludes"}
+{"id": "t26", "prompt": "Summarize the README of this repository", "should_fire": false, "why": "reading one file; no analysis of structure or dependencies"}
+{"id": "t27", "prompt": "Can you document the architecture of this Python service? It's a FastAPI app with a Celery worker", "should_fire": true, "why": "a supported ecosystem the description names; no positive case covered Python"}
+{"id": "t28", "prompt": "Diagram how this TypeScript backend is structured - it's a Node.js monorepo", "should_fire": true, "why": "a supported ecosystem the description names; no positive case covered Node.js/TypeScript"}
+{"id": "t29", "prompt": "Which environment variables and config files do the services in this repo read?", "should_fire": true, "why": "the configuration overview is a named output and was only ever requested together with the API"}
+{"id": "t30", "prompt": "How do the packages inside this codebase relate to each other and which depend on which?", "should_fire": true, "why": "\"packages\" is a named unit in the description with no case of its own"}
+{"id": "t31", "prompt": "Where is the calculate_discount function called from?", "should_fire": false, "why": "sits next to the dependency and structure clause, but it is a single-symbol lookup that a quick search answers, not a repository analysis"}
+{"id": "t32", "prompt": "What does the Dockerfile in this folder do, line by line?", "should_fire": false, "why": "sits next to the deployment clause, but it is one file; the description excludes a quick question about one file"}
+{"id": "t33", "prompt": "List the dependencies in package.json", "should_fire": false, "why": "sits next to the dependency-graph clause, but it is reading one manifest, not building a graph of how the codebase fits together"}

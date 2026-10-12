@@ -18,6 +18,10 @@
 
 - **The `layout: elk` header is gone from every diagram.** No pinned renderer ever applied it: rendering with and without it produces byte-identical SVGs, because the bundled mermaid-cli has no ELK engine. The header, and a comment describing a layout that never ran, are removed. Diagrams are unchanged.
 
+### Development
+
+- **The model the agent writes now has a score.** `evals/` holds a criteria gold for the bookshop fixture and a deterministic grader that reports recall, hallucination count, evidence validity and render pass, built on the skill's own `validate` and `_evidence_problem` rather than copies. The grader's own correctness is covered by unit tests in CI; it reports and never gates, so no quality number can turn the build red. A labelled set of 33 trigger prompts (19 should fire, 14 should not) and a Claude runner measure whether the skill fires on the right requests, with a `--dry-run` CI can exercise without calling a model; the runner counts only a real `Skill` tool call, and exits non-zero when nothing was measured. The first baseline run is recorded under `evals/baselines/`. It scores a perfect 1.00 because the bookshop reference answer ships inside the skill's own instructions, so it is a regression anchor, not a quality measurement.
+
 ## 3.3.7 — 2026-10-11
 
 ### Fixed

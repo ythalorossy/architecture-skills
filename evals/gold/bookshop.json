@@ -1,0 +1,23 @@
+{
+  "repo": "tests/fixtures/repos/bookshop",
+  "required_elements": [
+    {"role": "reader",          "kind": "person",    "match": ["reader", "customer", "shopper"]},
+    {"role": "web-ui",          "kind": "container", "match": ["web", "frontend", "storefront"]},
+    {"role": "api",             "kind": "container", "match": ["api", "backend"]},
+    {"role": "orders-db",       "kind": "database",  "match": ["postgres", "orders db", "orders database"]},
+    {"role": "catalogue-index", "kind": "database",  "match": ["elastic", "catalogue", "search index"]},
+    {"role": "payments",        "kind": "external",  "match": ["payment", "stripe", "charge"]}
+  ],
+  "required_relationships": [
+    ["reader", "web-ui"],
+    ["web-ui", "api"],
+    ["api", "orders-db"],
+    ["api", "catalogue-index"],
+    ["api", "payments"]
+  ],
+  "required_flow_steps": [
+    ["api", "payments"],
+    ["api", "orders-db"]
+  ],
+  "forbidden": ["redis", "kafka", "rabbit", "mongo", "graphql", "auth service", "message bus"]
+}
