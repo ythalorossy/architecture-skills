@@ -231,18 +231,18 @@ class TestRecall(unittest.TestCase):
         self.assertEqual(result["parts"]["flow_steps"], (2, 2))
         self.assertEqual(result["missed"], [])
 
-    def test_a_flow_step_resolves_through_its_owning_container(self):
-        """Steps name components; 'bookshop.orders' belongs to the API container."""
-        result = grade.score_recall(model(), self.gold)
-        self.assertEqual(result["parts"]["flow_steps"], (2, 2))
-
-    def test_a_component_is_resolved_before_its_name_is_matched(self):
-        """'web/src/api' contains 'api' but is a module of the web app."""
-        candidate = model(flows=[{"id": "f", "name": "F", "steps": [
-            {"from": "web/src/api", "to": "db-postgresql"},
-        ]}])
+    def test_a_component_key_that_collides_with_a_container_id_resolves_to_its_owner(self):
+        """The owner mapping runs before the role lookup, so the component wins."""
+        candidate = model(
+            components={"bookshop-web": {"bookshop-api": "A module that shares the API's id"}},
+            flows=[{"id": "f", "name": "F", "steps": [{"from": "bookshop-api", "to": "db-postgresql"}]}],
+        )
         result = grade.score_recall(candidate, self.gold)
         self.assertIn("flow step api -> orders-db", result["missed"])
+        step_pairs = grade._edge_roles(
+            grade._flow_steps(candidate), grade._role_of(grade.resolve_roles(candidate, self.gold)),
+            grade._component_owner(candidate))
+        self.assertEqual(step_pairs, {("web-ui", "orders-db")})
 
     def test_deleting_the_api_container_cascades(self):
         """Every gold role is a relationship end, so an element loss is never alone."""
