@@ -300,6 +300,14 @@ class RepositoryAnalyzer:
         # and drew the model with an Unreviewed facts section when it drifts.
         drift = [{"message": message} for message in result["drift"]]
 
+        # validate() hints: things to fix in c4-model.json that are not bad
+        # enough to stop the drawing. render_c4.py standalone prints them;
+        # without this they would be computed and thrown away here.
+        model_warnings = result["warnings"]
+        for warning in model_warnings:
+            print(f"WARNING: {warning}")
+            self._collector.model_warning("render_c4", warning)
+
         self._record_svg(result.get("svg", {}))
         svg = {}
         if self._dep_svg_result and self._dep_svg_result.status != "skipped":
@@ -316,6 +324,7 @@ class RepositoryAnalyzer:
             "diagrams": result["diagrams"],
             "model": "facts-only" if result["facts_only"] else "c4-model.json",
             "model_errors": model_errors,
+            "model_warnings": model_warnings,
             "model_status": model_status,
             "drift": drift,
             "svg": svg,

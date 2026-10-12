@@ -28,6 +28,7 @@
     ],
     "model": "facts-only",
     "model_errors": [],
+    "model_warnings": [],
     "model_status": "ok",
     "drift": [],
     "svg": {}

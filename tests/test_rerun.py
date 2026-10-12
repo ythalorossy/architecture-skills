@@ -6,7 +6,12 @@ c4-model.json is byte-unchanged.
 
 A model with an unknown relationship id gives model_status == "invalid",
 facts-only render, and errors listed in summary.json.
+
+A model that only draws warnings is still rendered, and the warnings reach
+the user on the analyzer path as well as from render_c4.py standalone.
 """
+import contextlib
+import io
 import json
 import shutil
 import tempfile
@@ -77,6 +82,50 @@ class TestInvalidModel(unittest.TestCase):
         # The user's model is kept as written.
         self.assertIn("nonexistent-system", (out / "c4-model.json").read_text(encoding="utf-8"))
         self.assertFalse((out / "c4-context.mmd").exists(), "the System Context needs a valid model")
+
+
+class TestModelWarningsOnTheAnalyzerPath(unittest.TestCase):
+    """validate()'s warnings must reach the user from analyze_repository.py too."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _run_over_model(self, model):
+        out = self.tmp / "out"
+        out.mkdir()
+        (out / "c4-model.json").write_text(json.dumps(model), encoding="utf-8")
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            _, summary = run_analyzer(BOOKSHOP, out)
+        return summary, stdout.getvalue()
+
+    def test_a_warning_on_a_valid_model_is_printed_and_filed(self):
+        model = json.loads((BOOKSHOP / "c4-model.json").read_text(encoding="utf-8"))
+        model["relationships"][0]["note"] = "a key the schema does not have"
+
+        summary, output = self._run_over_model(model)
+
+        self.assertEqual(summary["c4"]["model_status"], "ok")
+        self.assertTrue(
+            any("unknown key 'note'" in w for w in summary["c4"]["model_warnings"]),
+            summary["c4"]["model_warnings"],
+        )
+        self.assertTrue(
+            any("unknown key 'note'" in w["message"] for w in summary["warnings"]),
+            summary["warnings"],
+        )
+        self.assertIn("WARNING: relationships[0]: unknown key 'note'", output)
+
+    def test_a_warning_does_not_degrade_the_run(self):
+        model = json.loads((BOOKSHOP / "c4-model.json").read_text(encoding="utf-8"))
+        model["relationships"][0]["note"] = "a key the schema does not have"
+
+        summary, _ = self._run_over_model(model)
+
+        self.assertEqual(summary["status"], "ok")
 
 
 if __name__ == "__main__":

@@ -91,7 +91,8 @@ class DiagnosticsCollector:
         self._add(Diagnostic(source, None, message, "detection"))
 
     def model_warning(self, source: str, message: str, path: str | None = None) -> None:
-        """Record a model-tier drift: a fact the model does not cover yet."""
+        """Record a model-tier hint: a fact the model does not cover yet, or
+        something to fix in c4-model.json that still lets it be drawn."""
         self._add(Diagnostic(source, path, message, "model"))
 
     def model_error(self, source: str, message: str, path: str | None = None) -> None:
