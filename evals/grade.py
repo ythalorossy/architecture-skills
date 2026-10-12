@@ -12,6 +12,7 @@ render_c4; reusing it here is deliberate and is what BACKLOG B-08 asks for.
 This is a development tool. Nothing under evals/ is imported by the skill
 at runtime, and the shipped skill stays stdlib-only scripts.
 """
+import argparse
 import json
 import re
 import shutil
@@ -24,7 +25,7 @@ SKILL = REPO_ROOT / "skills" / "c4-diagrams"
 if str(SKILL) not in sys.path:
     sys.path.insert(0, str(SKILL))
 
-from scripts.cli_support import UserError  # noqa: E402  (sys.path is set above)
+from scripts.cli_support import UserError, run_cli  # noqa: E402  (sys.path is set above)
 from scripts import render_c4  # noqa: E402  (sys.path is set above)
 
 
@@ -354,3 +355,106 @@ def score_render(output_dir, repo):
         "problems": list(result["errors"]),
         "drift": list(result["drift"]),
     }
+
+
+DEFAULT_GOLD = REPO_ROOT / "evals" / "gold" / "bookshop.json"
+
+
+def grade(output_dir, gold, repo):
+    """Score the candidate model in `output_dir` against `gold`.
+
+    Raises UserError when there is nothing to grade. A missing c4-model.json
+    is refused rather than scored: render_c4 falls back to the facts-only
+    model when the file is absent, so grading would quietly measure the
+    script's own output and report it as the agent's work.
+    """
+    output_dir = Path(output_dir)
+    if not output_dir.is_dir():
+        raise UserError("output folder not found", path=str(output_dir))
+    model_file = output_dir / "c4-model.json"
+    if not model_file.is_file():
+        raise UserError(
+            "no c4-model.json here, so there is no agent answer to grade",
+            path=str(output_dir),
+        )
+    try:
+        model = json.loads(model_file.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise UserError(f"cannot read ({exc})", path=str(model_file)) from exc
+    except json.JSONDecodeError as exc:
+        raise UserError(f"not valid JSON: {exc}", path=str(model_file)) from exc
+    if not isinstance(model, dict):
+        raise UserError("expected a JSON object", path=str(model_file))
+
+    render_result = score_render(output_dir, repo)
+    return {
+        "recall": score_recall(model, gold),
+        "hallucination": score_hallucination(model, gold, render_result["drift"]),
+        "evidence": score_evidence(model, repo),
+        "render": render_result,
+    }
+
+
+def format_report(scores, gold_path):
+    """The human-readable report. Every score prints what it missed."""
+    recall = scores["recall"]
+    parts = recall["parts"]
+    lines = [f"gold: {gold_path}", ""]
+    lines.append(
+        f"  recall              {recall['score']:.2f}   "
+        f"({recall['hits']}/{recall['total']} — "
+        f"elements {parts['elements'][0]}/{parts['elements'][1]}, "
+        f"relationships {parts['relationships'][0]}/{parts['relationships'][1]}, "
+        f"flow steps {parts['flow_steps'][0]}/{parts['flow_steps'][1]})"
+    )
+    for item in recall["missed"]:
+        lines.append(f"    missed: {item}")
+
+    hallucination = scores["hallucination"]
+    lines.append(f"  hallucination       {hallucination['count']}")
+    for item in hallucination["problems"]:
+        lines.append(f"    {item}")
+
+    evidence = scores["evidence"]
+    lines.append(
+        f"  evidence validity   {evidence['score']:.2f}   "
+        f"({evidence['valid']}/{evidence['total']})"
+    )
+    for item in evidence["problems"]:
+        lines.append(f"    {item}")
+
+    render_result = scores["render"]
+    lines.append(f"  render pass         {render_result['status']}")
+    for item in render_result["problems"]:
+        lines.append(f"    {item}")
+    return "\n".join(lines)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Score a candidate c4-model.json against a criteria gold file.")
+    parser.add_argument("--output", required=True,
+                        help="Analyzer output folder holding c4-facts.json and c4-model.json")
+    parser.add_argument("--gold", default=str(DEFAULT_GOLD), help="Gold file (default: bookshop)")
+    parser.add_argument("--repo", default=None,
+                        help="The analysed repository (default: the gold's `repo`, "
+                             "resolved against this repository's root)")
+    parser.add_argument("--json", action="store_true", dest="as_json",
+                        help="Emit the scores as JSON instead of a report")
+    args = parser.parse_args()
+
+    gold = load_gold(args.gold)
+    repo = Path(args.repo) if args.repo else REPO_ROOT / gold.get("repo", ".")
+    if not repo.is_dir():
+        raise UserError("repository not found; pass --repo", path=str(repo))
+
+    scores = grade(args.output, gold, repo)
+    if args.as_json:
+        print(json.dumps(scores, indent=2, sort_keys=True))
+    else:
+        print(format_report(scores, args.gold))
+    # Exit 0 whatever the scores: this reports, it does not gate.
+
+
+if __name__ == "__main__":
+    run_cli(main)

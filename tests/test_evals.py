@@ -491,5 +491,92 @@ class TestRenderPass(unittest.TestCase):
         self.assertEqual(before, after)
 
 
+import contextlib  # noqa: E402
+import io  # noqa: E402
+
+
+class TestGrade(unittest.TestCase):
+    def setUp(self):
+        self.gold = grade.load_gold(GOLD_FILE)
+
+    def test_the_fixture_model_scores_perfectly(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = analyzed(tmp, (BOOKSHOP / "c4-model.json").read_text(encoding="utf-8"))
+            scores = grade.grade(output, self.gold, BOOKSHOP)
+        self.assertEqual(scores["recall"]["score"], 1.0, scores["recall"]["missed"])
+        self.assertEqual(scores["hallucination"]["count"], 0, scores["hallucination"]["problems"])
+        self.assertEqual(scores["evidence"]["score"], 1.0, scores["evidence"]["problems"])
+        self.assertTrue(scores["render"]["ok"])
+
+    def test_an_output_folder_without_a_model_is_refused(self):
+        """Review Focus 1: render() would fall back to the facts-only model."""
+        with tempfile.TemporaryDirectory() as tmp:
+            output = analyzed(tmp)
+            (output / "c4-model.json").unlink(missing_ok=True)
+            with self.assertRaises(UserError) as caught:
+                grade.grade(output, self.gold, BOOKSHOP)
+        self.assertIn("no c4-model.json", str(caught.exception))
+
+    def test_a_malformed_model_names_the_file(self):
+        """Review Focus 5: one ERROR line, no traceback."""
+        with tempfile.TemporaryDirectory() as tmp:
+            output = analyzed(tmp, "{not json")
+            with self.assertRaises(UserError) as caught:
+                grade.grade(output, self.gold, BOOKSHOP)
+        self.assertIn("not valid JSON", str(caught.exception))
+
+    def test_a_model_that_is_not_an_object_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = analyzed(tmp, "[1, 2, 3]")
+            with self.assertRaises(UserError) as caught:
+                grade.grade(output, self.gold, BOOKSHOP)
+        self.assertIn("expected a JSON object", str(caught.exception))
+
+    def test_the_report_names_what_was_missed(self):
+        scores = {
+            "recall": {"score": 0.5, "hits": 1, "total": 2,
+                       "parts": {"elements": (1, 1), "relationships": (0, 1), "flow_steps": (0, 0)},
+                       "missed": ["relationship api -> orders-db"]},
+            "hallucination": {"count": 1, "problems": ["forbidden 'redis': Redis cache"]},
+            "evidence": {"score": 0.5, "valid": 1, "total": 2, "problems": ["x.py:9: does not exist"]},
+            "render": {"ok": True, "status": "ok", "problems": [], "drift": []},
+        }
+        report = grade.format_report(scores, GOLD_FILE)
+        self.assertIn("relationship api -> orders-db", report)
+        self.assertIn("Redis cache", report)
+        self.assertIn("x.py:9", report)
+        self.assertIn("0.50", report)
+
+    def test_the_cli_exits_zero_on_bad_scores(self):
+        """It reports; it never gates."""
+        poor = json.dumps({"system": {"name": "X"}, "containers": [{"id": "a", "name": "Redis"}]})
+        with tempfile.TemporaryDirectory() as tmp:
+            output = analyzed(tmp, poor)
+            argv = sys.argv
+            sys.argv = ["grade.py", "--output", str(output), "--repo", str(BOOKSHOP)]
+            buffer = io.StringIO()
+            try:
+                with contextlib.redirect_stdout(buffer):
+                    grade.main()
+            finally:
+                sys.argv = argv
+        self.assertIn("recall", buffer.getvalue())
+
+    def test_the_cli_json_flag_emits_parseable_scores(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = analyzed(tmp, (BOOKSHOP / "c4-model.json").read_text(encoding="utf-8"))
+            argv = sys.argv
+            sys.argv = ["grade.py", "--output", str(output), "--repo", str(BOOKSHOP), "--json"]
+            buffer = io.StringIO()
+            try:
+                with contextlib.redirect_stdout(buffer):
+                    grade.main()
+            finally:
+                sys.argv = argv
+        payload = json.loads(buffer.getvalue())
+        self.assertEqual(payload["recall"]["score"], 1.0)
+        self.assertTrue(payload["render"]["ok"])
+
+
 if __name__ == "__main__":
     unittest.main()
