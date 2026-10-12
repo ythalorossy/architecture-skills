@@ -636,5 +636,39 @@ class TestGrade(unittest.TestCase):
         self.assertIn("no c4-model.json", result.stderr)
 
 
+PROMPTS = EVALS / "triggers" / "prompts.jsonl"
+
+
+class TestPrompts(unittest.TestCase):
+    def setUp(self):
+        self.cases = [json.loads(line) for line
+                      in PROMPTS.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+    def test_there_are_at_least_twenty_cases(self):
+        self.assertGreaterEqual(len(self.cases), 20)
+
+    def test_every_case_has_the_four_keys(self):
+        for case in self.cases:
+            self.assertEqual(set(case), {"id", "prompt", "should_fire", "why"}, case)
+
+    def test_ids_are_unique(self):
+        ids = [case["id"] for case in self.cases]
+        self.assertEqual(len(ids), len(set(ids)))
+
+    def test_both_labels_are_well_represented(self):
+        positive = [case for case in self.cases if case["should_fire"]]
+        negative = [case for case in self.cases if not case["should_fire"]]
+        self.assertGreaterEqual(len(positive), 10)
+        self.assertGreaterEqual(len(negative), 8)
+
+    def test_should_fire_is_a_boolean(self):
+        for case in self.cases:
+            self.assertIsInstance(case["should_fire"], bool, case)
+
+    def test_every_case_explains_its_label(self):
+        for case in self.cases:
+            self.assertGreaterEqual(len(case["why"]), 15, case)
+
+
 if __name__ == "__main__":
     unittest.main()
