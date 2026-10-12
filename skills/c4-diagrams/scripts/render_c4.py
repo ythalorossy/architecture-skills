@@ -789,7 +789,7 @@ def flow_diagrams(model, facts):
         lines = ["sequenceDiagram"]
         for node in used:
             label, kind = participants.get(node, (node, "participant"))
-            lines.append(f"    {kind} {safe[node]} as {_clean(label)}")
+            lines.append(f'    {kind} {safe[node]} as {_ms.label_text("sequence_alias", str(label))}')
         for step in flow["steps"]:
             arrow = "-->>" if step.get("reply") else ("-)" if step.get("async") else "->>")
             text = _seq_text(step.get("description", ""))

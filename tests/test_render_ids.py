@@ -179,6 +179,33 @@ class ExactIdsTest(unittest.TestCase):
         self.assertIn("Serves 'GET /books'", mermaid)
 
 
+class SequenceAliasEscapeTest(unittest.TestCase):
+    """A ';' in a participant alias ends the statement and breaks the parse."""
+
+    def test_semicolon_in_participant_alias_is_escaped(self):
+        model = _make_minimal_model(
+            people=[{"id": "user", "name": "User"}],
+            containers=[{"id": "orders", "name": "Orders; API"}],
+            flows=[{"name": "F", "steps": [
+                {"from": "user", "to": "orders", "description": "post"},
+            ]}],
+        )
+        _, _, mermaid, _ = render_c4.flow_diagrams(model, {"containers": []})[0]
+        self.assertIn("participant orders as Orders#59; API", mermaid)
+        self.assertNotIn("as Orders; API", mermaid)
+
+    def test_hash_and_quote_in_participant_alias_are_escaped(self):
+        model = _make_minimal_model(
+            people=[{"id": "user", "name": 'Ops #1 "lead"'}],
+            containers=[{"id": "svc", "name": "Svc"}],
+            flows=[{"name": "F", "steps": [
+                {"from": "user", "to": "svc", "description": "post"},
+            ]}],
+        )
+        _, _, mermaid, _ = render_c4.flow_diagrams(model, {"containers": []})[0]
+        self.assertIn("as Ops #35;1 #quot;lead#quot;", mermaid)
+
+
 @unittest.skipUnless(os.environ.get("C4_REAL_RENDER") == "1",
                      "set C4_REAL_RENDER=1 to render with the real mermaid-cli")
 class AdversarialCorpusTest(unittest.TestCase):
