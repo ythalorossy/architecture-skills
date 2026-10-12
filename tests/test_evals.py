@@ -675,5 +675,84 @@ class TestPrompts(unittest.TestCase):
             self.assertGreaterEqual(len(case["why"]), 15, case)
 
 
+from unittest import mock  # noqa: E402
+
+TRIGGERS = EVALS / "triggers"
+if str(TRIGGERS) not in sys.path:
+    sys.path.insert(0, str(TRIGGERS))
+
+import run_triggers  # noqa: E402
+
+
+class TestTriggerRunner(unittest.TestCase):
+    def test_dry_run_prints_a_line_per_case_and_spawns_nothing(self):
+        argv = sys.argv
+        sys.argv = ["run_triggers.py", "--dry-run"]
+        buffer = io.StringIO()
+        try:
+            with mock.patch.object(run_triggers.subprocess, "run") as spawn:
+                with contextlib.redirect_stdout(buffer):
+                    run_triggers.main()
+        finally:
+            sys.argv = argv
+        spawn.assert_not_called()
+        output = buffer.getvalue()
+        for case in run_triggers.load_cases(PROMPTS):
+            self.assertIn(case["id"], output)
+
+    def test_the_command_runs_claude_headless_with_stream_json(self):
+        command = run_triggers.command_for({"id": "t01", "prompt": "Draw the C4 diagram"})
+        self.assertEqual(command[0], "claude")
+        self.assertIn("-p", command)
+        self.assertIn("Draw the C4 diagram", command)
+        self.assertIn("stream-json", command)
+
+    def test_bash_is_disallowed_so_the_analyzer_never_runs(self):
+        command = run_triggers.command_for({"id": "t01", "prompt": "x"})
+        self.assertIn("--disallowedTools", command)
+        self.assertIn("Bash", command[command.index("--disallowedTools") + 1])
+
+    def test_fired_detects_the_skill_by_name(self):
+        events = '{"type":"assistant","message":{"content":[{"type":"tool_use",' \
+                 '"name":"Skill","input":{"skill":"c4-diagrams"}}]}}'
+        self.assertTrue(run_triggers.fired(events))
+
+    def test_fired_is_false_when_the_skill_is_absent(self):
+        events = '{"type":"assistant","message":{"content":[{"type":"text","text":"Sure."}]}}'
+        self.assertFalse(run_triggers.fired(events))
+
+    def test_fired_ignores_another_skill(self):
+        events = '{"type":"assistant","message":{"content":[{"type":"tool_use",' \
+                 '"name":"Skill","input":{"skill":"some-other-skill"}}]}}'
+        self.assertFalse(run_triggers.fired(events))
+
+    def test_score_computes_precision_and_recall(self):
+        results = [
+            {"id": "a", "should_fire": True,  "fired": True,  "status": "ok"},
+            {"id": "b", "should_fire": True,  "fired": False, "status": "ok"},
+            {"id": "c", "should_fire": False, "fired": True,  "status": "ok"},
+            {"id": "d", "should_fire": False, "fired": False, "status": "ok"},
+        ]
+        summary = run_triggers.score(results)
+        self.assertEqual(summary["true_positive"], 1)
+        self.assertEqual(summary["false_negative"], 1)
+        self.assertEqual(summary["false_positive"], 1)
+        self.assertEqual(summary["true_negative"], 1)
+        self.assertEqual(summary["precision"], 0.5)
+        self.assertEqual(summary["recall"], 0.5)
+        self.assertEqual(summary["errors"], 0)
+
+    def test_an_errored_case_is_excluded_from_precision_and_recall(self):
+        """An infrastructure failure is not evidence about the description."""
+        results = [
+            {"id": "a", "should_fire": True, "fired": True, "status": "ok"},
+            {"id": "b", "should_fire": True, "fired": False, "status": "error"},
+        ]
+        summary = run_triggers.score(results)
+        self.assertEqual(summary["errors"], 1)
+        self.assertEqual(summary["recall"], 1.0)
+        self.assertEqual(summary["scored"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()
