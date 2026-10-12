@@ -578,6 +578,38 @@ class TestGrade(unittest.TestCase):
         self.assertEqual(payload["recall"]["score"], 1.0)
         self.assertTrue(payload["render"]["ok"])
 
+    def test_a_wrong_type_section_scores_zero_instead_of_crashing(self):
+        """Agent JSON can put any type in a section; the grader must still report."""
+        cases = [
+            ("relationships", {"relationships": 5}, "relationships"),
+            ("relationships as a string", {"relationships": "none"}, "relationships"),
+            ("flows", {"flows": 5}, "flow_steps"),
+            ("flow steps", {"flows": [{"steps": 5}]}, "flow_steps"),
+            ("flow steps as a string", {"flows": [{"steps": "abc"}]}, "flow_steps"),
+            ("containers", {"containers": 5}, "elements"),
+            ("containers as a string", {"containers": "api"}, "elements"),
+        ]
+        for label, patch, part in cases:
+            with self.subTest(label), tempfile.TemporaryDirectory() as tmp:
+                output = analyzed(tmp, json.dumps({"system": {"name": "X"}, **patch}))
+                scores = grade.grade(output, self.gold, BOOKSHOP)
+                self.assertEqual(scores["recall"]["parts"][part][0], 0)
+                self.assertIn("missed", scores["recall"])
+                grade.format_report(scores, GOLD_FILE)
+
+    def test_the_report_says_na_when_there_is_no_evidence(self):
+        scores = {
+            "recall": {"score": 0.0, "hits": 0, "total": 1,
+                       "parts": {"elements": (0, 1), "relationships": (0, 0), "flow_steps": (0, 0)},
+                       "missed": []},
+            "hallucination": {"count": 0, "problems": []},
+            "evidence": {"score": 1.0, "valid": 0, "total": 0, "problems": []},
+            "render": {"ok": True, "status": "ok", "problems": [], "drift": []},
+        }
+        report = grade.format_report(scores, GOLD_FILE)
+        self.assertIn("n/a (no evidence entries)", report)
+        self.assertNotIn("1.00", report)
+
     def _run_cli(self, output):
         return subprocess.run(
             [sys.executable, str(EVALS / "grade.py"), "--output", str(output), "--repo", str(BOOKSHOP)],

@@ -99,6 +99,11 @@ def load_gold(path):
 SECTIONS = ("people", "containers", "external_systems")
 
 
+def _list(value):
+    """`value` if it is a list, else an empty one: agent JSON can be any shape."""
+    return value if isinstance(value, list) else []
+
+
 def _elements(model):
     """[(section, index, element)] in document order, skipping non-dict entries.
 
@@ -107,7 +112,7 @@ def _elements(model):
     """
     found = []
     for section in SECTIONS:
-        for index, element in enumerate(model.get(section) or []):
+        for index, element in enumerate(_list(model.get(section))):
             if isinstance(element, dict):
                 found.append((section, index, element))
     return found
@@ -185,7 +190,7 @@ def _end_role(end, role_of, owners=None):
 def _edge_roles(edges, role_of, owners=None):
     """{(from role, to role)} for the edges whose ends both resolve."""
     pairs = set()
-    for edge in edges or []:
+    for edge in _list(edges):
         if not isinstance(edge, dict):
             continue
         source = _end_role(edge.get("from"), role_of, owners)
@@ -198,9 +203,9 @@ def _edge_roles(edges, role_of, owners=None):
 def _flow_steps(model):
     """Every step of every flow, flattened."""
     steps = []
-    for flow in model.get("flows") or []:
+    for flow in _list(model.get("flows")):
         if isinstance(flow, dict):
-            steps.extend(flow.get("steps") or [])
+            steps.extend(_list(flow.get("steps")))
     return steps
 
 
@@ -416,10 +421,13 @@ def format_report(scores, gold_path):
         lines.append(f"    {item}")
 
     evidence = scores["evidence"]
-    lines.append(
-        f"  evidence validity   {evidence['score']:.2f}   "
-        f"({evidence['valid']}/{evidence['total']})"
-    )
+    if evidence["total"] == 0:
+        lines.append("  evidence validity   n/a (no evidence entries)")
+    else:
+        lines.append(
+            f"  evidence validity   {evidence['score']:.2f}   "
+            f"({evidence['valid']}/{evidence['total']})"
+        )
     for item in evidence["problems"]:
         lines.append(f"    {item}")
 
