@@ -18,10 +18,10 @@ from pathlib import Path
 
 try:
     from scripts.repo_index import RepoIndex, read_file_text, walk_files
-    from scripts.paths import TEST_DIRS, local_tag
+    from scripts.paths import GO_EXPANDED_DIRS, GO_MODULE_LINE, in_test_dir, local_tag
 except ImportError:
     from repo_index import RepoIndex, read_file_text, walk_files
-    from paths import TEST_DIRS, local_tag
+    from paths import GO_EXPANDED_DIRS, GO_MODULE_LINE, in_test_dir, local_tag
 import xml.etree.ElementTree as ET
 
 CODE_EXTENSIONS = {".java": "jvm", ".kt": "jvm", ".cs": "cs", ".go": "go"}
@@ -40,12 +40,17 @@ def _rel(repo, path):
     return Path(path).resolve().relative_to(repo).as_posix()
 
 
+# A test file named rather than foldered: OrderTests.cs, order_test.go,
+# api.test.ts, api.spec.tsx.
+TEST_FILE_NAME = re.compile(r"(Tests?|Spec)\.(java|kt|cs)$|_test\.go$|\.(test|spec)\.[jt]sx?$")
+
+
 def _is_test(path, base):
     parts = Path(path).relative_to(base).parts[:-1]
     name = Path(path).name
     return (
-        any(part.lower() in TEST_DIRS for part in parts)
-        or re.search(r"(Tests?|Spec)\.(java|kt|cs)$|_test\.go$", name) is not None
+        in_test_dir(parts)
+        or TEST_FILE_NAME.search(name) is not None
     )
 
 
@@ -71,7 +76,7 @@ def _go_module_path(directory):
     for folder in [directory, *directory.parents]:
         go_mod = folder / "go.mod"
         if go_mod.is_file():
-            match = re.search(r"^module\s+(\S+)", _file_text(go_mod), re.MULTILINE)
+            match = GO_MODULE_LINE.search(_file_text(go_mod))
             return (match.group(1), folder) if match else (None, folder)
     return None, None
 
@@ -166,7 +171,7 @@ def code_components(module_dirs, index=None):
             elif language == "go":
                 _, go_root = _go_module_path(file.parent)
                 relative = file.parent.relative_to(go_root).parts if go_root else ()
-                if relative[:1] and relative[0] in ("cmd", "internal", "pkg", "api", "app") and len(relative) > 1:
+                if relative[:1] and relative[0] in GO_EXPANDED_DIRS and len(relative) > 1:
                     group = "/".join(relative[:2])
                 else:
                     group = relative[0] if relative else "(root)"

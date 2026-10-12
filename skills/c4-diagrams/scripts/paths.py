@@ -6,12 +6,41 @@ Path and name helpers shared by the ecosystem modules:
 - local_tag          an XML element's tag without its namespace
 - project_group      the folder that holds a project's folder
 - TEST_DIRS          folder names whose code is test code
+- in_test_dir        True when any of these path parts is a test folder
+- GO_EXPANDED_DIRS   Go folders whose second segment names the package group
+- GO_MODULE_LINE     the `module x` line of a go.mod
+- REQUIREMENTS_FILE  a Python requirements file name
+- GENERIC_URL_KEYS   setting names that say "a URL" and nothing else
 """
+import re
 from pathlib import Path, PurePosixPath
 
 # Code below a folder with one of these names is test code: it is left out
 # of components, facts and evidence.
 TEST_DIRS = frozenset({"test", "tests", "__tests__", "spec", "specs", "e2e", "testdata"})
+
+# Go repositories put several packages under one of these, so the group a
+# package belongs to is its first two segments: services/billing, not
+# services. Shared by the component view and the code-structure view.
+GO_EXPANDED_DIRS = ("cmd", "internal", "pkg", "api", "app", "services")
+
+# `module example.com/shop` at the top of a go.mod.
+GO_MODULE_LINE = re.compile(r"^module\s+(\S+)", re.MULTILINE)
+
+# requirements.txt, requirements-dev.txt, requirements_prod.txt.
+REQUIREMENTS_FILE = re.compile(r"requirements.*\.txt$")
+
+# Setting names that only say "this is a URL". When one is the last part of
+# a configuration key, the key above it is what names the thing.
+GENERIC_URL_KEYS = frozenset({
+    "url", "uri", "urls", "baseurl", "base-url", "base_url",
+    "apiurl", "api-url", "api_url", "endpoint", "host", "address",
+})
+
+
+def in_test_dir(parts) -> bool:
+    """True when any of ``parts`` is a test folder, whatever case it is written in."""
+    return any(str(part).lower() in TEST_DIRS for part in parts)
 
 
 def normalize_include(include: str) -> str:
