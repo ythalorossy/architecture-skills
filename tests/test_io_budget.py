@@ -23,9 +23,12 @@ class TestSingleWalkBudget(unittest.TestCase):
             original_walk = os.walk
             call_count = [0]
 
-            def counting_walk(*args, **kwargs):
-                call_count[0] += 1
-                return original_walk(*args, **kwargs)
+            def counting_walk(top, *args, **kwargs):
+                # Only walks of the repository count. shutil.rmtree walks the
+                # staging folder on Windows, which is not repository I/O.
+                if Path(top) == fixture:
+                    call_count[0] += 1
+                return original_walk(top, *args, **kwargs)
 
             with mock.patch.object(os, "walk", counting_walk):
                 analyzer = RepositoryAnalyzer(str(fixture), str(output), no_svg=True)

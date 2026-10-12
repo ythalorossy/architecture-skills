@@ -20,7 +20,9 @@ class GoGroupingTest(unittest.TestCase):
 
     def test_a_services_package_keeps_its_second_segment(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            # Resolved: on Windows mkdtemp returns the 8.3 short form, which
+            # does not compare with the long form the index stores.
+            root = Path(tmp).resolve()
             write(root, {
                 "go.mod": "module example.com/shop\n\ngo 1.22\n",
                 "services/billing/handler.go": "package billing\n\nfunc Handle() {}\n",
@@ -79,7 +81,7 @@ class TestFolderCaseTest(unittest.TestCase):
 
     def test_a_main_in_a_capitalised_test_folder_is_not_an_entry_point(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            root = Path(tmp).resolve()
             write(root, {
                 "Tests/Main.java": "public class Main { public static void main(String[] a) {} }\n",
             })
