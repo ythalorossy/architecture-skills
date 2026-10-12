@@ -1,0 +1,35 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: freight
+      POSTGRES_USER: freight
+      POSTGRES_PASSWORD: freight
+
+  api:
+    build: ./api
+    environment:
+      DATABASE_URL: postgresql://freight:freight@db:5432/freight
+      CACHE_URL: redis://cache.freight.example:6379/0
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+
+  worker:
+    build: ./worker
+    environment:
+      DATABASE_URL: postgresql://freight:freight@db:5432/freight
+      CACHE_URL: redis://cache.freight.example:6379/0
+      CARRIER_API_URL: https://api.carrier.example/v3
+      POLL_SECONDS: "60"
+    depends_on:
+      - db
+
+  # Local development only: a database console for the team. Never deployed.
+  adminer:
+    image: adminer:4
+    ports:
+      - "8081:8080"
+    depends_on:
+      - db
