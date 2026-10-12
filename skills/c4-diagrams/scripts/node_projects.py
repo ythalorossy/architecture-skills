@@ -21,12 +21,18 @@ LOCAL_SPEC = re.compile(r"^(workspace:|file:|link:|portal:)")
 
 
 
-def _pnpm_workspace_globs(file):
+def _pnpm_workspace_globs(file, index=None, collector=None):
     """Read the `packages:` list of pnpm-workspace.yaml without a YAML parser."""
     globs = []
     in_packages = False
 
-    for line in file.read_text(encoding="utf-8").splitlines():
+    # Through the index, like every package.json read: tolerant decoding, and
+    # an unreadable or oddly encoded file is recorded instead of raising.
+    text = RepoIndex.ensure(index, file.parent, collector).read_text(file)
+    if text is None:
+        return globs
+
+    for line in text.splitlines():
         if re.match(r"^packages\s*:", line):
             in_packages = True
             continue
@@ -40,7 +46,7 @@ def _pnpm_workspace_globs(file):
     return globs
 
 
-def _workspace_globs(directory, data):
+def _workspace_globs(directory, data, index=None, collector=None):
     """Workspace patterns declared in a package.json or a sibling pnpm-workspace.yaml."""
     workspaces = data.get("workspaces")
     if isinstance(workspaces, dict):
@@ -50,7 +56,7 @@ def _workspace_globs(directory, data):
 
     pnpm = directory / "pnpm-workspace.yaml"
     if pnpm.exists():
-        globs += _pnpm_workspace_globs(pnpm)
+        globs += _pnpm_workspace_globs(pnpm, index, collector)
 
     return globs
 
@@ -97,7 +103,7 @@ def discover_projects(repo_path, index=None, collector=None):
         relative_dir = directory.relative_to(repo).as_posix()
         relative_dir = "" if relative_dir == "." else relative_dir
 
-        globs = _workspace_globs(directory, data)
+        globs = _workspace_globs(directory, data, index, collector)
         if globs:
             roots.append((relative_dir, globs, file))
             continue

@@ -43,9 +43,15 @@ def _parse_pyproject(file, collector=None, index=None):
             collector.parse_error("python_projects", str(file), "Python 3.11+ is required to read pyproject.toml")
         return None, []
 
+    # Through the index, like setup.cfg and setup.py: tolerant decoding, and
+    # an unreadable or oddly encoded file is recorded instead of raising.
+    text = RepoIndex.ensure(index, file.parent, collector).read_text(file)
+    if text is None:
+        return None, []
+
     try:
-        data = tomllib.loads(file.read_text(encoding="utf-8"))
-    except (OSError, tomllib.TOMLDecodeError) as ex:
+        data = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as ex:
         if collector:
             collector.parse_error("python_projects", str(file), f"invalid TOML: {ex}")
         return None, []
