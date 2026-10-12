@@ -24,3 +24,7 @@
 {"id": "t24", "prompt": "What is the C4 model? Explain the four levels.", "should_fire": false, "why": "a conceptual question about C4 with no repository to analyze"}
 {"id": "t25", "prompt": "Write a unit test for the payment client", "should_fire": false, "why": "writing code, which the description excludes"}
 {"id": "t26", "prompt": "Summarize the README of this repository", "should_fire": false, "why": "reading one file; no analysis of structure or dependencies"}
+{"id": "t27", "prompt": "Can you document the architecture of this Python service? It's a FastAPI app with a Celery worker", "should_fire": true, "why": "a supported ecosystem the description names; no positive case covered Python"}
+{"id": "t28", "prompt": "Diagram how this TypeScript backend is structured - it's a Node.js monorepo", "should_fire": true, "why": "a supported ecosystem the description names; no positive case covered Node.js/TypeScript"}
+{"id": "t29", "prompt": "Which environment variables and config files do the services in this repo read?", "should_fire": true, "why": "the configuration overview is a named output and was only ever requested together with the API"}
+{"id": "t30", "prompt": "How do the packages inside this codebase relate to each other and which depend on which?", "should_fire": true, "why": "\"packages\" is a named unit in the description with no case of its own"}
