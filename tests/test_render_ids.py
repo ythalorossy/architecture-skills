@@ -179,6 +179,19 @@ class ExactIdsTest(unittest.TestCase):
         self.assertIn("Serves 'GET /books'", mermaid)
 
 
+class MarkdownProseTest(unittest.TestCase):
+    """Report prose is Markdown, not Mermaid: it must not carry #lt; / #gt;."""
+
+    def test_flow_intro_and_heading_keep_plain_angle_brackets(self):
+        section = render_c4._section(
+            "#### Flow <main>", "c4-flow-x", "sequenceDiagram\n", None,
+            intro="Handles <Request> objects",
+        )
+        self.assertIn("Handles <Request> objects", section)
+        self.assertNotIn("#lt;", section)
+        self.assertNotIn("#gt;", section)
+
+
 class SequenceAliasEscapeTest(unittest.TestCase):
     """A ';' in a participant alias ends the statement and breaks the parse."""
 

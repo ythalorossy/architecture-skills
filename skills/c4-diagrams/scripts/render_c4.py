@@ -307,6 +307,11 @@ def _clean(text):
     return _ms.label_text("flowchart_plain", str(text))
 
 
+def _prose(text):
+    """Report text: Markdown prose, so plain < and >, never Mermaid entity codes."""
+    return str(text)
+
+
 def _wrap(text, width=34):
     return "\n".join(textwrap.wrap(_clean(text), width)) if text else ""
 
@@ -844,7 +849,7 @@ def deployment_diagram(facts, model):
 def _section(title, stem, mermaid, svg_ok, notes=(), intro=""):
     lines = [title, ""]
     if intro:
-        lines += [_clean(intro), ""]
+        lines += [_prose(intro), ""]
     lines += [f"> {note}" for note in notes] + ([""] if notes else [])
     if svg_ok:
         lines += [f"![{stem}]({stem}.svg)", "", "<details>", "<summary>Mermaid source</summary>", "",
@@ -1137,7 +1142,7 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
         block += ["> No containers, data stores or external systems were detected, so there are no C4 diagrams. "
                   "Build the model from the source by hand, or see the dependency graph appendix.", ""]
     elif use_model["system"].get("description") and not use_model.get("_facts_only"):
-        block += [_clean(use_model["system"]["description"]), ""]
+        block += [_prose(use_model["system"]["description"]), ""]
 
     if "c4-context" in diagrams:
         block.append(_section("### Level 1: System context", "c4-context", diagrams["c4-context"], rendered.get("c4-context")))
@@ -1157,13 +1162,13 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
                   "The classes and interfaces of the key components: inheritance, implemented interfaces, "
                   "dependencies inside the component and public methods. Boxes marked external live in another component.", ""]
         for entry in code_entries:
-            block.append(_section(f"#### {_clean(entry['title'])}", entry["stem"], entry["mermaid"],
+            block.append(_section(f"#### {_prose(entry['title'])}", entry["stem"], entry["mermaid"],
                                   rendered.get(entry["stem"]), code_diagrams.notes(entry), intro=entry["description"]))
 
     if flows:
         block += ["### Key flows", "", "How a request moves through the system, step by step.", ""]
         for stem, title, mermaid, description in flows:
-            block.append(_section(f"#### {_clean(title)}", stem, mermaid, rendered.get(stem), intro=description))
+            block.append(_section(f"#### {_prose(title)}", stem, mermaid, rendered.get(stem), intro=description))
 
     block += _deployment_section(facts, use_model, rendered.get("c4-deployment"), deployment)
     block += _endpoints_section(facts, use_model)
