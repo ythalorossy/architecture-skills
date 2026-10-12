@@ -533,7 +533,10 @@ def _component_views(graph, overview=True, full_list="the dependency graph appen
     if len(nodes) > MAX_COMPONENTS and len(groups) > 1:
         group_of = {n: (nodes[n]["group"] or "(root)") for n in nodes}
         group_edges = {}
-        for source, targets in edges.items():
+        # From the raw edges, not the reduced ones: hiding A → C is only
+        # readable when A → B → C is drawn beside it, and the folder overview
+        # draws neither, so a reduced edge would silently drop a folder arrow.
+        for source, targets in all_edges.items():
             for target in targets:
                 a, b = group_of[source], group_of[target]
                 if a != b:

@@ -125,6 +125,44 @@ class SharedComponentTest(unittest.TestCase):
         self.assertFalse(any("util" in targets for targets in drawn.values()))
 
 
+class FolderOverviewTest(unittest.TestCase):
+    """The folder overview shows every dependency between folders.
+
+    Hiding a shortcut is a component-level readability trick: A → C is left
+    out only because A → B → C is drawn right next to it. The folder overview
+    draws neither, so it has to count the raw edges — otherwise a folder pair
+    that really does depend on each other loses its arrow entirely.
+    """
+
+    def _three_folders(self):
+        """21 components in folders alpha/beta/gamma, dense enough to reduce.
+
+        alpha00 → beta00 → gamma00 and the shortcut alpha00 → gamma00: at
+        component level the shortcut is hidden, so alpha → gamma may only be
+        read off the raw edges.
+        """
+        groups = {g: [f"{g}{i:02}" for i in range(7)] for g in ("alpha", "beta", "gamma")}
+        edges = []
+        for members in groups.values():
+            edges += list(zip(members, members[1:]))
+        edges += [(f"alpha{i:02}", f"beta{i:02}") for i in range(7)]
+        edges += [(f"beta{i:02}", f"gamma{i:02}") for i in range(7)]
+        edges.append(("alpha00", "gamma00"))
+        return _graph(groups, edges)
+
+    def test_overview_keeps_a_folder_edge_whose_shortcut_is_hidden(self):
+        graph = self._three_folders()
+        self.assertGreater(len(graph["nodes"]), render_c4.MAX_COMPONENTS)
+        overview = render_c4._component_views(graph)[0]
+        suffix, subtitle, nodes, edges, notes = overview
+        self.assertEqual((suffix, subtitle), ("", "folders"))
+        self.assertEqual(sorted(nodes), ["alpha", "beta", "gamma"])
+        # The shortcut is hidden at component level …
+        self.assertIn("hidden because a longer path", " ".join(notes))
+        # … but alpha really does depend on gamma, so the overview says so.
+        self.assertEqual(edges, {"alpha": ["beta", "gamma"], "beta": ["gamma"]})
+
+
 class SplitPartsTest(unittest.TestCase):
     def test_edge_to_another_part_keeps_the_target_as_a_stub(self):
         a = [f"a{i:02}" for i in range(13)]
