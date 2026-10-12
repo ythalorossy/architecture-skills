@@ -6,6 +6,7 @@ calls a model, touches the network, or renders an SVG: `helpers` sets
 C4_SVG=0 and the render-pass score passes svg=False.
 """
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -576,6 +577,31 @@ class TestGrade(unittest.TestCase):
         payload = json.loads(buffer.getvalue())
         self.assertEqual(payload["recall"]["score"], 1.0)
         self.assertTrue(payload["render"]["ok"])
+
+    def _run_cli(self, output):
+        return subprocess.run(
+            [sys.executable, str(EVALS / "grade.py"), "--output", str(output), "--repo", str(BOOKSHOP)],
+            capture_output=True, text=True,
+        )
+
+    def test_the_process_exits_zero_on_terrible_scores(self):
+        """Pins "reports, never gates" through a real exit code."""
+        terrible = json.dumps({"system": {"name": "X"}, "containers": [{"id": "a", "name": "Redis cache"}]})
+        with tempfile.TemporaryDirectory() as tmp:
+            output = analyzed(tmp, terrible)
+            result = self._run_cli(output)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("recall", result.stdout)
+        self.assertIn("0.00", result.stdout)
+
+    def test_the_process_exits_one_when_there_is_no_model(self):
+        """The other half: non-zero only when it cannot do its job."""
+        with tempfile.TemporaryDirectory() as tmp:
+            output = analyzed(tmp)
+            (output / "c4-model.json").unlink(missing_ok=True)
+            result = self._run_cli(output)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("no c4-model.json", result.stderr)
 
 
 if __name__ == "__main__":
