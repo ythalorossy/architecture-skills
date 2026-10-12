@@ -80,7 +80,7 @@ class TestLoadGold(unittest.TestCase):
         self.assertIn("queue", str(caught.exception))
 
     def test_two_roles_sharing_a_match_term_are_rejected(self):
-        """Review Focus 4: shared terms make role resolution order-dependent."""
+        """Shared terms make role resolution order-dependent."""
         bad = minimal_gold(required_elements=[
             {"role": "api", "kind": "container", "match": ["api"]},
             {"role": "gateway", "kind": "container", "match": ["api"]},
@@ -266,7 +266,7 @@ class TestRecall(unittest.TestCase):
         self.assertIn("relationship api -> orders-db", result["missed"])
 
     def test_a_model_without_flows_or_components_scores_zero_flow_steps(self):
-        """Review Focus 2: every facts-only model has this shape."""
+        """A facts-only model has no flows or components, so it scores zero flow steps."""
         candidate = model()
         del candidate["flows"]
         del candidate["components"]
@@ -275,7 +275,7 @@ class TestRecall(unittest.TestCase):
         self.assertEqual(result["parts"]["elements"], (6, 6))
 
     def test_an_end_that_is_missing_or_none_is_skipped(self):
-        """Review Focus 3: a half-written model scores, it does not crash."""
+        """A half-written model scores, it does not crash."""
         candidate = model(
             relationships=[{"from": None, "to": "bookshop-api"}, {"to": "db-postgresql"},
                            {"from": "bookshop-api", "to": "db-postgresql"}],
@@ -370,7 +370,7 @@ class TestEvidence(unittest.TestCase):
         self.assertIn("4000", result["problems"][0])
 
     def test_a_model_with_no_evidence_scores_one_of_zero(self):
-        """Review Focus: '1.0' must never be read as good when nothing was checked."""
+        """A score of 1.0 over zero entries must report total 0, so it is never read as good evidence."""
         candidate = model(containers=[{"id": "x", "name": "X"}], people=[], external_systems=[])
         result = grade.score_evidence(candidate, BOOKSHOP)
         self.assertEqual(result["score"], 1.0)
@@ -381,6 +381,44 @@ class TestEvidence(unittest.TestCase):
             {"id": "x", "name": "X", "evidence": ["docker-compose.yml:9 (the api service)"]},
         ])
         self.assertEqual(grade.score_evidence(candidate, BOOKSHOP)["score"], 1.0)
+
+    def _single(self, evidence):
+        candidate = model(containers=[{"id": "x", "name": "X", "evidence": evidence}])
+        return grade.score_evidence(candidate, BOOKSHOP)
+
+    def test_a_non_list_evidence_value_is_one_problem_not_a_crash(self):
+        for bad, kind in (("api/bookshop/main.py:6", "str"), (5, "int"), ({"a": 1}, "dict")):
+            with self.subTest(kind=kind):
+                result = self._single(bad)
+                self.assertEqual(result["total"], 1)
+                self.assertEqual(result["score"], 0.0)
+                self.assertIn(f"x: evidence is a {kind}, expected a list", result["problems"])
+
+    def test_a_blank_entry_is_a_problem(self):
+        for blank in ("", "   ", " (just a note)"):
+            with self.subTest(blank=blank):
+                result = self._single([blank])
+                self.assertEqual((result["total"], result["score"]), (1, 0.0))
+                self.assertIn("blank", result["problems"][0])
+
+    def test_an_absolute_path_is_a_problem(self):
+        for path in ("/etc/passwd", "/etc/passwd:1", "C:\\Windows\\win.ini"):
+            with self.subTest(path=path):
+                result = self._single([path])
+                self.assertEqual(result["score"], 0.0)
+                self.assertIn("absolute", result["problems"][0])
+
+    def test_a_path_that_escapes_the_repository_is_a_problem(self):
+        result = self._single(["../../etc/passwd"])
+        self.assertEqual(result["score"], 0.0)
+        self.assertIn("escapes", result["problems"][0])
+
+    def test_a_non_string_entry_is_a_problem(self):
+        result = self._single([7, None])
+        self.assertEqual((result["total"], result["score"]), (2, 0.0))
+
+    def test_an_absent_or_empty_evidence_list_counts_nothing(self):
+        self.assertEqual(self._single([])["total"], 0)
 
     def test_the_fixture_model_evidence_is_all_valid(self):
         fixture = json.loads((BOOKSHOP / "c4-model.json").read_text(encoding="utf-8"))

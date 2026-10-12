@@ -13,6 +13,7 @@ This is a development tool. Nothing under evals/ is imported by the skill
 at runtime, and the shipped skill stays stdlib-only scripts.
 """
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -274,6 +275,27 @@ def score_hallucination(model, gold, drift):
     return {"count": len(problems), "problems": problems}
 
 
+def _own_evidence_problem(entry):
+    """Entries the shipped checker would wave through but that point at no file in the repository.
+
+    `_evidence_problem` joins the path onto the repo root, so a blank entry
+    resolves to the root itself and an absolute path discards the repo prefix.
+    Both would score as valid evidence. Everything else is left to the checker.
+    """
+    if not isinstance(entry, str):
+        return f"is a {type(entry).__name__}, expected a string"
+    reference = entry.split(" (")[0].strip()
+    if not reference:
+        return "is blank"
+    found = re.fullmatch(r"(.+?):(\d+)(?:-\d+)?", reference)
+    path = found.group(1) if found else reference
+    if path.startswith(("/", "\\")) or re.match(r"[A-Za-z]:[\\/]", path):
+        return "is an absolute path, not a path inside the repository"
+    if ".." in re.split(r"[\\/]", path):
+        return "escapes the repository with '..'"
+    return None
+
+
 def score_evidence(model, repo):
     """The fraction of evidence entries that point at a real file and line.
 
@@ -286,9 +308,16 @@ def score_evidence(model, repo):
     problems = []
     total = 0
     for _, _, element in _elements(model):
-        for entry in element.get("evidence") or []:
+        evidence = element.get("evidence")
+        if evidence is None:
+            continue
+        if not isinstance(evidence, list):
             total += 1
-            problem = render_c4._evidence_problem(entry, repo)
+            problems.append(f"{element.get('id', '?')}: evidence is a {type(evidence).__name__}, expected a list")
+            continue
+        for entry in evidence:
+            total += 1
+            problem = _own_evidence_problem(entry) or render_c4._evidence_problem(entry, repo)
             if problem:
                 problems.append(f"{entry}: {problem}")
     valid = total - len(problems)
