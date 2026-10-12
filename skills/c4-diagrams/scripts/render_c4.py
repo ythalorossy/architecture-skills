@@ -41,6 +41,15 @@ BLOCK_START = "[//]: # (c4:start)"
 BLOCK_END = "[//]: # (c4:end)"
 OLD_MARKERS = ("<!-- c4:start -->", "<!-- c4:end -->")
 
+# Every key rendering reads out of c4-facts.json without a default. A missing
+# one used to go unnoticed (`endpoints`, `configuration` and `deployment` just
+# dropped their report section) or surface as an opaque KeyError
+# (`data_stores`), so they are checked once, up front, by name.
+REQUIRED_FACTS = (
+    "containers", "data_stores", "external_systems", "relationships",
+    "endpoints", "deployment", "configuration",
+)
+
 # C4 colours, defined once in mermaid_syntax.
 STYLES = _ms.flowchart_classdef_lines()
 
@@ -989,6 +998,11 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
             f"{facts_file} not found; run analyze_repository.py first"
         )
     facts = json.loads(facts_file.read_text(encoding="utf-8"))
+    for key in REQUIRED_FACTS:
+        if key not in facts:
+            raise UserError(
+                f"{key} missing; re-run analyze_repository.py", path="c4-facts.json"
+            )
     model_file = output / "c4-model.json"
 
     result = ValidationResult(model=None)
