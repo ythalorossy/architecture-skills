@@ -325,6 +325,11 @@ class TestHallucination(unittest.TestCase):
         result = grade.score_hallucination(candidate, self.gold, ["drifted"])
         self.assertEqual(result["count"], 2)
 
+    def test_forbidden_terms_are_lowercased_too(self):
+        gold = {"forbidden": ["Redis"]}
+        candidate = model(containers=[{"id": "c", "name": "redis cache"}])
+        self.assertEqual(grade.score_hallucination(candidate, gold, [])["count"], 1)
+
     def test_the_fixture_model_has_none(self):
         """Verified against the real render(): status ok, no drift, no warnings."""
         fixture = json.loads(
