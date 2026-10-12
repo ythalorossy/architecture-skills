@@ -275,7 +275,7 @@ class ReportProseTest(unittest.TestCase):
         result = mermaid_syntax.label_text("flowchart_plain", "<beta>")
         self.assertIn("#lt;", result)
         self.assertIn("#gt;", result)
-        # render_c4._section keeps the intro text out of _clean.
+        # render_c4._section routes the intro through _prose, not the escaper.
 
 
 @unittest.skipUnless(_MERMAID_SYNTAX_AVAILABLE, "mermaid_syntax module not yet implemented")

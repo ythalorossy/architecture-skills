@@ -1,25 +1,16 @@
----
-config:
-  layout: elk
----
 flowchart TB
-    subgraph boundary["`**shop-api** [Container]`"]
-        shop_api["`**shop-api**
-[Component]`"]
-        shop_application["`**shop-application**
-[Component]`"]
-        shop_domain["`**shop-domain**
-[Component]`"]
-        shop_infrastructure["`**shop-infrastructure**
-[Component]`"]
+    subgraph boundary["shop-api [Container]"]
+        shop_api["shop-api<br/>[Component]"]
+        shop_application["shop-application<br/>[Component]"]
+        shop_domain["shop-domain<br/>[Component]"]
+        shop_infrastructure["shop-infrastructure<br/>[Component]"]
     end
     shop_api --> shop_application
     shop_api --> shop_infrastructure
     shop_application --> shop_domain
     shop_infrastructure --> shop_application
-    db_redis[("`**Redis**
-[Container: Redis]`")]
-    shop_infrastructure -->|"`Reads/writes`"| db_redis
+    db_redis[("Redis<br/>[Container: Redis]")]
+    shop_infrastructure -->|"Reads/writes"| db_redis
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff

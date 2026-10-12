@@ -41,6 +41,15 @@ BLOCK_START = "[//]: # (c4:start)"
 BLOCK_END = "[//]: # (c4:end)"
 OLD_MARKERS = ("<!-- c4:start -->", "<!-- c4:end -->")
 
+# Every key rendering reads out of c4-facts.json without a default. A missing
+# one used to go unnoticed (`endpoints`, `configuration` and `deployment` just
+# dropped their report section) or surface as an opaque KeyError
+# (`data_stores`), so they are checked once, up front, by name.
+REQUIRED_FACTS = (
+    "containers", "data_stores", "external_systems", "relationships",
+    "endpoints", "deployment", "configuration",
+)
+
 # C4 colours, defined once in mermaid_syntax.
 STYLES = _ms.flowchart_classdef_lines()
 
@@ -298,26 +307,41 @@ def _clean(text):
     return _ms.label_text("flowchart_plain", str(text))
 
 
+def _prose(text):
+    """Report text: Markdown prose, so plain < and >, never Mermaid entity codes."""
+    return str(text)
+
+
+#: Line break inside a label. Plain labels take no raw newline, and it has to
+#: go in after escaping, which turns a literal < into an entity code.
+BR = "<br/>"
+
+
 def _wrap(text, width=34):
-    return "\n".join(textwrap.wrap(_clean(text), width)) if text else ""
+    return BR.join(textwrap.wrap(_clean(text), width)) if text else ""
 
 
 def _label(name, kind, description=""):
-    """Build a markdown label for a C4 element node."""
-    # Use mermaid_syntax escaper for the name/kind (markdown string context)
-    name_escaped = _ms.label_text("flowchart_md", str(name))
-    kind_escaped = _ms.label_text("flowchart_md", str(kind))
-    lines = [f"**{name_escaped}**", f"[{kind_escaped}]"]
+    """Build a label for a C4 element node.
+
+    Plain, not a mermaid markdown string ("`…`"). A markdown string makes
+    mermaid parse the label as Markdown, and ordinary code names are full of
+    its metacharacters: ``user_service`` loses the underscore and ``__main__``
+    turns bold. Escaping them does not help on the SVG path, where the renderer
+    drops the escapes and the characters with them. A plain label parses no
+    Markdown, so every character survives. The name is no longer bold.
+    """
+    lines = [_clean(name), f"[{_clean(kind)}]"]
     if description:
         lines.append(_wrap(description))
-    return '"`' + "\n".join(lines) + '`"'
+    return '"' + BR.join(lines) + '"'
 
 
 def _edge_label(description, technology=""):
     text = _wrap(description, 28) if description else ""
     if technology:
-        text += ("\n" if text else "") + f"[{_clean(technology)}]"
-    return f'|"`{text}`"|' if text else ""
+        text += (BR if text else "") + f"[{_clean(technology)}]"
+    return f'|"{text}"|' if text else ""
 
 
 class Diagram:
@@ -347,7 +371,7 @@ class Diagram:
         self.lines.append(f"    {self.id(source)} {arrow}{label} {self.id(target)}")
 
     def text(self, boundaries=()):
-        out = ["---", "config:", "  layout: elk", "---", "flowchart TB"] + self.lines + ["    " + s for s in STYLES]
+        out = ["flowchart TB"] + self.lines + ["    " + s for s in STYLES]
         for cls, ids in self.classes.items():
             out.append(f"    class {','.join(ids)} {cls}")
         for boundary in boundaries:
@@ -434,7 +458,7 @@ def container_diagram(model):
         _element_node(d, person, "people")
 
     boundary = d.internal("boundary")
-    d.lines.append(f'    subgraph {boundary}["`**{_clean(model["system"]["name"])}** [Software System]`"]')
+    d.lines.append(f'    subgraph {boundary}["{_clean(model["system"]["name"])} [Software System]"]')
     for container in model["containers"]:
         if not container.get("external"):
             _element_node(d, container, "containers", indent="        ")
@@ -464,6 +488,31 @@ def _short_names(nodes):
         prefix.append(column[0])
     prefix = "".join(prefix)
     return {n: (n[len(prefix):] if prefix and n.startswith(prefix) and len(n) > len(prefix) else n) for n in nodes}
+
+
+def _component_label(node, info, short):
+    """The text drawn in a component box."""
+    return (info.get("label") or short[node]).replace(" (files)", " (root files)")
+
+
+def _drawn_graph(graph):
+    """What a component-style diagram of ``graph`` shows: box labels and the
+    edges between them.
+
+    The node keys are left out on purpose. A container's modules and the code
+    structure inside them are keyed differently (``internal/store`` against
+    ``internal/store::internal/store``) while drawing the very same picture,
+    and that is what makes one of the two views worth skipping.
+    """
+    nodes = graph.get("nodes") or {}
+    short = _short_names(list(nodes))
+    labels = {node: _component_label(node, info, short) for node, info in nodes.items()}
+    edges = {
+        (labels[source], labels[target])
+        for source, targets in (graph.get("edges") or {}).items() if source in labels
+        for target in targets if target in labels
+    }
+    return set(labels.values()), edges
 
 
 def _transitive_reduction(edges):
@@ -524,7 +573,10 @@ def _component_views(graph, overview=True, full_list="the dependency graph appen
     if len(nodes) > MAX_COMPONENTS and len(groups) > 1:
         group_of = {n: (nodes[n]["group"] or "(root)") for n in nodes}
         group_edges = {}
-        for source, targets in edges.items():
+        # From the raw edges, not the reduced ones: hiding A → C is only
+        # readable when A → B → C is drawn beside it, and the folder overview
+        # draws neither, so a reduced edge would silently drop a folder arrow.
+        for source, targets in all_edges.items():
             for target in targets:
                 a, b = group_of[source], group_of[target]
                 if a != b:
@@ -606,13 +658,13 @@ def _graph_diagram(model, facts, container, container_fact, title, nodes, edges,
     d = Diagram()
     short = _short_names(list(nodes))
     boundary = d.internal("boundary")
-    d.lines.append(f'    subgraph {boundary}["`**{_clean(title)}** [Container]`"]')
+    d.lines.append(f'    subgraph {boundary}["{_clean(title)} [Container]"]')
     regular = [n for n, info in nodes.items() if not info.get("shared") and not info.get("stub")]
     shared = [n for n, info in nodes.items() if info.get("shared")]
     stubs = [n for n, info in nodes.items() if info.get("stub")]
 
     def label_of(node):
-        return (nodes[node].get("label") or short[node]).replace(" (files)", " (root files)")
+        return _component_label(node, nodes[node], short)
 
     modules = {}
     for node in regular:
@@ -622,7 +674,7 @@ def _graph_diagram(model, facts, container, container_fact, title, nodes, edges,
         for module, members in sorted(modules.items(), key=lambda m: str(m[0])):
             box = d.internal(f"module_{module}")
             boxes.append(box)
-            d.lines.append(f'        subgraph {box}["`{_clean(module)}`"]')
+            d.lines.append(f'        subgraph {box}["{_clean(module)}"]')
             for node in members:
                 d.node(node, _label(label_of(node), "Component", texts.get(node, "")), "component", indent="            ")
             d.lines.append("        end")
@@ -644,8 +696,9 @@ def _graph_diagram(model, facts, container, container_fact, title, nodes, edges,
             if source in nodes and target in nodes:
                 d.edge(source, target, dashed=bool(nodes[target].get("stub")))
 
-    # ELK puts every top-level component in one row; invisible links
-    # stack them in rows of ROW_WIDTH so wide diagrams stay readable.
+    # A component nothing points at shares the first row with every other
+    # one, so a container with many of them comes out as a single very wide
+    # strip. Invisible links stack them in rows of ROW_WIDTH instead.
     if not boxes:
         targeted = {t for targets in edges.values() for t in targets}
         roots = [n for n in regular if n not in targeted]
@@ -688,7 +741,8 @@ def component_diagrams(model, facts):
         texts = descriptions.get(container["id"]) or {}
 
         components = container_fact.get("components") or {}
-        if len(components.get("nodes", {})) >= 2:
+        has_modules = len(components.get("nodes", {})) >= 2
+        if has_modules:
             for suffix, subtitle, nodes, edges, notes in _component_views(components):
                 title = container["name"] + (f" / {subtitle}" if subtitle else "")
                 stem = f"c4-component-{container['id']}{suffix}"
@@ -696,8 +750,11 @@ def component_diagrams(model, facts):
                 results.append((stem, title, mermaid, notes, "modules"))
 
         code = container_fact.get("code_components") or {}
-        if len(code.get("nodes", {})) >= 2:
-            has_modules = len(components.get("nodes", {})) >= 2
+        # A module holding one package named after it draws the same boxes and
+        # the same arrows as the module view above; a second copy of a diagram
+        # is not a second level of detail, so it is left out.
+        echoes_modules = has_modules and _drawn_graph(code) == _drawn_graph(components)
+        if len(code.get("nodes", {})) >= 2 and not echoes_modules:
             for suffix, subtitle, nodes, edges, notes in _component_views(
                 code, overview=not has_modules, full_list="c4-facts.json (`code_components`)"
             ):
@@ -747,7 +804,7 @@ def flow_diagrams(model, facts):
         lines = ["sequenceDiagram"]
         for node in used:
             label, kind = participants.get(node, (node, "participant"))
-            lines.append(f"    {kind} {safe[node]} as {_clean(label)}")
+            lines.append(f'    {kind} {safe[node]} as {_ms.label_text("sequence_alias", str(label))}')
         for step in flow["steps"]:
             arrow = "-->>" if step.get("reply") else ("-)" if step.get("async") else "->>")
             text = _seq_text(step.get("description", ""))
@@ -769,7 +826,7 @@ def deployment_diagram(facts, model):
     by_fact = _container_lookup(model)
     d = Diagram()
     host = d.internal("host")
-    d.lines.append(f'    subgraph {host}["`**Docker host** [docker compose]`"]')
+    d.lines.append(f'    subgraph {host}["Docker host [docker compose]"]')
     containers_by_service = {}
     for c in facts["containers"]:
         for service in c.get("compose_services") or []:
@@ -786,8 +843,8 @@ def deployment_diagram(facts, model):
             name = f"{service['name']} ({element['name']})"
         # The same image table the facts use, so a store is a store in every view.
         store = any(key in image.split(":")[0].lower() for key, _ in c4_facts.COMPOSE_STORES)
-        lines = [f"**{_clean(name)}**", "[Container instance]"] + [_wrap(detail)] + ([f"ports {_clean(ports)}"] if ports else [])
-        label = '"`' + "\n".join(l for l in lines if l) + '`"'
+        lines = [_clean(name), "[Container instance]"] + [_wrap(detail)] + ([f"ports {_clean(ports)}"] if ports else [])
+        label = '"' + BR.join(l for l in lines if l) + '"'
         d.node(f"svc:{service['name']}", label, "container", "db" if store else "rect", indent="        ")
     d.lines.append("    end")
     for service in services:
@@ -802,7 +859,7 @@ def deployment_diagram(facts, model):
 def _section(title, stem, mermaid, svg_ok, notes=(), intro=""):
     lines = [title, ""]
     if intro:
-        lines += [_clean(intro), ""]
+        lines += [_prose(intro), ""]
     lines += [f"> {note}" for note in notes] + ([""] if notes else [])
     if svg_ok:
         lines += [f"![{stem}]({stem}.svg)", "", "<details>", "<summary>Mermaid source</summary>", "",
@@ -989,6 +1046,11 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
             f"{facts_file} not found; run analyze_repository.py first"
         )
     facts = json.loads(facts_file.read_text(encoding="utf-8"))
+    for key in REQUIRED_FACTS:
+        if key not in facts:
+            raise UserError(
+                f"{key} missing; re-run analyze_repository.py", path="c4-facts.json"
+            )
     model_file = output / "c4-model.json"
 
     result = ValidationResult(model=None)
@@ -1090,7 +1152,7 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
         block += ["> No containers, data stores or external systems were detected, so there are no C4 diagrams. "
                   "Build the model from the source by hand, or see the dependency graph appendix.", ""]
     elif use_model["system"].get("description") and not use_model.get("_facts_only"):
-        block += [_clean(use_model["system"]["description"]), ""]
+        block += [_prose(use_model["system"]["description"]), ""]
 
     if "c4-context" in diagrams:
         block.append(_section("### Level 1: System context", "c4-context", diagrams["c4-context"], rendered.get("c4-context")))
@@ -1110,13 +1172,13 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
                   "The classes and interfaces of the key components: inheritance, implemented interfaces, "
                   "dependencies inside the component and public methods. Boxes marked external live in another component.", ""]
         for entry in code_entries:
-            block.append(_section(f"#### {_clean(entry['title'])}", entry["stem"], entry["mermaid"],
+            block.append(_section(f"#### {_prose(entry['title'])}", entry["stem"], entry["mermaid"],
                                   rendered.get(entry["stem"]), code_diagrams.notes(entry), intro=entry["description"]))
 
     if flows:
         block += ["### Key flows", "", "How a request moves through the system, step by step.", ""]
         for stem, title, mermaid, description in flows:
-            block.append(_section(f"#### {_clean(title)}", stem, mermaid, rendered.get(stem), intro=description))
+            block.append(_section(f"#### {_prose(title)}", stem, mermaid, rendered.get(stem), intro=description))
 
     block += _deployment_section(facts, use_model, rendered.get("c4-deployment"), deployment)
     block += _endpoints_section(facts, use_model)

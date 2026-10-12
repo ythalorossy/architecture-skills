@@ -25,14 +25,9 @@ dotnet_sln has 2 projects (2 production, 0 test) with 1 project references betwe
 ### Level 2: Containers
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
-    subgraph boundary["`**dotnet_sln** [Software System]`"]
-        dotnet_sln["`**dotnet_sln**
-[Container]`"]
+    subgraph boundary["dotnet_sln [Software System]"]
+        dotnet_sln["dotnet_sln<br/>[Container]"]
     end
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
@@ -55,16 +50,10 @@ For each container: the modules it is built from (when it has several), then the
 #### dotnet_sln
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
-    subgraph boundary["`**dotnet_sln** [Container]`"]
-        Core["`**Core**
-[Component]`"]
-        Web["`**Web**
-[Component]`"]
+    subgraph boundary["dotnet_sln [Container]"]
+        Core["Core<br/>[Component]"]
+        Web["Web<br/>[Component]"]
     end
     Web --> Core
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff

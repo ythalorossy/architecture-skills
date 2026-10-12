@@ -1,13 +1,7 @@
----
-config:
-  layout: elk
----
 flowchart TB
-    subgraph boundary["`**python_dist** [Container]`"]
-        acme_core["`**acme-core**
-[Component]`"]
-        acme_web["`**acme-web**
-[Component]`"]
+    subgraph boundary["python_dist [Container]"]
+        acme_core["acme-core<br/>[Component]"]
+        acme_web["acme-web<br/>[Component]"]
     end
     acme_web --> acme_core
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff

@@ -1,18 +1,9 @@
----
-config:
-  layout: elk
----
 flowchart TB
-    subgraph host["`**Docker host** [docker compose]`"]
-        svc_db[("`**db**
-[Container instance]
-postgres:16`")]
-        svc_app["`**app**
-[Container instance]
-build ./app
-ports 8000:8000`"]
+    subgraph host["Docker host [docker compose]"]
+        svc_db[("db<br/>[Container instance]<br/>postgres:16")]
+        svc_app["app<br/>[Container instance]<br/>build ./app<br/>ports 8000:8000"]
     end
-    svc_app -->|"`depends on`"| svc_db
+    svc_app -->|"depends on"| svc_db
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff

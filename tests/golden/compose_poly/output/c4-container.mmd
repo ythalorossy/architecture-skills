@@ -1,16 +1,9 @@
----
-config:
-  layout: elk
----
 flowchart TB
-    subgraph boundary["`**compose_poly** [Software System]`"]
-        app["`**app**
-[Container: Docker]
-service`"]
-        db_postgresql[("`**PostgreSQL**
-[Container: PostgreSQL]`")]
+    subgraph boundary["compose_poly [Software System]"]
+        app["app<br/>[Container: Docker]<br/>service"]
+        db_postgresql[("PostgreSQL<br/>[Container: PostgreSQL]")]
     end
-    app -->|"`Depends on`"| db_postgresql
+    app -->|"Depends on"| db_postgresql
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff

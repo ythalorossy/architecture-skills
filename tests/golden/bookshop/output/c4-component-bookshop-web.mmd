@@ -1,13 +1,7 @@
----
-config:
-  layout: elk
----
 flowchart TB
-    subgraph boundary["`**bookshop-web** [Container]`"]
-        web_src__files["`**src (root files)**
-[Component]`"]
-        web_src_api["`**src/api**
-[Component]`"]
+    subgraph boundary["bookshop-web [Container]"]
+        web_src__files["src (root files)<br/>[Component]"]
+        web_src_api["src/api<br/>[Component]"]
     end
     web_src__files --> web_src_api
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff

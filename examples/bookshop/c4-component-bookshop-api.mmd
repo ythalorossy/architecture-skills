@@ -1,47 +1,19 @@
----
-config:
-  layout: elk
----
 flowchart TB
-    subgraph boundary["`**Bookshop API** [Container]`"]
-        bookshop_main["`**main**
-[Component]
-HTTP routes; hand each request to
-a service`"]
-        bookshop_orders["`**orders**
-[Component]
-Places an order: takes payment,
-then records it`"]
-        bookshop_payments["`**payments**
-[Component]
-Client for the payment provider's
-charges API`"]
-        bookshop_search["`**search**
-[Component]
-Full-text book search against the
-catalogue index`"]
+    subgraph boundary["Bookshop API [Container]"]
+        bookshop_main["main<br/>[Component]<br/>HTTP routes; hand each request to<br/>a service"]
+        bookshop_orders["orders<br/>[Component]<br/>Places an order: takes payment,<br/>then records it"]
+        bookshop_payments["payments<br/>[Component]<br/>Client for the payment provider's<br/>charges API"]
+        bookshop_search["search<br/>[Component]<br/>Full-text book search against the<br/>catalogue index"]
     end
     bookshop_main --> bookshop_orders
     bookshop_main --> bookshop_search
     bookshop_orders --> bookshop_payments
-    db_elasticsearch[("`**Catalogue index**
-[Container: Elasticsearch]
-Book catalogue search index, run
-and filled by the catalogue team`")]
-    bookshop_search -->|"`Searches the catalogue in
-[Elasticsearch client]`"| db_elasticsearch
-    db_postgresql[("`**Orders database**
-[Container: PostgreSQL 16]
-Orders and their payment
-references`")]
-    bookshop_orders -->|"`Stores orders in
-[psycopg]`"| db_postgresql
-    ext_payments_example["`**Payment provider**
-[Software System]
-Charges the reader's card for an
-order`"]
-    bookshop_payments -->|"`Charges cards with
-[HTTPS, httpx]`"| ext_payments_example
+    db_elasticsearch[("Catalogue index<br/>[Container: Elasticsearch]<br/>Book catalogue search index, run<br/>and filled by the catalogue team")]
+    bookshop_search -->|"Searches the catalogue in<br/>[Elasticsearch client]"| db_elasticsearch
+    db_postgresql[("Orders database<br/>[Container: PostgreSQL 16]<br/>Orders and their payment<br/>references")]
+    bookshop_orders -->|"Stores orders in<br/>[psycopg]"| db_postgresql
+    ext_payments_example["Payment provider<br/>[Software System]<br/>Charges the reader's card for an<br/>order"]
+    bookshop_payments -->|"Charges cards with<br/>[HTTPS, httpx]"| ext_payments_example
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff

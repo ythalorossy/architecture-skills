@@ -1,12 +1,6 @@
----
-config:
-  layout: elk
----
 flowchart TB
-    subgraph boundary["`**go_mod** [Software System]`"]
-        api["`**api**
-[Container: Go]
-app`"]
+    subgraph boundary["go_mod [Software System]"]
+        api["api<br/>[Container: Go]<br/>app"]
     end
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff

@@ -83,6 +83,26 @@ class NothingDetectedTest(unittest.TestCase):
         self.assertEqual(len(detection), 1, summary["warnings"])
         self.assertIn("no container", detection[0]["message"])
         self.assertIn("WARNING: no container", out.getvalue())
+        # A library-only repository is understood, just not runnable: still ok.
+        self.assertEqual(summary["status"], "ok")
+
+    def test_nothing_recognized_is_degraded(self):
+        # No manifest, no code: the analyzer found nothing to draw and must
+        # say so instead of reporting a clean run with an empty diagram.
+        files = {
+            "README.md": "# Notes\n",
+            "notes.txt": "plain text, no code here\n",
+        }
+        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()) as out:
+            repo = Path(tmp) / "nothing"
+            write(repo, files)
+            facts, summary = run_analyzer(repo, Path(tmp) / "out")
+        self.assertEqual(facts["containers"], [])
+        detection = [w for w in summary["warnings"] if w["kind"] == "detection"]
+        self.assertEqual(len(detection), 1, summary["warnings"])
+        self.assertIn("no container", detection[0]["message"])
+        self.assertIn("WARNING: no container", out.getvalue())
+        self.assertEqual(summary["status"], "degraded")
 
 
 if __name__ == "__main__":

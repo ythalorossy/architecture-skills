@@ -25,14 +25,9 @@ maven_multi has 2 projects (2 production, 0 test) with 1 project references betw
 ### Level 2: Containers
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
-    subgraph boundary["`**maven_multi** [Software System]`"]
-        maven_multi["`**maven_multi**
-[Container]`"]
+    subgraph boundary["maven_multi [Software System]"]
+        maven_multi["maven_multi<br/>[Container]"]
     end
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
@@ -55,16 +50,10 @@ For each container: the modules it is built from (when it has several), then the
 #### maven_multi
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
-    subgraph boundary["`**maven_multi** [Container]`"]
-        acme_core["`**acme-core**
-[Component]`"]
-        acme_web["`**acme-web**
-[Component]`"]
+    subgraph boundary["maven_multi [Container]"]
+        acme_core["acme-core<br/>[Component]"]
+        acme_web["acme-web<br/>[Component]"]
     end
     acme_web --> acme_core
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff

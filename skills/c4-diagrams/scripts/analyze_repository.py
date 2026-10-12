@@ -38,6 +38,10 @@ class RepositoryAnalyzer:
         self.timestamp = timestamp
         self._collector: DiagnosticsCollector | None = None
         self._svg_missing_tool = False
+        # True when the run found no container at all: an empty result the
+        # user has to act on, so the run is degraded even though nothing
+        # failed to read or render.
+        self._nothing_detected = False
 
     def _render_svg(self):
         """SVGs are rendered unless --no-svg or C4_SVG=0 turns them off."""
@@ -69,6 +73,7 @@ class RepositoryAnalyzer:
 
         # One walk of the repository for the whole run.
         self._collector = DiagnosticsCollector()
+        self._nothing_detected = False
         index = RepoIndex.build(self.repo_path, self._collector)
 
         # Discover projects once; every step reuses the result.
@@ -250,7 +255,23 @@ class RepositoryAnalyzer:
 
         facts = collect_facts(self.repo_path, dependency_graph, index=index, discovery=discovery)
         facts["repository_root"] = repository_root(self.repo_path, self.output_path)
-        if facts["containers"] and all(c["kind"] == "unknown" for c in facts["containers"]):
+        if not facts["containers"]:
+            # Nothing at all: no manifest, no source the detectors recognise.
+            # Usually a wrong path, a submodule that was never checked out, or
+            # an ecosystem the skill does not read.
+            message = (
+                "no container detected and no project found: nothing in this repository "
+                "matched a manifest or an entry point, so the diagrams are empty. Check "
+                "that the path is the repository root and that its sources are checked "
+                "out, then describe the runnable parts in c4-model.json."
+            )
+            print(f"WARNING: {message}")
+            self._collector.detection("c4_facts", message)
+            # The `detection` kind on its own is not degraded (a library-only
+            # repository is understood, just not runnable). An empty result is:
+            # the run produced nothing to read, and the user must act.
+            self._nothing_detected = True
+        elif all(c["kind"] == "unknown" for c in facts["containers"]):
             message = (
                 "no container detected (nothing with an entry point, framework or compose "
                 "service); the whole repository is drawn as one box. Identify the runnable "
@@ -318,7 +339,8 @@ class RepositoryAnalyzer:
         )
 
         collector = self._collector
-        status = "degraded" if collector and collector.degraded else "ok"
+        degraded = (collector is not None and collector.degraded) or self._nothing_detected
+        status = "degraded" if degraded else "ok"
 
         return {
             "repository": self.repo_path.name,

@@ -19,6 +19,16 @@ SLN_PROJECT_LINE = re.compile(
 )
 
 
+def _skip(collector, file, error):
+    """Record a project or solution file the OS would not let us read.
+
+    Unreadable files degrade the run; they never stop it. The reason wording
+    matches RepoIndex.read_text so both skip channels read alike.
+    """
+    if collector:
+        collector.file_skipped("dotnet_projects", str(file), f"oserror: {error}")
+
+
 def solution_project_paths(solution_file, collector=None):
     """Return the absolute project paths listed in a .sln or .slnx file."""
     paths = set()
@@ -30,13 +40,21 @@ def solution_project_paths(solution_file, collector=None):
             if collector:
                 collector.parse_error("dotnet_projects", str(solution_file), f"invalid XML: {ex}")
             return paths
+        except OSError as ex:
+            _skip(collector, solution_file, ex)
+            return paths
 
         for element in root.iter():
             if local_tag(element) == "Project" and element.attrib.get("Path"):
                 paths.add(resolve_include(solution_file.parent, element.attrib["Path"]))
         return paths
 
-    text = solution_file.read_text(encoding="utf-8-sig", errors="replace")
+    try:
+        text = solution_file.read_text(encoding="utf-8-sig", errors="replace")
+    except OSError as ex:
+        _skip(collector, solution_file, ex)
+        return paths
+
     for _, include in SLN_PROJECT_LINE.findall(text):
         if include.endswith(PROJECT_EXTENSIONS):
             paths.add(resolve_include(solution_file.parent, include))
@@ -50,6 +68,9 @@ def project_references(project_file, collector=None):
     except ET.ParseError as ex:
         if collector:
             collector.parse_error("dotnet_projects", str(project_file), f"invalid XML: {ex}")
+        return []
+    except OSError as ex:
+        _skip(collector, project_file, ex)
         return []
 
     references = []
@@ -69,8 +90,9 @@ def discover_projects(repo_path, index=None, collector=None):
     When the repository has solution files, projects not listed in any of them
     are flagged with in_solution=False (stray or abandoned project files).
 
-    The `index` parameter is accepted for API compatibility but not yet used
-    (the .NET module has minimal I/O compared to other ecosystems).
+    A project file the index cannot read (no permission, or over the size cap)
+    is recorded as a skipped file and left out: everything downstream reads it
+    again, and a project nobody can read cannot be described.
     Pass a DiagnosticsCollector to route warnings through the diagnostics channel.
     """
     repo = Path(repo_path).resolve()
@@ -87,6 +109,8 @@ def discover_projects(repo_path, index=None, collector=None):
     projects = []
     for project_file in project_files:
         project_file = project_file.resolve()
+        if index.read_text(project_file) is None:
+            continue  # the index already recorded why
         relative = project_file.relative_to(repo).as_posix()
         projects.append({
             "name": project_file.stem,

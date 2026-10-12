@@ -11,6 +11,7 @@ repository. Committing a mode-000 directory or an outside-symlink would break
 Windows checkouts in CI (git stores only the executable bit, and an
 outside-symlink fails on Windows outright).
 """
+import json
 import os
 import subprocess
 import sys
@@ -30,6 +31,17 @@ def _run_analyzer(repo, out):
         capture_output=True,
         text=True,
     )
+
+
+def _summary(out):
+    """The summary.json the run wrote."""
+    return json.loads((Path(out) / "summary.json").read_text(encoding="utf-8"))
+
+
+def _recorded_paths(summary):
+    """Every path the run recorded as a warning or a skipped file."""
+    return [w.get("path") or "" for w in summary["warnings"]] + \
+           [s["path"] for s in summary["skipped_files"]]
 
 
 class FailureModesTest(unittest.TestCase):
@@ -121,6 +133,69 @@ class FailureModesTest(unittest.TestCase):
                 f"a warning must name the symlink path 'leak'; "
                 f"got:\n{combined}",
             )
+
+
+class ManifestReadFailureTest(unittest.TestCase):
+    """A manifest the detectors must read: bad encoding or no read permission."""
+
+    def _assert_degraded(self, repo, out, name):
+        proc = _run_analyzer(repo, out)
+        self.assertEqual(
+            proc.returncode, 0,
+            f"analyzer must exit 0 when only {name} is unreadable; "
+            f"got {proc.returncode}\nstdout: {proc.stdout}\nstderr: {proc.stderr}",
+        )
+        summary = _summary(out)
+        self.assertEqual(summary["status"], "degraded", summary["warnings"])
+        self.assertTrue(
+            any(path.endswith(name) for path in _recorded_paths(summary)),
+            f"{name} must be recorded; got {_recorded_paths(summary)}",
+        )
+
+    def test_latin1_pyproject_does_not_abort(self):
+        """A Latin-1 pyproject.toml is decoded tolerantly, not fatally."""
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            (repo / "pkg").mkdir(parents=True)
+            (repo / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+            # 0xe9 is 'e-acute' in Latin-1 and an invalid UTF-8 continuation byte.
+            (repo / "pyproject.toml").write_bytes(
+                b'[project]\nname = "caf\xe9"\nversion = "1.0"\n'
+            )
+            self._assert_degraded(repo, Path(tmp) / "out", "pyproject.toml")
+
+    def test_latin1_pnpm_workspace_does_not_abort(self):
+        """A Latin-1 pnpm-workspace.yaml is decoded tolerantly, not fatally."""
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            (repo / "packages" / "core").mkdir(parents=True)
+            (repo / "package.json").write_text(
+                '{"name": "root", "private": true}\n', encoding="utf-8")
+            (repo / "packages" / "core" / "package.json").write_text(
+                '{"name": "core"}\n', encoding="utf-8")
+            (repo / "pnpm-workspace.yaml").write_bytes(
+                b'packages:\n  - "packages/caf\xe9"\n'
+            )
+            self._assert_degraded(repo, Path(tmp) / "out", "pnpm-workspace.yaml")
+
+    @unittest.skipUnless(os.name == "posix", "POSIX-only: chmod 000 file")
+    def test_unreadable_csproj_is_skipped(self):
+        """A mode-000 .csproj is recorded and skipped, not fatal."""
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            (repo / "App").mkdir(parents=True)
+            project = repo / "App" / "App.csproj"
+            project.write_text(
+                '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>'
+                "<TargetFramework>net8.0</TargetFramework>"
+                "</PropertyGroup></Project>\n",
+                encoding="utf-8",
+            )
+            os.chmod(project, 0)
+            try:
+                self._assert_degraded(repo, Path(tmp) / "out", "App.csproj")
+            finally:
+                os.chmod(project, 0o644)
 
 
 if __name__ == "__main__":

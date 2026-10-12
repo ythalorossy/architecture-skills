@@ -1,16 +1,9 @@
----
-config:
-  layout: elk
----
 flowchart TB
-    subgraph boundary["`**maven_layered** [Software System]`"]
-        shop_api["`**shop-api**
-[Container: Spring Boot]
-web api`"]
-        db_redis[("`**Redis**
-[Container: Redis]`")]
+    subgraph boundary["maven_layered [Software System]"]
+        shop_api["shop-api<br/>[Container: Spring Boot]<br/>web api"]
+        db_redis[("Redis<br/>[Container: Redis]")]
     end
-    shop_api -->|"`Reads/writes`"| db_redis
+    shop_api -->|"Reads/writes"| db_redis
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff

@@ -179,6 +179,86 @@ class ExactIdsTest(unittest.TestCase):
         self.assertIn("Serves 'GET /books'", mermaid)
 
 
+class MarkdownProseTest(unittest.TestCase):
+    """Report prose is Markdown, not Mermaid: it must not carry #lt; / #gt;."""
+
+    def test_flow_intro_and_heading_keep_plain_angle_brackets(self):
+        section = render_c4._section(
+            "#### Flow <main>", "c4-flow-x", "sequenceDiagram\n", None,
+            intro="Handles <Request> objects",
+        )
+        self.assertIn("Handles <Request> objects", section)
+        self.assertNotIn("#lt;", section)
+        self.assertNotIn("#gt;", section)
+
+
+class PlainLabelTest(unittest.TestCase):
+    """Labels are plain, not Mermaid markdown strings.
+
+    A markdown string ("`…`") makes mermaid parse the label as Markdown, which
+    eats the metacharacters of ordinary code names: ``user_service`` loses its
+    underscore and ``__main__`` turns bold. Escaping them does not help, because
+    the SVG renderer drops the escapes. Plain labels parse no Markdown, so the
+    characters survive. The cost is that the element name is no longer bold.
+    """
+
+    METACHAR_NAMES = ("user_service", "__main__", "2*3*4", "a~b")
+
+    def test_element_labels_are_not_markdown_strings(self):
+        model = _make_minimal_model(
+            containers=[{"id": "svc", "name": "user_service", "technology": "Python",
+                         "description": "runs __main__ and 2*3*4"}],
+        )
+        mermaid = render_c4.container_diagram(model)
+        self.assertNotIn('"`', mermaid, f"markdown-string label in:\n{mermaid}")
+        self.assertNotIn('`"', mermaid, f"markdown-string label in:\n{mermaid}")
+
+    def test_metacharacters_survive_in_the_label(self):
+        model = _make_minimal_model(
+            containers=[{"id": "svc", "name": "user_service", "technology": "Python",
+                         "description": "runs __main__ and 2*3*4 and a~b"}],
+        )
+        mermaid = render_c4.container_diagram(model)
+        for name in self.METACHAR_NAMES:
+            self.assertIn(name, mermaid,
+                          f"{name!r} was altered in:\n{mermaid}")
+
+    def test_no_bold_markers_are_emitted(self):
+        model = _make_minimal_model(
+            containers=[{"id": "svc", "name": "Svc", "technology": "Python"}],
+        )
+        mermaid = render_c4.container_diagram(model)
+        self.assertNotIn("**", mermaid,
+                         f"bold markers render literally in a plain label:\n{mermaid}")
+
+
+class SequenceAliasEscapeTest(unittest.TestCase):
+    """A ';' in a participant alias ends the statement and breaks the parse."""
+
+    def test_semicolon_in_participant_alias_is_escaped(self):
+        model = _make_minimal_model(
+            people=[{"id": "user", "name": "User"}],
+            containers=[{"id": "orders", "name": "Orders; API"}],
+            flows=[{"name": "F", "steps": [
+                {"from": "user", "to": "orders", "description": "post"},
+            ]}],
+        )
+        _, _, mermaid, _ = render_c4.flow_diagrams(model, {"containers": []})[0]
+        self.assertIn("participant orders as Orders#59; API", mermaid)
+        self.assertNotIn("as Orders; API", mermaid)
+
+    def test_hash_and_quote_in_participant_alias_are_escaped(self):
+        model = _make_minimal_model(
+            people=[{"id": "user", "name": 'Ops #1 "lead"'}],
+            containers=[{"id": "svc", "name": "Svc"}],
+            flows=[{"name": "F", "steps": [
+                {"from": "user", "to": "svc", "description": "post"},
+            ]}],
+        )
+        _, _, mermaid, _ = render_c4.flow_diagrams(model, {"containers": []})[0]
+        self.assertIn("as Ops #35;1 #quot;lead#quot;", mermaid)
+
+
 @unittest.skipUnless(os.environ.get("C4_REAL_RENDER") == "1",
                      "set C4_REAL_RENDER=1 to render with the real mermaid-cli")
 class AdversarialCorpusTest(unittest.TestCase):

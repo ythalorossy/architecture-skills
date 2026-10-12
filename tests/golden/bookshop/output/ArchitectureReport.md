@@ -27,34 +27,20 @@ bookshop has 6 projects (6 production, 0 test) with 4 project references between
 ### Level 2: Containers
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
-    subgraph boundary["`**bookshop** [Software System]`"]
-        bookshop_api["`**bookshop-api**
-[Container: Python, FastAPI]
-web api`"]
-        bookshop_web["`**bookshop-web**
-[Container: React]
-web app`"]
-        db_elasticsearch[("`**Elasticsearch**
-[Container: Elasticsearch]`")]
-        db_postgresql[("`**PostgreSQL**
-[Container: PostgreSQL]`")]
+    subgraph boundary["bookshop [Software System]"]
+        bookshop_api["bookshop-api<br/>[Container: Python, FastAPI]<br/>web api"]
+        bookshop_web["bookshop-web<br/>[Container: React]<br/>web app"]
+        db_elasticsearch[("Elasticsearch<br/>[Container: Elasticsearch]")]
+        db_postgresql[("PostgreSQL<br/>[Container: PostgreSQL]")]
     end
-    ext_covers_example["`**covers.example**
-[Software System]`"]
-    ext_payments_example["`**payments.example**
-[Software System]`"]
-    bookshop_api -->|"`Reads/writes`"| db_postgresql
-    bookshop_web -->|"`Calls /api (dev-server proxy
-to http://localhost:8000)
-[HTTP]`"| bookshop_api
-    bookshop_api -->|"`Reads/writes`"| db_elasticsearch
-    bookshop_api -->|"`Calls`"| ext_covers_example
-    bookshop_api -->|"`Calls`"| ext_payments_example
+    ext_covers_example["covers.example<br/>[Software System]"]
+    ext_payments_example["payments.example<br/>[Software System]"]
+    bookshop_api -->|"Reads/writes"| db_postgresql
+    bookshop_web -->|"Calls /api (dev-server proxy<br/>to http://localhost:8000)<br/>[HTTP]"| bookshop_api
+    bookshop_api -->|"Reads/writes"| db_elasticsearch
+    bookshop_api -->|"Calls"| ext_covers_example
+    bookshop_api -->|"Calls"| ext_payments_example
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff
@@ -80,33 +66,22 @@ For each container: the modules it is built from (when it has several), then the
 #### bookshop-api
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
-    subgraph boundary["`**bookshop-api** [Container]`"]
-        bookshop_main["`**main**
-[Component]`"]
-        bookshop_orders["`**orders**
-[Component]`"]
-        bookshop_payments["`**payments**
-[Component]`"]
-        bookshop_search["`**search**
-[Component]`"]
+    subgraph boundary["bookshop-api [Container]"]
+        bookshop_main["main<br/>[Component]"]
+        bookshop_orders["orders<br/>[Component]"]
+        bookshop_payments["payments<br/>[Component]"]
+        bookshop_search["search<br/>[Component]"]
     end
     bookshop_main --> bookshop_orders
     bookshop_main --> bookshop_search
     bookshop_orders --> bookshop_payments
-    db_elasticsearch[("`**Elasticsearch**
-[Container: Elasticsearch]`")]
-    bookshop_search -->|"`Reads/writes`"| db_elasticsearch
-    db_postgresql[("`**PostgreSQL**
-[Container: PostgreSQL]`")]
-    bookshop_orders -->|"`Reads/writes`"| db_postgresql
-    ext_payments_example["`**payments.example**
-[Software System]`"]
-    bookshop_payments -->|"`Calls`"| ext_payments_example
+    db_elasticsearch[("Elasticsearch<br/>[Container: Elasticsearch]")]
+    bookshop_search -->|"Reads/writes"| db_elasticsearch
+    db_postgresql[("PostgreSQL<br/>[Container: PostgreSQL]")]
+    bookshop_orders -->|"Reads/writes"| db_postgresql
+    ext_payments_example["payments.example<br/>[Software System]"]
+    bookshop_payments -->|"Calls"| ext_payments_example
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff
@@ -122,16 +97,10 @@ flowchart TB
 #### bookshop-web
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
-    subgraph boundary["`**bookshop-web** [Container]`"]
-        web_src__files["`**src (root files)**
-[Component]`"]
-        web_src_api["`**src/api**
-[Component]`"]
+    subgraph boundary["bookshop-web [Container]"]
+        web_src__files["src (root files)<br/>[Component]"]
+        web_src_api["src/api<br/>[Component]"]
     end
     web_src__files --> web_src_api
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
@@ -149,26 +118,14 @@ flowchart TB
 #### docker compose
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
-    subgraph host["`**Docker host** [docker compose]`"]
-        svc_db[("`**db**
-[Container instance]
-postgres:16`")]
-        svc_api["`**api (bookshop-api)**
-[Container instance]
-build ./api
-ports 8000:8000`"]
-        svc_web["`**web (bookshop-web)**
-[Container instance]
-build ./web
-ports 5173:5173`"]
+    subgraph host["Docker host [docker compose]"]
+        svc_db[("db<br/>[Container instance]<br/>postgres:16")]
+        svc_api["api (bookshop-api)<br/>[Container instance]<br/>build ./api<br/>ports 8000:8000"]
+        svc_web["web (bookshop-web)<br/>[Container instance]<br/>build ./web<br/>ports 5173:5173"]
     end
-    svc_api -->|"`depends on`"| svc_db
-    svc_web -->|"`depends on`"| svc_api
+    svc_api -->|"depends on"| svc_db
+    svc_web -->|"depends on"| svc_api
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff

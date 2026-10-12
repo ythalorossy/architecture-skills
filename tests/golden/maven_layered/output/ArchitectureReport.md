@@ -25,19 +25,12 @@ maven_layered has 4 projects (4 production, 0 test) with 4 project references be
 ### Level 2: Containers
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
-    subgraph boundary["`**maven_layered** [Software System]`"]
-        shop_api["`**shop-api**
-[Container: Spring Boot]
-web api`"]
-        db_redis[("`**Redis**
-[Container: Redis]`")]
+    subgraph boundary["maven_layered [Software System]"]
+        shop_api["shop-api<br/>[Container: Spring Boot]<br/>web api"]
+        db_redis[("Redis<br/>[Container: Redis]")]
     end
-    shop_api -->|"`Reads/writes`"| db_redis
+    shop_api -->|"Reads/writes"| db_redis
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff
@@ -60,28 +53,19 @@ For each container: the modules it is built from (when it has several), then the
 #### shop-api
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
-    subgraph boundary["`**shop-api** [Container]`"]
-        shop_api["`**shop-api**
-[Component]`"]
-        shop_application["`**shop-application**
-[Component]`"]
-        shop_domain["`**shop-domain**
-[Component]`"]
-        shop_infrastructure["`**shop-infrastructure**
-[Component]`"]
+    subgraph boundary["shop-api [Container]"]
+        shop_api["shop-api<br/>[Component]"]
+        shop_application["shop-application<br/>[Component]"]
+        shop_domain["shop-domain<br/>[Component]"]
+        shop_infrastructure["shop-infrastructure<br/>[Component]"]
     end
     shop_api --> shop_application
     shop_api --> shop_infrastructure
     shop_application --> shop_domain
     shop_infrastructure --> shop_application
-    db_redis[("`**Redis**
-[Container: Redis]`")]
-    shop_infrastructure -->|"`Reads/writes`"| db_redis
+    db_redis[("Redis<br/>[Container: Redis]")]
+    shop_infrastructure -->|"Reads/writes"| db_redis
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff
@@ -96,27 +80,19 @@ flowchart TB
 #### shop-api · code structure
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
-    subgraph boundary["`**shop-api · code structure** [Container]`"]
-        subgraph module_shop_api["`shop-api`"]
-            shop_api__api["`**api**
-[Component]`"]
+    subgraph boundary["shop-api · code structure [Container]"]
+        subgraph module_shop_api["shop-api"]
+            shop_api__api["api<br/>[Component]"]
         end
-        subgraph module_shop_application["`shop-application`"]
-            shop_application__application["`**application**
-[Component]`"]
+        subgraph module_shop_application["shop-application"]
+            shop_application__application["application<br/>[Component]"]
         end
-        subgraph module_shop_domain["`shop-domain`"]
-            shop_domain__domain["`**domain**
-[Component]`"]
+        subgraph module_shop_domain["shop-domain"]
+            shop_domain__domain["domain<br/>[Component]"]
         end
-        subgraph module_shop_infrastructure["`shop-infrastructure`"]
-            shop_infrastructure__infrastructure["`**infrastructure**
-[Component]`"]
+        subgraph module_shop_infrastructure["shop-infrastructure"]
+            shop_infrastructure__infrastructure["infrastructure<br/>[Component]"]
         end
     end
     shop_api__api --> shop_application__application

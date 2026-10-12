@@ -25,15 +25,9 @@ go_mod has 2 projects (2 production, 0 test) with 1 project references between t
 ### Level 2: Containers
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
-    subgraph boundary["`**go_mod** [Software System]`"]
-        api["`**api**
-[Container: Go]
-app`"]
+    subgraph boundary["go_mod [Software System]"]
+        api["api<br/>[Container: Go]<br/>app"]
     end
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
@@ -56,16 +50,10 @@ For each container: the modules it is built from (when it has several), then the
 #### api
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
-    subgraph boundary["`**api** [Container]`"]
-        cmd_api["`**cmd/api**
-[Component]`"]
-        internal_store["`**internal/store**
-[Component]`"]
+    subgraph boundary["api [Container]"]
+        cmd_api["cmd/api<br/>[Component]"]
+        internal_store["internal/store<br/>[Component]"]
     end
     cmd_api --> internal_store
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
@@ -78,42 +66,10 @@ flowchart TB
     style boundary fill:none,stroke:#444444,stroke-dasharray:6 4
 ```
 
-#### api · code structure
-
-```mermaid
----
-config:
-  layout: elk
----
-flowchart TB
-    subgraph boundary["`**api · code structure** [Container]`"]
-        subgraph module_cmd_api["`cmd/api`"]
-            cmd_api__cmd_api["`**cmd/api**
-[Component]`"]
-        end
-        subgraph module_internal_store["`internal/store`"]
-            internal_store__internal_store["`**internal/store**
-[Component]`"]
-        end
-    end
-    cmd_api__cmd_api --> internal_store__internal_store
-    classDef person fill:#08427b,stroke:#052e56,color:#ffffff
-    classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
-    classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff
-    classDef component fill:#85bbf0,stroke:#5d82a8,color:#000000
-    classDef external fill:#999999,stroke:#6b6b6b,color:#ffffff
-    classDef shared fill:#dbe9f6,stroke:#5d82a8,color:#000000,stroke-dasharray:4 3
-    class cmd_api__cmd_api,internal_store__internal_store component
-    style boundary fill:none,stroke:#444444,stroke-dasharray:6 4
-    style module_cmd_api fill:#f4f8fc,stroke:#9fb6cc
-    style module_internal_store fill:#f4f8fc,stroke:#9fb6cc
-```
-
 ### C4 files
 
 - [c4-container.mmd](c4-container.mmd)
 - [c4-component-api.mmd](c4-component-api.mmd)
-- [c4-structure-api.mmd](c4-structure-api.mmd)
 - [c4-facts.json](c4-facts.json)
 
 [//]: # (c4:end)

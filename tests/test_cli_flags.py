@@ -134,6 +134,7 @@ class TestRenderC4Switches(unittest.TestCase):
             "containers": [{"id": "api", "name": "API", "kind": "container", "technology": "Node.js",
                             "evidence": [], "path": "src"}],
             "data_stores": [], "external_systems": [], "relationships": [],
+            "endpoints": [], "deployment": {}, "configuration": {},
         }
         (cls.out / "c4-facts.json").write_text(json.dumps(facts), encoding="utf-8")
 
