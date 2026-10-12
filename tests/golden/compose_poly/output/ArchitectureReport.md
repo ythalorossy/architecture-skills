@@ -22,9 +22,23 @@ No supported projects were found in compose_poly (.NET projects, package.json pa
 
 > Drawn from code facts only: no `c4-model.json` yet, so people, external purposes, descriptions and key flows are missing and the System Context level is left out. Write `c4-model.json` and run `render_c4.py` to complete it.
 
+### Key
+
+What the shapes and lines in the diagrams below mean.
+
+| Symbol | Meaning |
+|---|---|
+| Blue box | **Container** — an application or service that runs on its own. |
+| Blue cylinder | **Data store** — a database, cache or queue. |
+| Dashed grey outline | The system or the container the diagram is about. |
+| Solid arrow | A dependency or a call, labelled with what it does and the technology it uses. |
+
 ### Level 2: Containers
 
 ```mermaid
+---
+title: "compose_poly · Containers"
+---
 flowchart TB
     subgraph boundary["compose_poly [Software System]"]
         app["app<br/>[Container: Docker]<br/>service"]
@@ -51,6 +65,9 @@ flowchart TB
 #### docker compose
 
 ```mermaid
+---
+title: "compose_poly · Deployment (docker compose)"
+---
 flowchart TB
     subgraph host["Docker host [docker compose]"]
         svc_db[("db<br/>[Container instance]<br/>postgres:16")]

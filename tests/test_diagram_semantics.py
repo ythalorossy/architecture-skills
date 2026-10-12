@@ -1,6 +1,7 @@
 """
 What the C4 diagrams say, not just whether they parse.
 """
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -86,7 +87,9 @@ class LayoutHeaderTest(unittest.TestCase):
     def test_no_diagram_carries_a_layout_header(self):
         for name, mermaid in self._every_flowchart().items():
             with self.subTest(diagram=name):
-                self.assertTrue(mermaid.startswith("flowchart TB"), mermaid[:80])
+                # Past the front matter, which carries the title and nothing else.
+                body = mermaid.split("---\n")[-1] if mermaid.startswith("---\n") else mermaid
+                self.assertTrue(body.startswith("flowchart TB"), mermaid[:120])
                 self.assertNotIn("layout:", mermaid)
                 self.assertNotIn("elk", mermaid)
 
@@ -373,6 +376,52 @@ class ContainerContextTest(unittest.TestCase):
         # The component-level edge says more than one from the boundary.
         self.assertIn("bookshop_orders -->", mermaid)
         self.assertNotIn("boundary -->|\"Stores orders in\"| db", mermaid)
+
+
+class TitleAndKeyTest(unittest.TestCase):
+    """Every diagram says what it is, and the report says what the shapes mean.
+
+    A `.mmd` file shared on its own used to be an unlabelled box diagram,
+    and nothing in the report explained the colours, the cylinders or the
+    dashed outlines.
+    """
+
+    def _rendered(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_analyzer(FIXTURES / "bookshop", tmp)
+            shutil.copy(FIXTURES / "bookshop" / "c4-model.json", tmp)
+            render_c4.render(tmp, svg=False)
+            out = Path(tmp)
+            return ({p.name: p.read_text(encoding="utf-8") for p in out.glob("c4-*.mmd")},
+                    (out / "ArchitectureReport.md").read_text(encoding="utf-8"))
+
+    def test_every_diagram_carries_a_title(self):
+        diagrams, _ = self._rendered()
+        self.assertIn("c4-flow-place-order.mmd", diagrams)
+        for name, mermaid in diagrams.items():
+            with self.subTest(diagram=name):
+                self.assertRegex(mermaid, r'\A---\ntitle: "[^\n]+"\n')
+        self.assertIn('title: "Bookshop \u00b7 System context"', diagrams["c4-context.mmd"])
+        self.assertIn('title: "Web app"', diagrams["c4-component-bookshop-web.mmd"])
+
+    def test_a_title_is_quoted_so_punctuation_cannot_break_the_front_matter(self):
+        self.assertEqual(render_c4._with_title("flowchart TB\n", 'A "quoted": title'),
+                         '---\ntitle: "A \\"quoted\\": title"\n---\nflowchart TB\n')
+
+    def test_a_title_joins_front_matter_the_diagram_already_has(self):
+        titled = render_c4._with_title("---\nconfig:\n  class:\n    x: true\n---\nclassDiagram\n", "Orders")
+        self.assertEqual(titled, '---\ntitle: "Orders"\nconfig:\n  class:\n    x: true\n---\nclassDiagram\n')
+
+    def test_the_report_has_one_key_for_the_shapes_it_draws(self):
+        _, report = self._rendered()
+        # "### Key flows" is a different heading; the legend is the one "### Key".
+        self.assertEqual(report.count("### Key\n"), 1)
+        key = report[report.index("### Key\n"):]
+        key = key[:key.index("### Level 1")]
+        for kind in ("Person", "Container", "Data store", "Component", "External system"):
+            self.assertIn(f"**{kind}**", key)
+        # Nothing in the bookshop is split into parts, so that line is left out.
+        self.assertNotIn("another part", key)
 
 
 class ComposeTest(unittest.TestCase):

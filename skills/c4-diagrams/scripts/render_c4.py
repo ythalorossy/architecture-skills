@@ -344,6 +344,21 @@ def _edge_label(description, technology=""):
     return f'|"{text}"|' if text else ""
 
 
+def _with_title(mermaid, title):
+    """The diagram with a front-matter ``title``, so a shared `.mmd` says what it is.
+
+    JSON quoting is YAML's double-quoted scalar: a colon, a quote or a
+    backslash in a container name cannot end the header early. Non-ASCII
+    characters are left as they are, so a name stays readable in the file.
+    A diagram that already carries front matter (Level 4 sets a renderer
+    option) gets the title added to it rather than a second header.
+    """
+    header = f"title: {json.dumps(str(title), ensure_ascii=False)}\n"
+    if mermaid.startswith("---\n"):
+        return "---\n" + header + mermaid[len("---\n"):]
+    return "---\n" + header + "---\n" + mermaid
+
+
 class Diagram:
     def __init__(self):
         self.lines = []
@@ -449,7 +464,7 @@ def context_diagram(model):
     ])
     for r in edges:
         d.edge(r["from"], r["to"], _edge_label(r.get("description"), r.get("technology")))
-    return d.text()
+    return _with_title(d.text(), f"{system['name']} \u00b7 System context")
 
 
 def container_diagram(model):
@@ -472,7 +487,7 @@ def container_diagram(model):
 
     for r in _merge_relationships(model["relationships"]):
         d.edge(r["from"], r["to"], _edge_label(r.get("description"), r.get("technology")))
-    return d.text([boundary])
+    return _with_title(d.text([boundary]), f"{model['system']['name']} \u00b7 Containers")
 
 
 def _short_names(nodes):
@@ -851,7 +866,9 @@ def component_diagrams(model, facts):
             for suffix, subtitle, nodes, edges, notes in _component_views(components):
                 title = container["name"] + (f" / {subtitle}" if subtitle else "")
                 stem = f"c4-component-{container['id']}{suffix}"
-                mermaid = _graph_diagram(model, facts, container, container_fact, title, nodes, edges, texts, "used_by_components")
+                mermaid = _with_title(
+                    _graph_diagram(model, facts, container, container_fact, title, nodes, edges, texts, "used_by_components"),
+                    title)
                 results.append((stem, title, mermaid, notes, "modules"))
 
         code = container_fact.get("code_components") or {}
@@ -865,7 +882,9 @@ def component_diagrams(model, facts):
             ):
                 title = f"{container['name']} · code structure" + (f" / {subtitle}" if subtitle else "")
                 stem = f"c4-structure-{container['id']}{suffix}"
-                mermaid = _graph_diagram(model, facts, container, container_fact, title, nodes, edges, texts, "used_by_code")
+                mermaid = _with_title(
+                    _graph_diagram(model, facts, container, container_fact, title, nodes, edges, texts, "used_by_code"),
+                    title)
                 results.append((stem, title, mermaid, notes, "code"))
 
     return results
@@ -919,7 +938,8 @@ def flow_diagrams(model, facts):
             if step.get("note"):
                 lines.append(f"    Note over {safe[step['to']]}: {_seq_text(step['note'])}")
         slug = re.sub(r"[^a-z0-9]+", "-", (flow.get("id") or flow["name"]).lower()).strip("-") or str(index)
-        results.append((f"c4-flow-{slug}", flow["name"], "\n".join(lines) + "\n", flow.get("description", "")))
+        results.append((f"c4-flow-{slug}", flow["name"],
+                        _with_title("\n".join(lines) + "\n", flow["name"]), flow.get("description", "")))
     return results
 
 
@@ -956,7 +976,7 @@ def deployment_diagram(facts, model):
         for dependency in service.get("depends_on") or []:
             if any(s["name"] == dependency for s in services):
                 d.edge(f"svc:{service['name']}", f"svc:{dependency}", _edge_label("depends on"))
-    return d.text([host])
+    return _with_title(d.text([host]), f"{model['system']['name']} \u00b7 Deployment (docker compose)")
 
 
 # ---------- output ----------
@@ -972,6 +992,65 @@ def _section(title, stem, mermaid, svg_ok, notes=(), intro=""):
     else:
         lines += ["```mermaid", mermaid.rstrip(), "```"]
     return "\n".join(lines) + "\n"
+
+
+#: The legend: (symbol kind, shape, meaning). A row is written only when the
+#: diagrams in this report actually draw that symbol, so the Key never
+#: explains a shape the reader cannot find.
+_KEY_ROWS = (
+    ("person", "Dark blue rounded box", "**Person** — a user or a role outside the system."),
+    ("system", "Blue box (Level 1)", "**Software system** — the system this report describes."),
+    ("container", "Blue box", "**Container** — an application or service that runs on its own."),
+    ("database", "Blue cylinder", "**Data store** — a database, cache or queue."),
+    ("component", "Light blue box", "**Component** — a module, package or namespace inside one container."),
+    ("shared", "Pale dashed box", "Used by most of the other components, or drawn in another part of the same view."),
+    ("external", "Grey box", "**External system** — run by someone else."),
+    ("boundary", "Dashed grey outline", "The system or the container the diagram is about."),
+    ("arrow", "Solid arrow", "A dependency or a call, labelled with what it does and the technology it uses."),
+    ("dashed", "Dashed arrow", "A dependency on a component drawn in another part of the same view."),
+)
+
+_KEY_CLASSES = ("person", "system", "container", "component", "external", "shared")
+
+
+def _key_symbols(diagrams):
+    """Which `_KEY_ROWS` the drawn diagrams use.
+
+    Read off the diagrams themselves rather than the model: the palette is
+    declared in every flowchart whether or not a box uses it, so only the
+    `class` lines, the shapes and the arrow styles say what is really there.
+    """
+    used = set()
+    for mermaid in diagrams:
+        if "flowchart TB" not in mermaid:
+            # Level 4 class diagrams style each box on its own line.
+            for kind in ("component", "shared"):
+                if f"fill:{_ms.C4_PALETTE[kind]}" in mermaid:
+                    used.add(kind)
+            continue
+        if "stroke-dasharray:6 4" in mermaid:
+            used.add("boundary")
+        for line in mermaid.splitlines():
+            words = line.split()
+            if len(words) == 3 and words[0] == "class" and words[2] in _KEY_CLASSES:
+                used.add(words[2])
+            if "[(" in line:
+                used.add("database")
+            if "-.->" in line:
+                used.add("dashed")
+            elif "-->" in line:
+                used.add("arrow")
+    return used
+
+
+def _key_section(diagrams):
+    """The one Key block for the report: the shapes and lines these diagrams use."""
+    used = _key_symbols(diagrams)
+    rows = [f"| {symbol} | {meaning} |" for kind, symbol, meaning in _KEY_ROWS if kind in used]
+    if not rows:
+        return []
+    return ["### Key", "", "What the shapes and lines in the diagrams below mean.", "",
+            "| Symbol | Meaning |", "|---|---|"] + rows + [""]
 
 
 def _cell(text):
@@ -1228,6 +1307,7 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
     for stem, _, mermaid, _ in flows:
         diagrams[stem] = mermaid
     for entry in code_entries:
+        entry["mermaid"] = _with_title(entry["mermaid"], entry["title"])
         diagrams[entry["stem"]] = entry["mermaid"]
     deployment = deployment_diagram(facts, use_model)
     if deployment:
@@ -1258,6 +1338,8 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
                   "Build the model from the source by hand, or see the dependency graph appendix.", ""]
     elif use_model["system"].get("description") and not use_model.get("_facts_only"):
         block += [_prose(use_model["system"]["description"]), ""]
+
+    block += _key_section(diagrams.values())
 
     if "c4-context" in diagrams:
         block.append(_section("### Level 1: System context", "c4-context", diagrams["c4-context"], rendered.get("c4-context")))

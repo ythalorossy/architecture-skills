@@ -24,9 +24,25 @@ bookshop has 6 projects (6 production, 0 test) with 4 project references between
 
 > Drawn from code facts only: no `c4-model.json` yet, so people, external purposes, descriptions and key flows are missing and the System Context level is left out. Write `c4-model.json` and run `render_c4.py` to complete it.
 
+### Key
+
+What the shapes and lines in the diagrams below mean.
+
+| Symbol | Meaning |
+|---|---|
+| Blue box | **Container** — an application or service that runs on its own. |
+| Blue cylinder | **Data store** — a database, cache or queue. |
+| Light blue box | **Component** — a module, package or namespace inside one container. |
+| Grey box | **External system** — run by someone else. |
+| Dashed grey outline | The system or the container the diagram is about. |
+| Solid arrow | A dependency or a call, labelled with what it does and the technology it uses. |
+
 ### Level 2: Containers
 
 ```mermaid
+---
+title: "bookshop · Containers"
+---
 flowchart TB
     subgraph boundary["bookshop [Software System]"]
         bookshop_api["bookshop-api<br/>[Container: Python, FastAPI]<br/>web api"]
@@ -66,6 +82,9 @@ For each container: the modules it is built from (when it has several), then the
 #### bookshop-api
 
 ```mermaid
+---
+title: "bookshop-api"
+---
 flowchart TB
     subgraph boundary["bookshop-api [Container]"]
         bookshop_main["main<br/>[Component]"]
@@ -101,6 +120,9 @@ flowchart TB
 #### bookshop-web
 
 ```mermaid
+---
+title: "bookshop-web"
+---
 flowchart TB
     subgraph boundary["bookshop-web [Container]"]
         web_src__files["src (root files)<br/>[Component]"]
@@ -125,6 +147,9 @@ flowchart TB
 #### docker compose
 
 ```mermaid
+---
+title: "bookshop · Deployment (docker compose)"
+---
 flowchart TB
     subgraph host["Docker host [docker compose]"]
         svc_db[("db<br/>[Container instance]<br/>postgres:16")]

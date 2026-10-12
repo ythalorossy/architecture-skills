@@ -22,9 +22,24 @@ maven_layered has 4 projects (4 production, 0 test) with 4 project references be
 
 > Drawn from code facts only: no `c4-model.json` yet, so people, external purposes, descriptions and key flows are missing and the System Context level is left out. Write `c4-model.json` and run `render_c4.py` to complete it.
 
+### Key
+
+What the shapes and lines in the diagrams below mean.
+
+| Symbol | Meaning |
+|---|---|
+| Blue box | **Container** — an application or service that runs on its own. |
+| Blue cylinder | **Data store** — a database, cache or queue. |
+| Light blue box | **Component** — a module, package or namespace inside one container. |
+| Dashed grey outline | The system or the container the diagram is about. |
+| Solid arrow | A dependency or a call, labelled with what it does and the technology it uses. |
+
 ### Level 2: Containers
 
 ```mermaid
+---
+title: "maven_layered · Containers"
+---
 flowchart TB
     subgraph boundary["maven_layered [Software System]"]
         shop_api["shop-api<br/>[Container: Spring Boot]<br/>web api"]
@@ -53,6 +68,9 @@ For each container: the modules it is built from (when it has several), then the
 #### shop-api
 
 ```mermaid
+---
+title: "shop-api"
+---
 flowchart TB
     subgraph boundary["shop-api [Container]"]
         shop_api["shop-api<br/>[Component]"]
@@ -80,6 +98,9 @@ flowchart TB
 #### shop-api · code structure
 
 ```mermaid
+---
+title: "shop-api · code structure"
+---
 flowchart TB
     subgraph boundary["shop-api · code structure [Container]"]
         subgraph module_shop_api["shop-api"]

@@ -16,6 +16,10 @@
 - **`#lt;` and `#gt;` no longer appear in the report.** Mermaid's entity codes were applied to Markdown prose, so a description or heading mentioning `<Request>` reached `ArchitectureReport.md` as `#lt;Request#gt;`.
 - **A missing key in `c4-facts.json` is named.** Dropping `endpoints`, `configuration` or `deployment` silently removed that section from the report and still exited 0; dropping `data_stores` gave `internal error in __main__:validate: 'data_stores'`. All seven required keys are checked up front and reported as `c4-facts.json: <key> missing; re-run analyze_repository.py`, exit 1.
 
+### Added
+
+- **Every diagram says what it is, and the report says what the shapes mean.** Each `.mmd` carries a front-matter `title`, so a diagram opened or shared on its own is no longer an unlabelled set of boxes, and the renderers draw it above the picture. The C4 section of `ArchitectureReport.md` opens with one Key, listing only the shapes, colours and line styles the diagrams in that report actually use.
+
 ### Changed
 
 - **The `layout: elk` header is gone from every diagram.** No pinned renderer ever applied it: rendering with and without it produces byte-identical SVGs, because the bundled mermaid-cli has no ELK engine. The header, and a comment describing a layout that never ran, are removed. Diagrams are unchanged.

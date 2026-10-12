@@ -22,9 +22,23 @@ maven_multi has 2 projects (2 production, 0 test) with 1 project references betw
 
 > Drawn from code facts only: no `c4-model.json` yet, so people, external purposes, descriptions and key flows are missing and the System Context level is left out. Write `c4-model.json` and run `render_c4.py` to complete it.
 
+### Key
+
+What the shapes and lines in the diagrams below mean.
+
+| Symbol | Meaning |
+|---|---|
+| Blue box | **Container** — an application or service that runs on its own. |
+| Light blue box | **Component** — a module, package or namespace inside one container. |
+| Dashed grey outline | The system or the container the diagram is about. |
+| Solid arrow | A dependency or a call, labelled with what it does and the technology it uses. |
+
 ### Level 2: Containers
 
 ```mermaid
+---
+title: "maven_multi · Containers"
+---
 flowchart TB
     subgraph boundary["maven_multi [Software System]"]
         maven_multi["maven_multi<br/>[Container]"]
@@ -50,6 +64,9 @@ For each container: the modules it is built from (when it has several), then the
 #### maven_multi
 
 ```mermaid
+---
+title: "maven_multi"
+---
 flowchart TB
     subgraph boundary["maven_multi [Container]"]
         acme_core["acme-core<br/>[Component]"]

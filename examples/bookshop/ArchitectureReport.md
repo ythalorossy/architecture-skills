@@ -39,6 +39,21 @@ Bookshop sells books online. A React web app calls a FastAPI service, which keep
 
 Online shop where readers find books and buy them
 
+### Key
+
+What the shapes and lines in the diagrams below mean.
+
+| Symbol | Meaning |
+|---|---|
+| Dark blue rounded box | **Person** — a user or a role outside the system. |
+| Blue box (Level 1) | **Software system** — the system this report describes. |
+| Blue box | **Container** — an application or service that runs on its own. |
+| Blue cylinder | **Data store** — a database, cache or queue. |
+| Light blue box | **Component** — a module, package or namespace inside one container. |
+| Grey box | **External system** — run by someone else. |
+| Dashed grey outline | The system or the container the diagram is about. |
+| Solid arrow | A dependency or a call, labelled with what it does and the technology it uses. |
+
 ### Level 1: System context
 
 ![c4-context](c4-context.svg)
@@ -47,6 +62,9 @@ Online shop where readers find books and buy them
 <summary>Mermaid source</summary>
 
 ```mermaid
+---
+title: "Bookshop · System context"
+---
 flowchart TB
     reader("Reader<br/>[Person]<br/>Searches the catalogue and buys<br/>books")
     system["Bookshop<br/>[Software System]<br/>Online shop where readers find<br/>books and buy them"]
@@ -76,6 +94,9 @@ flowchart TB
 <summary>Mermaid source</summary>
 
 ```mermaid
+---
+title: "Bookshop · Containers"
+---
 flowchart TB
     reader("Reader<br/>[Person]<br/>Searches the catalogue and buys<br/>books")
     subgraph boundary["Bookshop [Software System]"]
@@ -123,6 +144,9 @@ For each container: the modules it is built from (when it has several), then the
 <summary>Mermaid source</summary>
 
 ```mermaid
+---
+title: "Bookshop API"
+---
 flowchart TB
     subgraph boundary["Bookshop API [Container]"]
         bookshop_main["main<br/>[Component]<br/>HTTP routes; hand each request to<br/>a service"]
@@ -163,6 +187,9 @@ flowchart TB
 <summary>Mermaid source</summary>
 
 ```mermaid
+---
+title: "Web app"
+---
 flowchart TB
     subgraph boundary["Web app [Container]"]
         web_src__files["src (root files)<br/>[Component]"]
@@ -204,6 +231,7 @@ Order placement: payment first, then the order row
 
 ```mermaid
 ---
+title: "Bookshop API · bookshop.orders"
 config:
   class:
     hideEmptyMembersBox: true
@@ -237,6 +265,9 @@ From the Buy button to the stored, paid order.
 <summary>Mermaid source</summary>
 
 ```mermaid
+---
+title: "Reader buys a book"
+---
 sequenceDiagram
     actor reader as Reader
     participant bookshop_web as Web app
@@ -265,6 +296,9 @@ sequenceDiagram
 <summary>Mermaid source</summary>
 
 ```mermaid
+---
+title: "Bookshop · Deployment (docker compose)"
+---
 flowchart TB
     subgraph host["Docker host [docker compose]"]
         svc_db[("db<br/>[Container instance]<br/>postgres:16")]
