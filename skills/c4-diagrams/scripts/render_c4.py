@@ -356,7 +356,7 @@ class Diagram:
         self.lines.append(f"    {self.id(source)} {arrow}{label} {self.id(target)}")
 
     def text(self, boundaries=()):
-        out = ["---", "config:", "  layout: elk", "---", "flowchart TB"] + self.lines + ["    " + s for s in STYLES]
+        out = ["flowchart TB"] + self.lines + ["    " + s for s in STYLES]
         for cls, ids in self.classes.items():
             out.append(f"    class {','.join(ids)} {cls}")
         for boundary in boundaries:
@@ -653,8 +653,9 @@ def _graph_diagram(model, facts, container, container_fact, title, nodes, edges,
             if source in nodes and target in nodes:
                 d.edge(source, target, dashed=bool(nodes[target].get("stub")))
 
-    # ELK puts every top-level component in one row; invisible links
-    # stack them in rows of ROW_WIDTH so wide diagrams stay readable.
+    # A component nothing points at shares the first row with every other
+    # one, so a container with many of them comes out as a single very wide
+    # strip. Invisible links stack them in rows of ROW_WIDTH instead.
     if not boxes:
         targeted = {t for targets in edges.values() for t in targets}
         roots = [n for n in regular if n not in targeted]

@@ -25,10 +25,6 @@ No supported projects were found in compose_poly (.NET projects, package.json pa
 ### Level 2: Containers
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
     subgraph boundary["`**compose_poly** [Software System]`"]
         app["`**app**
@@ -58,10 +54,6 @@ service`"]
 #### docker compose
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
     subgraph host["`**Docker host** [docker compose]`"]
         svc_db[("`**db**

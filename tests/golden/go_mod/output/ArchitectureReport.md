@@ -25,10 +25,6 @@ go_mod has 2 projects (2 production, 0 test) with 1 project references between t
 ### Level 2: Containers
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
     subgraph boundary["`**go_mod** [Software System]`"]
         api["`**api**
@@ -56,10 +52,6 @@ For each container: the modules it is built from (when it has several), then the
 #### api
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
     subgraph boundary["`**api** [Container]`"]
         cmd_api["`**cmd/api**
@@ -81,10 +73,6 @@ flowchart TB
 #### api · code structure
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
     subgraph boundary["`**api · code structure** [Container]`"]
         subgraph module_cmd_api["`cmd/api`"]

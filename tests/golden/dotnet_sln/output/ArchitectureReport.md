@@ -25,10 +25,6 @@ dotnet_sln has 2 projects (2 production, 0 test) with 1 project references betwe
 ### Level 2: Containers
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
     subgraph boundary["`**dotnet_sln** [Software System]`"]
         dotnet_sln["`**dotnet_sln**
@@ -55,10 +51,6 @@ For each container: the modules it is built from (when it has several), then the
 #### dotnet_sln
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
     subgraph boundary["`**dotnet_sln** [Container]`"]
         Core["`**Core**

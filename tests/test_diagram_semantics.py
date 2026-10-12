@@ -46,6 +46,72 @@ def _graph(groups, edges):
     return {"nodes": nodes, "edges": out}
 
 
+class LayoutHeaderTest(unittest.TestCase):
+    """No flowchart asks for a layout engine the renderer does not have.
+
+    mermaid-cli 12.0.0 ships no ELK bundle: rendering with and without a
+    `config: layout: elk` front-matter header produced byte-identical SVGs
+    for every golden diagram. The header only misled readers about which
+    engine lays the diagram out, so it is gone.
+    """
+
+    def _every_flowchart(self):
+        model = render_c4.facts_only_model({
+            "repository": "demo",
+            "containers": [{"id": "api", "name": "API", "kind": "service", "technology": "Go",
+                            "evidence": [], "used_by": []}],
+            "data_stores": [{"id": "db", "name": "PostgreSQL", "technology": "PostgreSQL",
+                             "evidence": [], "used_by": ["api"]}],
+            "external_systems": [], "relationships": [],
+        })
+        model["system"]["name"] = "Demo"
+        facts = {
+            "containers": [{"id": "api", "name": "API", "compose_services": ["api"]}],
+            "data_stores": [], "external_systems": [],
+            "deployment": {"compose": [{"name": "api", "image": "demo:1", "ports": ["80:80"]}]},
+        }
+        return {
+            "context": render_c4.context_diagram(model),
+            "container": render_c4.container_diagram(model),
+            "deployment": render_c4.deployment_diagram(facts, model),
+            "component": render_c4._graph_diagram(
+                model, {"data_stores": [], "external_systems": []}, {"id": "api"}, {"id": "api"},
+                "API", {"a": {"group": ""}, "b": {"group": ""}}, {"a": ["b"]}, {}, "used_by_components"),
+        }
+
+    def test_no_diagram_carries_a_layout_header(self):
+        for name, mermaid in self._every_flowchart().items():
+            with self.subTest(diagram=name):
+                self.assertTrue(mermaid.startswith("flowchart TB"), mermaid[:80])
+                self.assertNotIn("layout:", mermaid)
+                self.assertNotIn("elk", mermaid)
+
+
+class RowStackingTest(unittest.TestCase):
+    """Invisible `~~~` links still stack wide rows under the real engine.
+
+    Without them mermaid-cli 12.0.0 draws 14 unconnected components in one
+    2842px-wide row; with them the same diagram is 1226px wide and three
+    rows deep. The trick stays, whatever the comment above it used to claim.
+    """
+
+    def test_wide_component_row_is_stacked(self):
+        count = 2 * render_c4.ROW_WIDTH + 2
+        nodes = {f"c{i:02}": {"group": ""} for i in range(count)}
+        model = render_c4.facts_only_model({"repository": "r", "containers": [], "data_stores": [],
+                                            "external_systems": [], "relationships": []})
+        mermaid = render_c4._graph_diagram(
+            model, {"data_stores": [], "external_systems": []}, {"id": "c"}, {"id": "c"},
+            "API", nodes, {}, {}, "used_by_components")
+        stacking = [line.strip() for line in mermaid.splitlines() if "~~~" in line]
+        self.assertEqual(
+            stacking,
+            [f"c{i:02} ~~~ c{i + render_c4.ROW_WIDTH:02}"
+             for i in range(count - render_c4.ROW_WIDTH)],
+            mermaid,
+        )
+
+
 class SharedComponentTest(unittest.TestCase):
     def test_hub_is_found_even_when_reduction_hides_its_edges(self):
         # A chain n0 -> n1 -> ... -> n23 where every node also uses util. The
