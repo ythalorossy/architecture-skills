@@ -22,6 +22,7 @@ if str(SKILL) not in sys.path:
     sys.path.insert(0, str(SKILL))
 
 from scripts.cli_support import UserError  # noqa: E402  (sys.path is set above)
+from scripts import render_c4  # noqa: E402  (sys.path is set above)
 
 
 def load_gold(path):
@@ -271,3 +272,29 @@ def score_hallucination(model, gold, drift):
             problems.append(f"forbidden {hit!r}: {name}")
     problems.extend(f"drift: {message}" for message in drift or [])
     return {"count": len(problems), "problems": problems}
+
+
+def score_evidence(model, repo):
+    """The fraction of evidence entries that point at a real file and line.
+
+    `render_c4._evidence_problem` is the same check the validator runs, so a
+    model that passes here passes there. The count is reported alongside the
+    score: a 1.0 over zero entries means nothing was checked, not that the
+    evidence is good.
+    """
+    repo = Path(repo)
+    problems = []
+    total = 0
+    for _, _, element in _elements(model):
+        for entry in element.get("evidence") or []:
+            total += 1
+            problem = render_c4._evidence_problem(entry, repo)
+            if problem:
+                problems.append(f"{entry}: {problem}")
+    valid = total - len(problems)
+    return {
+        "score": 1.0 if total == 0 else valid / total,
+        "valid": valid,
+        "total": total,
+        "problems": problems,
+    }

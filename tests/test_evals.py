@@ -338,5 +338,56 @@ class TestHallucination(unittest.TestCase):
         self.assertEqual(grade.score_hallucination(fixture, self.gold, [])["count"], 0)
 
 
+BOOKSHOP = REPO_ROOT / "tests" / "fixtures" / "repos" / "bookshop"
+
+
+class TestEvidence(unittest.TestCase):
+    def test_real_evidence_scores_one(self):
+        candidate = model(containers=[
+            {"id": "bookshop-api", "name": "API",
+             "evidence": ["api/bookshop/main.py:6", "docker-compose.yml:9"]},
+        ])
+        result = grade.score_evidence(candidate, BOOKSHOP)
+        self.assertEqual(result["score"], 1.0)
+        self.assertEqual(result["total"], 2)
+        self.assertEqual(result["problems"], [])
+
+    def test_a_file_that_does_not_exist_is_a_problem(self):
+        candidate = model(containers=[{"id": "x", "name": "X", "evidence": ["nope/missing.py:1"]}])
+        result = grade.score_evidence(candidate, BOOKSHOP)
+        self.assertEqual(result["score"], 0.0)
+        self.assertIn("nope/missing.py:1", result["problems"][0])
+
+    def test_a_line_past_the_end_of_the_file_is_a_problem(self):
+        candidate = model(containers=[
+            {"id": "x", "name": "X",
+             "evidence": ["api/bookshop/main.py:6", "api/bookshop/main.py:4000"]},
+        ])
+        result = grade.score_evidence(candidate, BOOKSHOP)
+        self.assertEqual(result["valid"], 1)
+        self.assertEqual(result["total"], 2)
+        self.assertEqual(result["score"], 0.5)
+        self.assertIn("4000", result["problems"][0])
+
+    def test_a_model_with_no_evidence_scores_one_of_zero(self):
+        """Review Focus: '1.0' must never be read as good when nothing was checked."""
+        candidate = model(containers=[{"id": "x", "name": "X"}], people=[], external_systems=[])
+        result = grade.score_evidence(candidate, BOOKSHOP)
+        self.assertEqual(result["score"], 1.0)
+        self.assertEqual(result["total"], 0)
+
+    def test_evidence_with_a_note_is_understood(self):
+        candidate = model(containers=[
+            {"id": "x", "name": "X", "evidence": ["docker-compose.yml:9 (the api service)"]},
+        ])
+        self.assertEqual(grade.score_evidence(candidate, BOOKSHOP)["score"], 1.0)
+
+    def test_the_fixture_model_evidence_is_all_valid(self):
+        fixture = json.loads((BOOKSHOP / "c4-model.json").read_text(encoding="utf-8"))
+        result = grade.score_evidence(fixture, BOOKSHOP)
+        self.assertEqual(result["score"], 1.0, result["problems"])
+        self.assertGreater(result["total"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()
