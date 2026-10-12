@@ -13,6 +13,7 @@ This is a development tool. Nothing under evals/ is imported by the skill
 at runtime, and the shipped skill stays stdlib-only scripts.
 """
 import argparse
+import errno
 import json
 import re
 import shutil
@@ -321,7 +322,8 @@ def _own_evidence_problem(entry):
         return "is an absolute path, not a path inside the repository"
     if ".." in re.split(r"[\\/]", path):
         return "escapes the repository with '..'"
-    if any(len(part.encode("utf-8", "replace")) > 255 for part in re.split(r"[\\/]", path)):
+    if len(path.encode("utf-8", "replace")) >= 4096 or any(
+            len(part.encode("utf-8", "replace")) > 255 for part in re.split(r"[\\/]", path)):
         return "does not look like a `path` or `path:line` reference"
     return None
 
@@ -374,9 +376,14 @@ def score_render(output_dir, repo):
         shutil.copytree(output_dir, work)
         try:
             result = render_c4.render(work, svg=False, repo_override=str(repo))
-        except (UserError, OSError) as exc:
-            # OSError: the shipped checker stats evidence strings as paths, so
-            # an over-long one raises. That is a failed render, not a crash.
+        except UserError as exc:
+            return {"ok": False, "status": "error", "problems": [str(exc)], "drift": []}
+        except OSError as exc:
+            # Backstop: the shipped checker stats evidence strings as paths, so
+            # an over-long one raises. Any other OSError is the environment's
+            # fault, not the model's, and must propagate.
+            if exc.errno != errno.ENAMETOOLONG:
+                raise
             return {"ok": False, "status": "error", "problems": [f"render raised: {exc}"[:300]], "drift": []}
     return {
         "ok": result["status"] != "invalid",

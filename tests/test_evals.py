@@ -521,6 +521,18 @@ class TestGrade(unittest.TestCase):
         self.assertEqual(scores["evidence"]["total"], 1)
         self.assertIn("path", scores["evidence"]["problems"][0])
 
+    def test_a_path_too_long_in_total_is_invalid_evidence_not_a_crash(self):
+        scores = self._grade_with({"id": "x", "name": "X", "evidence": ["d/" * 2100 + "f.py"]})
+        self.assertEqual(scores["evidence"]["valid"], 0)
+        self.assertIn("path", scores["evidence"]["problems"][0])
+
+    def test_an_environment_oserror_during_render_propagates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = analyzed(tmp, (BOOKSHOP / "c4-model.json").read_text(encoding="utf-8"))
+            with mock.patch.object(grade.render_c4, "render", side_effect=PermissionError(13, "denied")):
+                with self.assertRaises(PermissionError):
+                    grade.score_render(output, BOOKSHOP)
+
     def test_an_unhashable_id_is_reported_not_a_crash(self):
         scores = self._grade_with({"id": ["a", "b"], "name": "Bookshop API"})
         self.assertIn("score", scores["recall"])
