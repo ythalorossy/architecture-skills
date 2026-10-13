@@ -1,3 +1,12 @@
+"""
+ArchitectureReport.md: the prose half of the output.
+
+Fills docs/templates with what the run found, and prefers the c4-model.json
+the agent wrote wherever there is one: with a model, the Executive Summary and
+the Strengths section describe the architecture it documents, and without one
+they fall back to what the dependency graph alone can prove. The cycle check
+is the detectors' own and keeps its line either way.
+"""
 from pathlib import Path
 import re
 

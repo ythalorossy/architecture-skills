@@ -1,3 +1,12 @@
+"""
+Python project discovery: distributions when there are several, modules otherwise.
+
+A repository with more than one pyproject.toml / setup.py / setup.cfg has a
+project per distribution, with edges from declared requirements that name
+another one. With a single distribution the names say nothing, so the
+top-level packages become the projects and their import statements the edges.
+A folder with only a requirements.txt counts as a service too.
+"""
 import ast
 import re
 from pathlib import Path

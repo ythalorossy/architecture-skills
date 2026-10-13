@@ -1,3 +1,11 @@
+"""
+One project list across every ecosystem.
+
+discover_all() calls each ecosystem's discover_projects() and tags what comes
+back with its ecosystem, so everything downstream — the graph, the report, the
+C4 facts — works against one list instead of five. Adding an ecosystem means a
+module with discover_projects() and one line here.
+"""
 from pathlib import Path
 
 try:

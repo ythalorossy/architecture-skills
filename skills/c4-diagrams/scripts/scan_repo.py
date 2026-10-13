@@ -1,3 +1,10 @@
+"""
+The repository scan: the counts and the file inventory the report opens with.
+
+Walks the index once for the per-ecosystem file tallies and the project list,
+and writes repository-scan.json. It answers "how big is this and what is in
+it?", which is the question the report asks before any diagram is drawn.
+"""
 from pathlib import Path
 import json
 

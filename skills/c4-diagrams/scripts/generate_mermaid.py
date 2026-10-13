@@ -1,3 +1,11 @@
+"""
+dependency-graph.mmd: the project graph as a Mermaid flowchart.
+
+The one diagram the analyzer draws itself; every other .mmd comes from
+render_c4.py. Nodes are projects, edges are references, and groups become
+subgraphs. Ids are allocated through mermaid_syntax so a project name can hold
+any character without breaking the diagram.
+"""
 from pathlib import Path
 
 from scripts import mermaid_syntax as _ms

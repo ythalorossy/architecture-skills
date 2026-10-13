@@ -1,3 +1,11 @@
+"""
+The technology stack line: the languages and frameworks a repository uses.
+
+Read from manifests rather than from file extensions, so a repository is
+called Python because it has Python source and a Python manifest, not because
+something pinned a Sphinx build in a docs/requirements.txt. The result is the
+one-line summary at the top of the report and in summary.json.
+"""
 from pathlib import Path
 
 try:

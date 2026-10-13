@@ -1,3 +1,11 @@
+"""
+JVM project discovery: Maven modules and Gradle subprojects.
+
+Maven reads the aggregator pom's <modules> and each module's <dependency>
+elements; Gradle reads settings.gradle(.kts) includes. An aggregator with
+packaging=pom is a grouping rather than a project, so it is not drawn.
+artifactId (Maven) or the include path (Gradle) is the name.
+"""
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path

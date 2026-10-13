@@ -1,3 +1,11 @@
+"""
+Node.js project discovery: workspaces, packages and their dependencies.
+
+Workspace globs in the root package.json (npm, yarn, pnpm-workspace.yaml) name
+the packages; edges come from a dependency naming another package in the same
+workspace. A repository with a single package says nothing useful as one node,
+so its folders are drawn instead, through js_modules.
+"""
 import re
 from fnmatch import fnmatch
 from pathlib import Path, PurePosixPath
