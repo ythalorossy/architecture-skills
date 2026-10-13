@@ -1,0 +1,390 @@
+{
+  "system": {
+    "name": "Relay",
+    "description": "Carries delivery scans from couriers' handhelds to the depot routing records, the finance ledger and the recipient's phone"
+  },
+  "people": [
+    {
+      "id": "courier",
+      "name": "Courier",
+      "description": "Scans a parcel on a handheld; the handheld posts the scan to the intake API",
+      "evidence": [
+        "README.md:11",
+        "intake/internal/scan/handler.go:16"
+      ]
+    },
+    {
+      "id": "recipient",
+      "name": "Recipient",
+      "description": "Waits for the parcel and gets a text saying which depot it is on its way to",
+      "evidence": [
+        "notifier/src/index.ts:15",
+        "contracts/src/index.ts:7"
+      ]
+    },
+    {
+      "id": "finance-team",
+      "name": "Finance team",
+      "description": "Owns and runs the ledger Relay writes to, and bills the depots from it",
+      "evidence": [
+        "README.md:25",
+        "router/router/ledger.py:2"
+      ]
+    }
+  ],
+  "containers": [
+    {
+      "id": "intake",
+      "name": "Intake API",
+      "technology": "Go 1.22, chi, net/http",
+      "description": "Accepts a parcel scan on POST /scans, decodes it and publishes it to the bus as delivery.scanned; it keeps no state of its own",
+      "evidence": [
+        "intake/cmd/intake/main.go:22",
+        "docker-compose.yml:14",
+        "README.md:13"
+      ]
+    },
+    {
+      "id": "router",
+      "name": "Router",
+      "technology": "Python, pika, psycopg",
+      "description": "Consumes delivery.scanned, picks the depot from the reference prefix, records the route, appends a charge to the finance ledger and publishes delivery.routed",
+      "evidence": [
+        "router/router/main.py:9",
+        "docker-compose.yml:23",
+        "README.md:15"
+      ]
+    },
+    {
+      "id": "relay-notifier",
+      "name": "Notifier",
+      "technology": "Node.js, TypeScript, amqplib, undici",
+      "description": "Consumes delivery.routed and texts the recipient through the SMS provider; it never calls the router back",
+      "evidence": [
+        "notifier/src/index.ts:12",
+        "docker-compose.yml:33",
+        "README.md:17"
+      ]
+    },
+    {
+      "id": "db-rabbitmq",
+      "name": "Message bus",
+      "technology": "RabbitMQ 3",
+      "type": "queue",
+      "description": "Carries delivery.scanned and delivery.routed; it is the only path between the three services, which never call each other",
+      "evidence": [
+        "docker-compose.yml:2",
+        "router/router/bus.py:7",
+        "README.md:9"
+      ]
+    },
+    {
+      "id": "db-postgresql",
+      "name": "Routes database",
+      "technology": "PostgreSQL 16",
+      "type": "database",
+      "description": "One row per routed parcel: its reference and the depot it was sent to, keyed by the generated route id",
+      "evidence": [
+        "router/router/routes.py:14",
+        "docker-compose.yml:7"
+      ]
+    },
+    {
+      "id": "db-ledger",
+      "name": "Finance ledger",
+      "technology": "PostgreSQL, run by the finance platform",
+      "type": "database",
+      "external": true,
+      "description": "The finance platform's billing ledger on ledger.finance.example; Relay only ever appends charge rows and does not own the schema",
+      "evidence": [
+        "router/router/ledger.py:15",
+        "docker-compose.yml:28",
+        "README.md:25"
+      ]
+    }
+  ],
+  "external_systems": [
+    {
+      "id": "ext-sms-gate",
+      "name": "SMS provider",
+      "description": "HTTP gateway that delivers the 'parcel on its way' text to the recipient's phone",
+      "evidence": [
+        "notifier/src/sms.ts:3",
+        "notifier/src/sms.ts:6",
+        "docker-compose.yml:37"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "from": "courier",
+      "to": "intake",
+      "description": "Posts parcel scans to",
+      "technology": "JSON over HTTP, POST /scans"
+    },
+    {
+      "from": "intake",
+      "to": "db-rabbitmq",
+      "description": "Publishes delivery.scanned to",
+      "technology": "AMQP, amqp091-go"
+    },
+    {
+      "from": "router",
+      "to": "db-rabbitmq",
+      "description": "Consumes delivery.scanned from, and publishes delivery.routed to",
+      "technology": "AMQP, pika"
+    },
+    {
+      "from": "router",
+      "to": "db-postgresql",
+      "description": "Records each routed parcel in",
+      "technology": "psycopg"
+    },
+    {
+      "from": "router",
+      "to": "db-ledger",
+      "description": "Appends a charge for each routed parcel to",
+      "technology": "psycopg"
+    },
+    {
+      "from": "relay-notifier",
+      "to": "db-rabbitmq",
+      "description": "Consumes delivery.routed from",
+      "technology": "AMQP, amqplib"
+    },
+    {
+      "from": "relay-notifier",
+      "to": "ext-sms-gate",
+      "description": "Sends the delivery text through",
+      "technology": "HTTPS, undici"
+    },
+    {
+      "from": "ext-sms-gate",
+      "to": "recipient",
+      "description": "Texts",
+      "technology": "SMS",
+      "assumption": true
+    },
+    {
+      "from": "finance-team",
+      "to": "db-ledger",
+      "description": "Bills the depots from",
+      "technology": "owned and run by finance"
+    }
+  ],
+  "components": {
+    "intake": {
+      "cmd/intake": "Process entry point: opens the bus connection from BUS_URL, mounts POST /scans and GET /healthz on a chi router and listens on :8080",
+      "internal/scan": "The HTTP handler: decodes the scan body, hands it to the publisher and answers 202, 400 on a bad body or 502 when the bus is down",
+      "internal/bus": "Thin AMQP publisher: dials the broker, marshals the payload to JSON and holds the delivery.scanned topic name",
+      "cmd/intake::cmd/intake": "The main package: wiring, routes and the listener; no request logic of its own",
+      "internal/scan::internal/scan": "The scan package: the Scan payload struct and the handler that publishes it",
+      "internal/bus::internal/bus": "The bus package: the Publisher type wrapping one AMQP connection and channel for the process"
+    },
+    "router": {
+      "router.main": "The consumer loop and the routing step: depot, route row, ledger entry, then the delivery.routed message, acked afterwards",
+      "router.routes": "Picks the depot from the first letter of the reference and inserts the route row, returning its id",
+      "router.ledger": "The single place that writes to the finance platform's ledger, one charge row per routed parcel",
+      "router.bus": "Opens the pika channel from BUS_URL and publishes a JSON payload to a topic; declares both topic names"
+    },
+    "relay-notifier": {
+      "@relay/notifier": "Consumes delivery.routed from the bus, formats the message from the shared RoutedDelivery type and posts it to the SMS provider"
+    }
+  },
+  "flows": [
+    {
+      "id": "scan-accepted",
+      "name": "A courier scans a parcel",
+      "description": "From the handheld's POST to the scan sitting on the bus. Nothing is stored on the way.",
+      "steps": [
+        {
+          "from": "courier",
+          "to": "cmd/intake",
+          "description": "The handheld posts the scan: POST /scans",
+          "technology": "JSON over HTTP",
+          "evidence": [
+            "intake/cmd/intake/main.go:22",
+            "README.md:11"
+          ]
+        },
+        {
+          "from": "cmd/intake",
+          "to": "internal/scan",
+          "description": "Decodes the reference, depot and scan time, 400 if the body is not a scan",
+          "evidence": [
+            "intake/internal/scan/handler.go:19-23"
+          ]
+        },
+        {
+          "from": "internal/scan",
+          "to": "internal/bus",
+          "description": "Publish(ctx, ScannedTopic, scan)",
+          "evidence": [
+            "intake/internal/scan/handler.go:24"
+          ]
+        },
+        {
+          "from": "internal/bus",
+          "to": "db-rabbitmq",
+          "description": "Publishes the JSON body on the delivery.scanned queue",
+          "technology": "AMQP",
+          "evidence": [
+            "intake/internal/bus/publisher.go:35-38"
+          ]
+        },
+        {
+          "from": "cmd/intake",
+          "to": "courier",
+          "description": "202 Accepted, or 502 if the bus refused the message",
+          "reply": true,
+          "evidence": [
+            "intake/internal/scan/handler.go:25-28"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "route-and-notify",
+      "name": "The scan is routed and the recipient is texted",
+      "description": "The bus hands the scan to the router, which routes, records and bills it, then announces it; the notifier picks that up and texts the recipient.",
+      "steps": [
+        {
+          "from": "db-rabbitmq",
+          "to": "router.main",
+          "description": "Delivers a delivery.scanned message to the consumer loop",
+          "technology": "AMQP, pika",
+          "evidence": [
+            "router/router/main.py:18-20"
+          ]
+        },
+        {
+          "from": "router.main",
+          "to": "router.routes",
+          "description": "depot_for(reference), then record(reference, depot)",
+          "evidence": [
+            "router/router/main.py:10-11"
+          ]
+        },
+        {
+          "from": "router.routes",
+          "to": "db-postgresql",
+          "description": "INSERT INTO routes ... RETURNING id, on a connection opened per message",
+          "technology": "psycopg",
+          "evidence": [
+            "router/router/routes.py:14-18"
+          ]
+        },
+        {
+          "from": "router.main",
+          "to": "router.ledger",
+          "description": "append(reference, depot, 180 cents)",
+          "evidence": [
+            "router/router/main.py:6",
+            "router/router/main.py:12"
+          ]
+        },
+        {
+          "from": "router.ledger",
+          "to": "db-ledger",
+          "description": "INSERT INTO ledger_entries on the finance platform's database",
+          "technology": "psycopg over LEDGER_URL",
+          "evidence": [
+            "router/router/ledger.py:15-19"
+          ]
+        },
+        {
+          "from": "router.main",
+          "to": "router.bus",
+          "description": "publish(delivery.routed) with the route id, the depot and the original scan",
+          "evidence": [
+            "router/router/main.py:13"
+          ]
+        },
+        {
+          "from": "router.bus",
+          "to": "db-rabbitmq",
+          "description": "basic_publish of the JSON payload on delivery.routed; the scan is acked after this returns",
+          "technology": "AMQP",
+          "evidence": [
+            "router/router/bus.py:17",
+            "router/router/main.py:21"
+          ]
+        },
+        {
+          "from": "db-rabbitmq",
+          "to": "relay-notifier",
+          "description": "Delivers delivery.routed; the topic name is the whole contract between the two services",
+          "technology": "AMQP, amqplib",
+          "async": true,
+          "evidence": [
+            "notifier/src/index.ts:10-14",
+            "README.md:18"
+          ]
+        },
+        {
+          "from": "relay-notifier",
+          "to": "ext-sms-gate",
+          "description": "POSTs the recipient's number and the 'on its way' text, then acks the message",
+          "technology": "HTTPS, undici",
+          "evidence": [
+            "notifier/src/index.ts:15-16",
+            "notifier/src/sms.ts:6-10"
+          ]
+        },
+        {
+          "from": "ext-sms-gate",
+          "to": "recipient",
+          "description": "Texts the recipient that the parcel is on its way to the depot",
+          "technology": "SMS",
+          "assumption": true
+        }
+      ]
+    }
+  ],
+  "code": [
+    {
+      "container": "intake",
+      "component": "internal/bus",
+      "description": "The one AMQP connection and channel the intake API publishes through",
+      "types": [
+        "Publisher"
+      ]
+    },
+    {
+      "container": "intake",
+      "component": "internal/scan",
+      "description": "The scan payload as it arrives from the handheld, and the handler that puts it on the bus",
+      "types": [
+        "Scan"
+      ]
+    }
+  ],
+  "excluded": [
+    {
+      "id": "mailpit",
+      "reason": "Local development convenience only: an inbox that catches the texts the notifier would have sent, so the team does not pay for them. It is never deployed (docker-compose.yml:41, README.md:32-34) and no Relay code talks to it."
+    }
+  ],
+  "summary": {
+    "overview": "Relay moves delivery scans from the handhelds couriers carry to the people and systems that need to know about them. A courier's handheld posts a scan to the Go intake API, which validates it and publishes delivery.scanned to a RabbitMQ bus; the Python router consumes that, derives the depot from the parcel reference, writes the route to its own PostgreSQL database, appends a charge row to a ledger the finance platform owns, and publishes delivery.routed; the Node notifier consumes that and texts the recipient through an external SMS provider. No service calls another directly - the topic names in contracts/ are the entire contract between them - and the only database Relay owns is the routes one. A Mailpit inbox and a json-server SMS stub exist for local development and are not deployed.",
+    "findings": [
+      "The router does four separate side effects per message with no transaction and acks only at the end (`router/router/main.py:10-21`): the route row, the ledger charge, the published message and the ack. A crash or redelivery after the route insert re-runs all of them, so one scan can produce two route rows and bill the depot twice; a crash after the insert and before the publish leaves a parcel routed, billed and never announced.",
+      "Nothing makes the handling idempotent: `record` always inserts a new row (`router/router/routes.py:15-18`) and `append` always inserts a new charge (`router/router/ledger.py:16-19`), and neither uses the parcel reference as a key, so AMQP's at-least-once delivery turns directly into duplicate billing.",
+      "Relay writes straight into a database another team owns, over a connection string pointing at their host (`router/router/ledger.py:15`, `docker-compose.yml:28`). The coupling is at the schema level with no API in between, and the README says nobody here may change that schema (`README.md:27-28`).",
+      "The notifier's consumer callback awaits `sendText` without a try/catch (`notifier/src/index.ts:12-17`); when the SMS provider answers 4xx or 5xx, `sendText` throws (`notifier/src/sms.ts:11-13`), the message is never acked and the rejection is unhandled. There is no retry, dead-letter queue or alert on that path.",
+      "The shared contract is only shared with one of the three services: `contracts/src/index.ts:1-2` is TypeScript, so the Go publisher re-declares the topic name (`intake/internal/bus/publisher.go:11`) and the Python router re-declares both (`router/router/bus.py:7-8`). A rename in contracts/ would silently break two of the three services.",
+      "The price of a routed parcel is a constant in the consumer (`router/router/main.py:6`, CHARGE_CENTS = 180), so changing what a depot is billed means shipping the router.",
+      "Every message opens and closes two PostgreSQL connections (`router/router/routes.py:14`, `router/router/ledger.py:15`) - one per store, per scan - with no pooling, and the router consumes one message at a time (`router/router/main.py:19`).",
+      "Bus, routes and ledger credentials are literals in the compose file (`docker-compose.yml:10-12`, `docker-compose.yml:26-28`), including the one for the finance platform's host.",
+      "The intake API's `/healthz` reports the process, not the dependency it cannot work without (`intake/cmd/intake/main.go:23`): it answers 200 while the bus connection opened at start-up (`intake/cmd/intake/main.go:15`) is down and every POST /scans is returning 502."
+    ],
+    "recommendations": [
+      "Make the router's handling idempotent before anything else: a unique constraint on the parcel reference in both `routes` and `ledger_entries`, with inserts that do nothing on conflict, so a redelivered delivery.scanned cannot double-bill a depot.",
+      "Write the route row and the outgoing delivery.routed message in one transaction (an outbox table drained by the publisher), so a parcel can never be recorded and billed without being announced.",
+      "Replace the direct write into the finance platform's ledger with an interface finance owns - an append endpoint or a topic they consume - so their schema is no longer a build-time dependency of Relay.",
+      "Wrap the notifier's `sendText` call in a try/catch that nacks the message to a dead-letter queue instead of leaving it unacked, and alert on that queue.",
+      "Generate or publish the topic names for Go and Python from `contracts/` instead of retyping them, so the three services cannot drift apart.",
+      "Move the charge per parcel out of the router's source into configuration, and move the compose credentials - the finance one above all - into secrets."
+    ]
+  }
+}

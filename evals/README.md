@@ -26,6 +26,13 @@ repository.
 **no** `c4-model.json`, nothing in `skills/` describes it, and it was built to
 discriminate: see below. Its scores are real measurements.
 
+**relay** (`tests/fixtures/repos/relay`) exists because freight has no
+headroom: three blind runs on it scored 1.00, so a prompt change reads
+1.00 → 1.00 there. relay is the harder fixture, built the same way — no
+`c4-model.json`, nothing in `skills/` describes it — around three shapes
+freight does not have. Use it when you want to see a change move a number;
+keep freight as the regression anchor.
+
 ## The freight fixture, and the traps in it
 
 A gold only measures something if a bad answer can fail it. The eight
@@ -48,6 +55,27 @@ grades an answer that only mirrors `c4-facts.json` and fails if it scores
 better than **recall 0.43 with 1 hallucination**. The same file pins the shape
 of each trap, so a detector improvement that quietly hands the agent one of
 these answers turns the suite red instead of inflating the score.
+
+## The relay fixture, and the traps in it
+
+relay is a system with no direct call anywhere in it: three services and a
+message bus. Seventeen files, like freight, and built around the three shapes
+BACKLOG B-29 names.
+
+| Trap | What a careless answer does | How the gold catches it |
+|---|---|---|
+| **A container reached only through the queue.** The notifier consumes `delivery.routed`, which the router publishes. No call, no `depends_on` between them: the topic name is the whole contract, and no fact relates the two. | Draws three services around a bus and stops, with nothing saying a scan ever reaches the notifier. | The required flow steps run `bus → notifier → sms`: a model that cannot trace the second half of the path loses them. |
+| **A store another system owns.** The ledger belongs to the finance platform; relay only appends to it, through `router/ledger.py`, and its host is in `LEDGER_URL`. The detector folds it into the same `db-postgresql` fact as the routes database. | Draws one database, ours, and never mentions finance. | `ledger-db` and `finance` are required elements with required relationships (`router → ledger-db`, `finance → ledger-db`): telling the two databases apart costs reading README.md and the wrapper. |
+| **An external system the detectors cannot see.** The SMS provider is called through `undici`, which is not on the HTTP-client list, so `external_systems` in the facts is `[]`. | Mirrors the facts: a system with no outside dependency. | `sms` is a required element with a required relationship and a required flow step. |
+
+A library (`@relay/contracts`), a dev-only dependency (`json-server`) and a
+dev-only compose service (`mailpit`) are there to be *not* drawn as containers;
+all three are `forbidden` terms, and ignoring mailpit instead of `excluded`-ing
+it is drift, which also counts.
+
+`tests/test_eval_fixture_relay.py` pins the shape of each trap and fails if an
+answer that only mirrors `c4-facts.json` scores better than **recall 0.30 with
+1 hallucination**.
 
 ## The grader
 
@@ -164,9 +192,14 @@ No threshold here can turn CI red on a quality number.
 - **The freight baseline has no headroom.** Two independent blind runs, on
   different models and with differently-worded requests, both score 1.00.
   That is a real result — the gold does mark a careless answer down to 0.43 —
-  but it means a prompt change can only be checked for *regression* here, not
-  for improvement. Buying headroom needs a harder fixture, not a stricter gold.
-- **Two repositories, both synthetic.** Both are 17-file fixtures. A good
+  but it means a prompt change can only be checked for *regression* there.
+  `relay` was built to buy that headroom, and it half worked: the two blind
+  runs on it are **1.00 (Opus)** and **0.91 (Sonnet)**, the first blind score
+  in this repository that is neither contaminated nor perfect. So relay
+  discriminates between models and gives a prompt change something to move on
+  the weaker one — and it is still a ceiling for the stronger one. Say which
+  model a relay score came from; the two are not interchangeable.
+- **Three repositories, all synthetic.** All three are 17-file fixtures. A good
   score here does not predict a good score on a real repository.
 - **One run per baseline.** Each recorded baseline is a reference point, not a
   statistical claim.

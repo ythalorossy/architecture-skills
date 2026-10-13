@@ -1,0 +1,45 @@
+{
+  "repo": "tests/fixtures/repos/relay",
+  "required_elements": [
+    {"role": "courier",   "kind": "person",    "match": ["courier", "driver", "handheld"]},
+    {"role": "intake",    "kind": "container", "match": ["intake", "scan api", "scans api"]},
+    {"role": "router",    "kind": "container", "match": ["router", "routing"]},
+    {"role": "notifier",  "kind": "container", "match": ["notifier", "notification"]},
+    {"role": "bus",       "kind": "queue",     "match": ["rabbit", "bus", "amqp", "message queue"]},
+    {"role": "routes-db", "kind": "database",  "match": ["routes", "deliveries database"]},
+    {"role": "ledger-db", "kind": "database",  "match": ["ledger"]},
+    {"role": "finance",   "kind": "external",  "match": ["finance", "accounting", "accounts platform"]},
+    {"role": "sms",       "kind": "external",  "match": ["sms", "text message"]}
+  ],
+  "required_relationships": [
+    ["courier", "intake"],
+    ["intake", "bus"],
+    ["router", "bus"],
+    ["router", "routes-db"],
+    ["router", "ledger-db"],
+    ["finance", "ledger-db"],
+    ["notifier", "bus"],
+    ["notifier", "sms"]
+  ],
+  "required_flow_steps": [
+    ["courier", "intake"],
+    ["intake", "bus"],
+    ["bus", "router"],
+    ["router", "ledger-db"],
+    ["bus", "notifier"],
+    ["notifier", "sms"]
+  ],
+  "forbidden": [
+    "mailpit",
+    "mock",
+    "json-server",
+    "@relay/contracts",
+    "contracts library",
+    "shared library",
+    "kafka",
+    "mongo",
+    "redis",
+    "nginx",
+    "elasticsearch"
+  ]
+}

@@ -1,0 +1,45 @@
+services:
+  bus:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+
+  routes-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: routes
+      POSTGRES_USER: relay
+      POSTGRES_PASSWORD: relay
+
+  intake:
+    build: ./intake
+    environment:
+      BUS_URL: amqp://relay:relay@bus:5672/
+    ports:
+      - "8080:8080"
+    depends_on:
+      - bus
+
+  router:
+    build: ./router
+    environment:
+      BUS_URL: amqp://relay:relay@bus:5672/
+      ROUTES_URL: postgresql://relay:relay@routes-db:5432/routes
+      LEDGER_URL: postgresql://relay:relay@ledger.finance.example:5432/ledger
+    depends_on:
+      - bus
+      - routes-db
+
+  notifier:
+    build: ./notifier
+    environment:
+      BUS_URL: amqp://relay:relay@bus:5672/
+      SMS_API_URL: https://api.sms-gate.example/v2/messages
+    depends_on:
+      - bus
+
+  # Local development only: an inbox that catches the texts. Never deployed.
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "8025:8025"
