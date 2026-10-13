@@ -16,7 +16,7 @@
 
 [//]: # (summary:start)
 
-bookshop has 6 projects (6 production, 0 test) with 4 project references between them.
+bookshop has 6 projects (6 production, 0 tests) with 4 project references between them.
 
 [//]: # (summary:end)
 

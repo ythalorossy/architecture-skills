@@ -15,7 +15,7 @@
 
 [//]: # (summary:start)
 
-freight has 5 projects (5 production, 0 test) with 3 project references between them.
+freight has 5 projects (5 production, 0 tests) with 3 project references between them.
 
 [//]: # (summary:end)
 

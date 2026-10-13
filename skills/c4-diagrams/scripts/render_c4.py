@@ -928,6 +928,8 @@ SHARED_STEM = "c4-component-shared"
 # Key of the one node a container's Level 3 collapses its shared libraries
 # into. Not a component name: no node can be called this.
 SHARED_NODE = "(shared libraries)"
+# The same question one level down: the packages inside those libraries.
+SHARED_CODE_STEM = "c4-structure-shared"
 
 
 def _shared_libraries(facts, by_fact):
@@ -948,33 +950,52 @@ def _shared_libraries(facts, by_fact):
     return {node: ids for node, ids in sorted(users.items()) if len(ids) > 1}
 
 
-def _collapse_shared(components, shared):
+def _shared_code_nodes(code, shared):
     """
-    (the container's component graph with the shared libraries replaced by one
-    node, the names replaced). An edge into a library becomes an edge into that
-    node, which is drawn as a stub pointing at the shared view.
+    The code components that belong to a shared library, by their ``module``.
+
+    The module view's nodes *are* the libraries; the code view's nodes are the
+    packages inside them, keyed ``module::package``, so the same question is
+    asked one level down through the module each package reports.
     """
-    mine = [node for node in components.get("nodes", {}) if node in shared]
+    return {
+        node for node, info in (code.get("nodes") or {}).items()
+        if info.get("module") in shared
+    }
+
+
+def _collapse_shared(components, collapse, stem):
+    """
+    (the graph with ``collapse``'s nodes replaced by one node, the nodes
+    replaced). An edge into one of them becomes an edge into that node, which is
+    drawn as a stub pointing at ``stem``, the view where they are drawn once.
+    """
+    mine = [node for node in components.get("nodes", {}) if node in collapse]
     if not mine:
         return components, []
 
-    nodes = {node: info for node, info in components["nodes"].items() if node not in shared}
+    nodes = {node: info for node, info in components["nodes"].items() if node not in collapse}
     edges = {}
     for node in nodes:
         targets = []
         for target in components.get("edges", {}).get(node, []):
-            target = SHARED_NODE if target in shared else target
+            target = SHARED_NODE if target in collapse else target
             if target not in targets and target != node:
                 targets.append(target)
         edges[node] = targets
 
+    # The count is of libraries, not of the nodes collapsed: a code view
+    # collapses every package of a library and still shares two libraries.
+    libraries = {components["nodes"][node].get("module") or node for node in mine}
     nodes[SHARED_NODE] = {
         "group": "",
-        "label": f"Shared libraries ({len(mine)})",
-        "stub": f"drawn once in {SHARED_STEM}.mmd",
+        "label": f"Shared libraries ({len(libraries)})",
+        "stub": f"drawn once in {stem}.mmd",
     }
     edges[SHARED_NODE] = []
-    return {"nodes": nodes, "edges": edges}, mine
+    # The library names, so both callers can say what moved: in a module view
+    # a node is the library, in a code view it reports the library it is in.
+    return {"nodes": nodes, "edges": edges}, sorted(libraries)
 
 
 def _shared_edges(facts, shared):
@@ -1031,6 +1052,55 @@ def _shared_diagram(model, facts, shared, by_fact, texts, title):
     return _with_title(d.text([boundary]), title)
 
 
+def _shared_code_diagram(facts, shared, texts, title):
+    """
+    The packages inside the shared libraries, in a box per library.
+
+    The container-side view of this is one collapsed node, so this is the only
+    place a shared library's own structure is drawn.
+    """
+    nodes, edges = {}, {}
+    for container_fact in facts["containers"]:
+        code = container_fact.get("code_components") or {}
+        for node, info in (code.get("nodes") or {}).items():
+            if info.get("module") in shared:
+                nodes.setdefault(node, info)
+        for source, targets in (code.get("edges") or {}).items():
+            if (code.get("nodes") or {}).get(source, {}).get("module") not in shared:
+                continue
+            for target in targets:
+                if (code.get("nodes") or {}).get(target, {}).get("module") in shared and target != source:
+                    edges.setdefault(source, set()).add(target)
+
+    d = Diagram()
+    short = _short_names(list(nodes))
+    boundary_key = _ms.IdAllocator.internal_key("boundary")
+    boundary = d.id(boundary_key)
+    d.lines.append(f'    subgraph {boundary}["{_clean(title)}"]')
+    modules = {}
+    for node, info in sorted(nodes.items()):
+        modules.setdefault(info.get("module"), []).append(node)
+    boxes = []
+    for module, members in sorted(modules.items(), key=lambda m: str(m[0])):
+        box = d.internal(f"module_{module}")
+        boxes.append(box)
+        d.lines.append(f'        subgraph {box}["{_clean(module)}"]')
+        for node in members:
+            d.node(node, _label(_component_label(node, nodes[node], short), "Component", texts.get(node, "")),
+                   "component", indent="            ")
+        d.lines.append("        end")
+    d.lines.append("    end")
+
+    for source, targets in sorted(edges.items()):
+        for target in sorted(targets):
+            d.edge(source, target)
+
+    out = d.text([boundary])
+    for box in boxes:
+        out += f"    style {box} {_ms.folder_style()}\n"
+    return _with_title(out, title)
+
+
 def component_diagrams(model, facts):
     """
     [(file stem, title, mermaid, notes, kind)] per container: its modules (when it has
@@ -1054,7 +1124,9 @@ def component_diagrams(model, facts):
         texts = descriptions.get(container["id"]) or {}
 
         declared = container_fact.get("components") or {}
-        components, collapsed = _collapse_shared(declared, shared_users) if shared_users else (declared, [])
+        components, collapsed = (
+            _collapse_shared(declared, set(shared_users), SHARED_STEM) if shared_users else (declared, [])
+        )
         has_modules = len(components.get("nodes", {})) >= 2
         if has_modules:
             views = _component_views(components)
@@ -1074,15 +1146,30 @@ def component_diagrams(model, facts):
                     title)
                 results.append((stem, title, mermaid, notes, "modules"))
 
-        code = container_fact.get("code_components") or {}
+        declared_code = container_fact.get("code_components") or {}
+        # A shared library's packages are its own, not this container's: they
+        # are collapsed here exactly as the library is in the module view.
+        code, collapsed_code = (
+            _collapse_shared(declared_code, _shared_code_nodes(declared_code, shared_users), SHARED_CODE_STEM)
+            if shared_users else (declared_code, [])
+        )
         # A module holding one package named after it draws the same boxes and
         # the same arrows as the module view above; a second copy of a diagram
         # is not a second level of detail, so it is left out.
-        echoes_modules = has_modules and _drawn_graph(code) == _drawn_graph(declared)
+        echoes_modules = has_modules and _drawn_graph(declared_code) == _drawn_graph(declared)
         if len(code.get("nodes", {})) >= 2 and not echoes_modules:
-            for suffix, subtitle, nodes, edges, notes in _component_views(
+            for index, (suffix, subtitle, nodes, edges, notes) in enumerate(_component_views(
                 code, overview=not has_modules, full_list="c4-facts.json (`code_components`)"
-            ):
+            )):
+                if index == 0 and collapsed_code:
+                    names = ", ".join(collapsed_code)
+                    notes = notes + [
+                        f"The packages of {names} are drawn once in {SHARED_CODE_STEM}.mmd: it is shared "
+                        f"with another container."
+                        if len(collapsed_code) == 1 else
+                        f"The packages of {len(collapsed_code)} shared libraries are drawn once in "
+                        f"{SHARED_CODE_STEM}.mmd: {names}."
+                    ]
                 title = f"{container['name']} · code structure" + (f" / {subtitle}" if subtitle else "")
                 stem = f"c4-structure-{container['id']}{suffix}"
                 mermaid = _with_title(
@@ -1111,6 +1198,30 @@ def component_diagrams(model, facts):
             [note],
             "modules",
         ))
+
+        # The packages inside those libraries, when the code was read deeply
+        # enough to have any. Every container's view collapsed them, so this
+        # is the only place they are drawn.
+        code_texts = {
+            node: text
+            for described in (model.get("components") or {}).values()
+            for node, text in described.items()
+        }
+        inside = {
+            node
+            for container_fact in facts["containers"]
+            for node in _shared_code_nodes(container_fact.get("code_components") or {}, shared_users)
+        }
+        if len(inside) >= 2:
+            code_title = f"{model['system']['name']} · Shared libraries, code structure"
+            results.append((
+                SHARED_CODE_STEM,
+                code_title,
+                _shared_code_diagram(facts, shared_users, code_texts, code_title),
+                ["The packages inside the libraries used by more than one container, drawn once here "
+                 "instead of inside every container that uses them."],
+                "code",
+            ))
 
     return results
 
@@ -1251,7 +1362,7 @@ _KEY_ROWS = (
     ("container", "Blue box", "**Container** — an application or service that runs on its own."),
     ("database", "Blue cylinder", "**Data store** — a database, cache or queue."),
     ("component", "Light blue box", "**Component** — a module, package or namespace inside one container."),
-    ("shared", "Pale dashed box", "Used by most of the other components, drawn in another part of the same view, or shared with another container and drawn once in the shared-libraries view."),
+    ("shared", "Pale dashed box", "Used by most of the other components, drawn in another part of the same view, or shared with another container and drawn once in a shared-libraries view."),
     ("external", "Grey box", "**External system** — run by someone else."),
     ("boundary", "Dashed grey outline", "The system or the container the diagram is about."),
     ("arrow", "Solid arrow", "A dependency or a call, labelled with what it does and the technology it uses."),

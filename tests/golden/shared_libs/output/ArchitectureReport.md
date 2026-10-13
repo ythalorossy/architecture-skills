@@ -14,7 +14,7 @@
 
 [//]: # (summary:start)
 
-shared_libs has 5 projects (5 production, 0 test) with 4 project references between them.
+shared_libs has 5 projects (5 production, 0 tests) with 4 project references between them.
 
 [//]: # (summary:end)
 
@@ -36,7 +36,7 @@ What the shapes and lines in the diagrams below mean.
 |---|---|
 | Blue box | **Container** — an application or service that runs on its own. |
 | Light blue box | **Component** — a module, package or namespace inside one container. |
-| Pale dashed box | Used by most of the other components, drawn in another part of the same view, or shared with another container and drawn once in the shared-libraries view. |
+| Pale dashed box | Used by most of the other components, drawn in another part of the same view, or shared with another container and drawn once in a shared-libraries view. |
 | Dashed grey outline | The system or the container the diagram is about. |
 | Solid arrow | A dependency or a call, labelled with what it does and the technology it uses. |
 | Dashed arrow | A dependency on a component drawn in another part of the same view. |
@@ -100,30 +100,27 @@ flowchart TB
 
 #### Shop.Admin · code structure
 
+> The packages of Shop.Contracts are drawn once in c4-structure-shared.mmd: it is shared with another container.
+
 ```mermaid
 ---
 title: "Shop.Admin · code structure"
 ---
 flowchart TB
     subgraph boundary["Shop.Admin · code structure [Container]"]
-        subgraph module_Shop_Admin["Shop.Admin"]
-            Shop_Admin___root["(root)<br/>[Component]"]
-        end
-        subgraph module_Shop_Contracts["Shop.Contracts"]
-            Shop_Contracts___root["(root)<br/>[Component]"]
-        end
+        Shop_Admin___root["(root)<br/>[Component]"]
     end
-    Shop_Admin___root --> Shop_Contracts___root
+    shared_libraries["Shared libraries (1)<br/>[Component, drawn once in c4-structure-shared.mmd]"]
+    Shop_Admin___root -.-> shared_libraries
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef component fill:#85bbf0,stroke:#5d82a8,color:#000000
     classDef external fill:#999999,stroke:#6b6b6b,color:#ffffff
     classDef shared fill:#dbe9f6,stroke:#5d82a8,color:#000000,stroke-dasharray:4 3
-    class Shop_Admin___root,Shop_Contracts___root component
+    class Shop_Admin___root component
+    class shared_libraries shared
     style boundary fill:none,stroke:#444444,stroke-dasharray:6 4
-    style module_Shop_Admin fill:#f4f8fc,stroke:#9fb6cc
-    style module_Shop_Contracts fill:#f4f8fc,stroke:#9fb6cc
 ```
 
 #### Shop.Api
@@ -153,35 +150,27 @@ flowchart TB
 
 #### Shop.Api · code structure
 
+> The packages of 2 shared libraries are drawn once in c4-structure-shared.mmd: Shop.Contracts, Shop.Core.
+
 ```mermaid
 ---
 title: "Shop.Api · code structure"
 ---
 flowchart TB
     subgraph boundary["Shop.Api · code structure [Container]"]
-        subgraph module_Shop_Api["Shop.Api"]
-            Shop_Api___root["(root)<br/>[Component]"]
-        end
-        subgraph module_Shop_Contracts["Shop.Contracts"]
-            Shop_Contracts___root["(root)<br/>[Component]"]
-        end
-        subgraph module_Shop_Core["Shop.Core"]
-            Shop_Core___root["(root)<br/>[Component]"]
-        end
+        Shop_Api___root["(root)<br/>[Component]"]
     end
-    Shop_Api___root --> Shop_Core___root
-    Shop_Core___root --> Shop_Contracts___root
+    shared_libraries["Shared libraries (2)<br/>[Component, drawn once in c4-structure-shared.mmd]"]
+    Shop_Api___root -.-> shared_libraries
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef component fill:#85bbf0,stroke:#5d82a8,color:#000000
     classDef external fill:#999999,stroke:#6b6b6b,color:#ffffff
     classDef shared fill:#dbe9f6,stroke:#5d82a8,color:#000000,stroke-dasharray:4 3
-    class Shop_Api___root,Shop_Contracts___root,Shop_Core___root component
+    class Shop_Api___root component
+    class shared_libraries shared
     style boundary fill:none,stroke:#444444,stroke-dasharray:6 4
-    style module_Shop_Api fill:#f4f8fc,stroke:#9fb6cc
-    style module_Shop_Contracts fill:#f4f8fc,stroke:#9fb6cc
-    style module_Shop_Core fill:#f4f8fc,stroke:#9fb6cc
 ```
 
 #### Shop.Worker
@@ -211,35 +200,27 @@ flowchart TB
 
 #### Shop.Worker · code structure
 
+> The packages of 2 shared libraries are drawn once in c4-structure-shared.mmd: Shop.Contracts, Shop.Core.
+
 ```mermaid
 ---
 title: "Shop.Worker · code structure"
 ---
 flowchart TB
     subgraph boundary["Shop.Worker · code structure [Container]"]
-        subgraph module_Shop_Contracts["Shop.Contracts"]
-            Shop_Contracts___root["(root)<br/>[Component]"]
-        end
-        subgraph module_Shop_Core["Shop.Core"]
-            Shop_Core___root["(root)<br/>[Component]"]
-        end
-        subgraph module_Shop_Worker["Shop.Worker"]
-            Shop_Worker___root["(root)<br/>[Component]"]
-        end
+        Shop_Worker___root["(root)<br/>[Component]"]
     end
-    Shop_Core___root --> Shop_Contracts___root
-    Shop_Worker___root --> Shop_Core___root
+    shared_libraries["Shared libraries (2)<br/>[Component, drawn once in c4-structure-shared.mmd]"]
+    Shop_Worker___root -.-> shared_libraries
     classDef person fill:#08427b,stroke:#052e56,color:#ffffff
     classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef component fill:#85bbf0,stroke:#5d82a8,color:#000000
     classDef external fill:#999999,stroke:#6b6b6b,color:#ffffff
     classDef shared fill:#dbe9f6,stroke:#5d82a8,color:#000000,stroke-dasharray:4 3
-    class Shop_Contracts___root,Shop_Core___root,Shop_Worker___root component
+    class Shop_Worker___root component
+    class shared_libraries shared
     style boundary fill:none,stroke:#444444,stroke-dasharray:6 4
-    style module_Shop_Contracts fill:#f4f8fc,stroke:#9fb6cc
-    style module_Shop_Core fill:#f4f8fc,stroke:#9fb6cc
-    style module_Shop_Worker fill:#f4f8fc,stroke:#9fb6cc
 ```
 
 #### shared_libs · Shared libraries
@@ -271,6 +252,36 @@ flowchart TB
     class Shop_Contracts,Shop_Core component
     class shop_admin,shop_api,shop_worker container
     style boundary fill:none,stroke:#444444,stroke-dasharray:6 4
+```
+
+#### shared_libs · Shared libraries, code structure
+
+> The packages inside the libraries used by more than one container, drawn once here instead of inside every container that uses them.
+
+```mermaid
+---
+title: "shared_libs · Shared libraries, code structure"
+---
+flowchart TB
+    subgraph boundary["shared_libs · Shared libraries, code structure"]
+        subgraph module_Shop_Contracts["Shop.Contracts"]
+            Shop_Contracts___root["(root)<br/>[Component]"]
+        end
+        subgraph module_Shop_Core["Shop.Core"]
+            Shop_Core___root["(root)<br/>[Component]"]
+        end
+    end
+    Shop_Core___root --> Shop_Contracts___root
+    classDef person fill:#08427b,stroke:#052e56,color:#ffffff
+    classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
+    classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff
+    classDef component fill:#85bbf0,stroke:#5d82a8,color:#000000
+    classDef external fill:#999999,stroke:#6b6b6b,color:#ffffff
+    classDef shared fill:#dbe9f6,stroke:#5d82a8,color:#000000,stroke-dasharray:4 3
+    class Shop_Contracts___root,Shop_Core___root component
+    style boundary fill:none,stroke:#444444,stroke-dasharray:6 4
+    style module_Shop_Contracts fill:#f4f8fc,stroke:#9fb6cc
+    style module_Shop_Core fill:#f4f8fc,stroke:#9fb6cc
 ```
 
 ### API endpoints
@@ -309,6 +320,7 @@ Runtime, frameworks and key libraries declared in each container's build files.
 - [c4-component-shop-worker.mmd](c4-component-shop-worker.mmd)
 - [c4-structure-shop-worker.mmd](c4-structure-shop-worker.mmd)
 - [c4-component-shared.mmd](c4-component-shared.mmd)
+- [c4-structure-shared.mmd](c4-structure-shared.mmd)
 - [c4-facts.json](c4-facts.json)
 
 [//]: # (c4:end)

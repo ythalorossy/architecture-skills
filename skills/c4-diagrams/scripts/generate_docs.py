@@ -430,9 +430,9 @@ def generate_report(
     if graph:
         # Replaced by render_c4 when c4-model.json describes the system.
         described = (
-            f"{project_name} has {len(graph)} projects "
-            f"({len(facts['production'])} production, {len(facts['tests'])} test) "
-            f"with {internal_edges} project references between them."
+            f"{project_name} has {_count(len(graph), 'project')} "
+            f"({len(facts['production'])} production, {_count(len(facts['tests']), 'test')}) "
+            f"with {_count(internal_edges, 'project reference')} between them."
         )
         checks = (
             f"The automated dependency checks found {len(concerns)} concern(s)."
