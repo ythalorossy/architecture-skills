@@ -1,0 +1,4 @@
+parameters:
+  greeting: hello
+template:
+  body: "{{ greeting }}"
