@@ -1,3 +1,11 @@
+"""
+Node.js project discovery: workspaces, packages and their dependencies.
+
+Workspace globs in the root package.json (npm, yarn, pnpm-workspace.yaml) name
+the packages; edges come from a dependency naming another package in the same
+workspace. A repository with a single package says nothing useful as one node,
+so its folders are drawn instead, through js_modules.
+"""
 import re
 from fnmatch import fnmatch
 from pathlib import Path, PurePosixPath
@@ -120,7 +128,7 @@ def discover_projects(repo_path, index=None, collector=None):
 
     # A lone package says nothing as one node; draw its folders instead.
     if len(packages) == 1 and not roots:
-        modules = module_projects(repo, packages[0]["path"].parent)
+        modules = module_projects(repo, packages[0]["path"].parent, index=index)
         if modules:
             return {"solutions": [], "projects": modules}
 

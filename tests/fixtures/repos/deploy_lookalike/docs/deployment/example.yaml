@@ -1,0 +1,4 @@
+apiVersion: acme.example/v1
+kind: ReportSchedule
+metadata:
+  name: nightly

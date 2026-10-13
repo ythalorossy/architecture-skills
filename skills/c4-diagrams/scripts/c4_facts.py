@@ -30,10 +30,10 @@ try:
     from scripts.projects import discover_all
     from scripts.python_projects import _distributions, normalize, _python_files
     from scripts.generate_docs import is_test_project
-    from scripts import code_facts, go_projects
+    from scripts import code_facts, code_types, go_projects
     from scripts.repo_index import RepoIndex, read_file_text, recording_skips
 except ImportError:
-    import code_facts, go_projects
+    import code_facts, code_types, go_projects
     from paths import GENERIC_URL_KEYS, REQUIREMENTS_FILE, in_test_dir, local_tag
     from projects import discover_all
     from python_projects import _distributions, normalize, _python_files
@@ -228,17 +228,17 @@ def _source_files(repo, test_dirs, index=None):
     return files
 
 
-def _in_comment(text, index):
-    """True when index sits in a comment: after // or # on its line, or on a /* ... */ block line."""
-    # Drop earlier URLs on the line first: their "//" and "#" aren't comments.
-    before = re.sub(r"\w+://\S*", "", text[text.rfind("\n", 0, index) + 1:index])
-    return before.lstrip().startswith(("*", "/*", "<!--")) or "//" in before or "#" in before
+def _masked(text, suffix, strings):
+    """``text`` with its comments blanked, and its string contents too when asked.
 
-
-def _in_string(text, index):
-    """True when index sits inside a quoted string on its line (a pattern table, a log message...)."""
-    line = text[text.rfind("\n", 0, index) + 1:index]
-    return line.count('"') % 2 == 1 or line.count("'") % 2 == 1
+    One pass per file over the same masker the Level 4 parsers use, instead of
+    re-reading the line in front of every match: a quote or a ``#`` inside a
+    literal is no longer mistaken for the thing it looks like.
+    """
+    language = code_types.MASK_LANGUAGES.get(suffix.lower())
+    if language is None:
+        return text
+    return code_types.mask(text, language, strings=strings, comments=True)
 
 
 def _strip_json_comments(text):
@@ -660,7 +660,7 @@ def collect_facts(repo_path, graph, index=None, discovery=None):
     of their own, so the run's collector is installed for the call.
     """
     index = RepoIndex.ensure(index, Path(repo_path).resolve())
-    with recording_skips(index.collector):
+    with recording_skips(index.collector, index):
         return _collect_facts(repo_path, graph, index=index, discovery=discovery)
 
 
@@ -785,9 +785,13 @@ def _collect_facts(repo_path, graph, index=None, discovery=None):
     source_files = _source_files(repo, test_dirs, index)
     for file in source_files:
         text = _file_text(file)
+        # Code only: a name listed in a pattern table or recalled in a comment
+        # is not a dependency. URLs keep their literals, which is where they live.
+        code = _masked(text, file.suffix, strings=True)
+        prose_free = _masked(text, file.suffix, strings=False)
 
         for pattern, kind, technology in CODE_SIGNALS:
-            match = next((m for m in re.finditer(pattern, text) if not _in_string(text, m.start())), None)
+            match = re.search(pattern, code)
             if match:
                 record(stores if kind == "store" else externals, technology, new_entry(technology), file, _line_of(text, match.start()))
 
@@ -810,12 +814,12 @@ def _collect_facts(repo_path, graph, index=None, discovery=None):
                 kind, technology = hit
                 record(stores if kind == "store" else externals, technology, new_entry(technology), file, _line_of(text, _match_pos))
 
-        soap = SOAP_CLIENT.search(text)
-        if soap or HTTP_CLIENT.search(text):
-            for match in URL.finditer(text):
+        soap = SOAP_CLIENT.search(code)
+        if soap or HTTP_CLIENT.search(code):
+            for match in URL.finditer(prose_free):
                 host = match.group(1).lower()
                 key = KNOWN_HOSTS.get(host) or (None if IGNORED_HOSTS.search(host) else host)
-                if key and not _in_comment(text, match.start()):
+                if key:
                     record(externals, key, new_entry("SOAP" if soap and key == host else key), file, _line_of(text, match.start()))
 
     # Package references (NuGet, Maven) that imply a store or a third-party API.

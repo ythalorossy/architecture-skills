@@ -28,17 +28,46 @@ MAX_TEXT_BYTES = 2 * 1024 * 1024
 # one here for the length of the run. One run at a time, single-threaded.
 _SKIP_SINK = None
 
+# Text read by read_file_text() during the current run, or None outside one.
+# The Level 3 and Level 4 scanners each walk the same source files, so every
+# one of them was read three or four times. Scoped to the run so that a
+# second analysis in the same process cannot be served a stale file.
+_TEXT_CACHE = None
+_TEXT_CACHE_BYTES = 0
+
+# The index of the current run, so read_file_text() can answer from text it
+# has already read. None outside a run.
+_RUN_INDEX = None
+
+# How much of that text to hold. Source files are capped at 2 MB each and a
+# repository can have thousands, so the cache stops taking new entries once
+# it reaches this and keeps serving the ones it has. Big enough for whole
+# repositories in practice, bounded for the ones it is not.
+MAX_CACHE_BYTES = 64 * 1024 * 1024
+
 
 @contextmanager
-def recording_skips(collector):
-    """Record what read_file_text() drops, for the length of one run."""
-    global _SKIP_SINK
-    previous = _SKIP_SINK
+def recording_skips(collector, index=None):
+    """Record what read_file_text() drops, and cache what it reads, for one run.
+
+    Passing the run's index lets the module-level reader answer from text the
+    index has already read, instead of the same file arriving twice because
+    discovery went through one reader and the scanners through the other.
+    """
+    global _SKIP_SINK, _TEXT_CACHE, _TEXT_CACHE_BYTES, _RUN_INDEX
+    previous, previous_cache = _SKIP_SINK, _TEXT_CACHE
+    previous_bytes, previous_index = _TEXT_CACHE_BYTES, _RUN_INDEX
     _SKIP_SINK = collector
+    _TEXT_CACHE = {}
+    _TEXT_CACHE_BYTES = 0
+    _RUN_INDEX = index
     try:
         yield
     finally:
         _SKIP_SINK = previous
+        _TEXT_CACHE = previous_cache
+        _TEXT_CACHE_BYTES = previous_bytes
+        _RUN_INDEX = previous_index
 
 
 def read_file_text(path, source):
@@ -49,15 +78,27 @@ def read_file_text(path, source):
     not read. An unreadable or missing one is not: callers probe for files
     that may not be there (a Dockerfile next to a compose service).
     """
+    global _TEXT_CACHE_BYTES
     try:
         path = Path(path)
+        key = str(path)
+        if _TEXT_CACHE is not None and key in _TEXT_CACHE:
+            return _TEXT_CACHE[key]
+        if _RUN_INDEX is not None:
+            already = _RUN_INDEX.cached_text(path)
+            if already is not None:
+                return already
         if path.stat().st_size > MAX_TEXT_BYTES:
             if _SKIP_SINK is not None:
                 _SKIP_SINK.file_skipped(source, str(path), "too_large")
             return ""
-        return path.read_text(encoding="utf-8-sig", errors="replace")
+        text = path.read_text(encoding="utf-8-sig", errors="replace")
     except OSError:
         return ""
+    if _TEXT_CACHE is not None and _TEXT_CACHE_BYTES < MAX_CACHE_BYTES:
+        _TEXT_CACHE[key] = text
+        _TEXT_CACHE_BYTES += len(text)
+    return text
 
 
 # Folders never walked: build output, dependencies, tool caches.
@@ -200,6 +241,11 @@ class RepoIndex:
             self._collector.warn("parse", file=str(path), detail="decode replacement characters used")
         self._text_cache[cache_key] = text
         return text
+
+    def cached_text(self, path):
+        """Text this index has already read for `path`, or None. Never reads."""
+        resolved = self._resolve(path)
+        return None if resolved is None else self._text_cache.get(str(resolved))
 
     def read_json(self, path):
         """Parse JSON, returning None on failure (with a warning)."""

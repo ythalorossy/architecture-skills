@@ -201,5 +201,69 @@ class StrictExitTest(unittest.TestCase):
         self.assertIn("NOTE: SVGs not rendered", proc.stdout)
 
 
+class UnreadableOnAnyPlatformTest(unittest.TestCase):
+    """What a refused read does to the run, on Windows as well as POSIX.
+
+    test_failure_modes.py proves this against a real mode-000 directory, which
+    needs `chmod` and so skips on Windows — where more than half the supported
+    CI matrix runs, and where a locked file is the commonest way to meet this.
+    These raise the same errors at the I/O boundary instead of at the
+    filesystem, so the handling is covered on every platform.
+    """
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.repo = self.tmp / "repo"
+        shutil.copytree(BOOKSHOP, self.repo)
+        self.out = self.tmp / "out"
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def analyze(self):
+        stdout = io.StringIO()
+        with mock.patch.dict(os.environ, {"C4_SVG": "0"}), contextlib.redirect_stdout(stdout):
+            RepositoryAnalyzer(str(self.repo), str(self.out), no_svg=True).run()
+        return json.loads((self.out / "summary.json").read_text(encoding="utf-8"))
+
+    def test_a_file_the_os_refuses_to_open_is_named_and_the_run_finishes(self):
+        real_read_text = Path.read_text
+
+        def refuse_one(path_self, *args, **kwargs):
+            if path_self.name == "pyproject.toml" and "api" in path_self.parts:
+                raise PermissionError(13, "Permission denied")
+            return real_read_text(path_self, *args, **kwargs)
+
+        with mock.patch.object(Path, "read_text", refuse_one):
+            summary = self.analyze()
+
+        skipped = {entry["path"]: entry["reason"] for entry in summary["skipped_files"]}
+        self.assertIn("api/pyproject.toml", skipped, summary["skipped_files"])
+        self.assertTrue(skipped["api/pyproject.toml"].startswith("oserror:"), skipped)
+        # The reason carries the OS message, not the absolute path again.
+        self.assertIn("Permission denied", skipped["api/pyproject.toml"])
+        self.assertEqual(summary["status"], "degraded")
+
+    def test_a_directory_the_os_refuses_to_walk_is_named_and_the_run_finishes(self):
+        blocked = self.repo / "api" / "bookshop" / "orders"
+        real_walk = os.walk
+
+        def refuse_one(top, *args, **kwargs):
+            onerror = kwargs.get("onerror")
+            if onerror is not None:
+                failure = PermissionError(13, "Permission denied")
+                failure.filename = str(blocked)
+                onerror(failure)
+            return real_walk(top, *args, **kwargs)
+
+        with mock.patch.object(os, "walk", refuse_one):
+            summary = self.analyze()
+
+        skipped = {entry["path"]: entry["reason"] for entry in summary["skipped_files"]}
+        self.assertIn("api/bookshop/orders", skipped, summary["skipped_files"])
+        self.assertEqual(skipped["api/bookshop/orders"], "permission")
+        self.assertEqual(summary["status"], "degraded")
+
+
 if __name__ == "__main__":
     unittest.main()

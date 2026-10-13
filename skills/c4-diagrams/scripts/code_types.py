@@ -14,6 +14,14 @@ LANGUAGES = {
     ".cs": "cs", ".java": "java", ".kt": "kotlin", ".go": "go", ".py": "python",
     ".ts": "ts", ".tsx": "ts", ".js": "ts", ".jsx": "ts", ".mjs": "ts",
 }
+# Masking needs only a language's comment and quote conventions, which are
+# shared much more widely than the type syntax LANGUAGES drives. A suffix the
+# type parsers cannot read can still be masked by the family it belongs to:
+# .vue and .svelte hold JavaScript, .cjs and .fs use // and ", and VB's '
+# comment runs to the end of its line exactly as an unterminated 'string does.
+MASK_LANGUAGES = dict(LANGUAGES, **{
+    ".cjs": "ts", ".vue": "ts", ".svelte": "ts", ".fs": "ts", ".vb": "ts",
+})
 GENERATED = re.compile(
     r"(\.designer\.cs|\.g\.cs|\.g\.i\.cs|^reference\.cs|_pb2\.py|\.generated\.\w+|\.d\.ts|\.min\.m?js)$",
     re.IGNORECASE,
@@ -43,13 +51,22 @@ def _line_of(text, index):
     return text.count("\n", 0, index) + 1
 
 
-def _mask(text, language):
-    """The text with comments and string contents blanked (newlines kept), so offsets still match."""
+def mask(text, language, strings=True, comments=True):
+    """The text with comments and string contents blanked (newlines kept), so offsets still match.
+
+    Both kinds are always *traversed* — that is what stops a ``//`` inside a
+    string from opening a comment, or a quote inside a comment from opening a
+    string — and the flags only choose which of them is blanked. A scan for
+    code wants both gone; a scan for URLs wants comments gone and strings
+    kept, because a URL in source almost always lives inside a literal.
+    """
     out = list(text)
     n = len(text)
     comment = "#" if language == "python" else "//"
 
-    def blank(start, end):
+    def blank(start, end, wanted):
+        if not wanted:
+            return
         for k in range(start, min(end, n)):
             if out[k] != "\n":
                 out[k] = " "
@@ -60,17 +77,17 @@ def _mask(text, language):
         if text.startswith(comment, i):
             end = text.find("\n", i)
             end = n if end < 0 else end
-            blank(i, end)
+            blank(i, end, comments)
             i = end
         elif language != "python" and text.startswith("/*", i):
             end = text.find("*/", i + 2)
             end = n if end < 0 else end + 2
-            blank(i, end)
+            blank(i, end, comments)
             i = end
         elif triple:
             end = text.find(triple, i + 3)
             end = n if end < 0 else end + 3
-            blank(i + 3, end - 3)
+            blank(i + 3, end - 3, strings)
             i = end
         elif text[i] in QUOTES[language]:
             quote = text[i]
@@ -89,7 +106,7 @@ def _mask(text, language):
                 if c == "\n" and quote != "`" and not raw:
                     break
                 j += 1
-            blank(i + 1, j)
+            blank(i + 1, j, strings)
             i = j + 1
         else:
             i += 1
@@ -246,7 +263,7 @@ def _constructor_refs(name, flat, language):
 
 
 def _parse_cs(text, file):
-    masked = _mask(text, "cs")
+    masked = mask(text, "cs")
     found = []
     for m in CS_TYPE.finditer(masked):
         keyword = m["kw"].split()[0]
@@ -306,7 +323,7 @@ JAVA_FIELD = re.compile(
 
 
 def _parse_java(text, file):
-    masked = _mask(text, "java")
+    masked = mask(text, "java")
     found = []
     for m in JAVA_TYPE.finditer(masked):
         kind = {"interface": "interface", "enum": "enum", "record": "record"}.get(m["kw"], "class")
@@ -357,7 +374,7 @@ KT_FUN = re.compile(
 
 
 def _parse_kotlin(text, file):
-    masked = _mask(text, "kotlin")
+    masked = mask(text, "kotlin")
     found = []
     for m in KT_TYPE.finditer(masked):
         mods = m["mods"].split()
@@ -406,7 +423,7 @@ GO_IFACE_METHOD = re.compile(r"^([A-Z]\w*)\s*\(([^)]*)\)\s*(.*)$")
 
 
 def _parse_go(text, file):
-    masked = _mask(text, "go")
+    masked = mask(text, "go")
     types = []
     for m in GO_TYPE.finditer(masked):
         kind = m["kw"]
@@ -446,7 +463,7 @@ PY_SKIPPED_BASES = {"object", "ABC", "Protocol", "Generic"} | PY_ENUMS
 
 
 def _parse_python(text, file):
-    masked = _mask(text, "python")
+    masked = mask(text, "python")
     types = []
     for m in PY_CLASS.finditer(masked):
         raw_bases = text[m.start("bases"):m.end("bases")] if m["bases"] is not None else ""
@@ -509,7 +526,7 @@ TS_NOT_METHODS = {"constructor", "if", "for", "while", "switch", "catch", "retur
 
 
 def _parse_ts(text, file):
-    masked = _mask(text, "ts")
+    masked = mask(text, "ts")
     found = []
     for m in TS_TYPE.finditer(masked):
         kind = {"interface": "interface", "enum": "enum"}.get(m["kw"], "abstract" if m["abstract"] else "class")

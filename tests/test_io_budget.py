@@ -4,6 +4,7 @@ package.json is read once, and discovery is never served from a stale cache.
 """
 import os
 import tempfile
+from collections import Counter
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -40,6 +41,52 @@ class TestSingleWalkBudget(unittest.TestCase):
             )
 
 
+class TestWholeRepositoryBudget(unittest.TestCase):
+    """The budget over a repository with more than one ecosystem in it.
+
+    The two tests above pin one fixture each and count only walks of the
+    repository root, so a walk of a package folder inside it does not show up.
+    bookshop has Python distributions and an npm workspace, which between them
+    reached for the three ways of walking a repository this skill has.
+    """
+
+    fixture = REPO_ROOT / "tests" / "fixtures" / "repos" / "bookshop"
+
+    def _run(self):
+        walked, read = [], []
+        original_walk, original_read_text = os.walk, Path.read_text
+
+        def counting_walk(top, *args, **kwargs):
+            # Anywhere inside the repository, not just its root. rmtree walks
+            # the staging folder on Windows, which is not repository I/O.
+            if Path(top) == self.fixture or Path(top).is_relative_to(self.fixture):
+                walked.append(str(top))
+            return original_walk(top, *args, **kwargs)
+
+        def tracking_read_text(self_path, *args, **kwargs):
+            if Path(self_path).is_relative_to(TestWholeRepositoryBudget.fixture):
+                read.append(str(self_path))
+            return original_read_text(self_path, *args, **kwargs)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(os, "walk", counting_walk), \
+                    mock.patch.object(Path, "read_text", tracking_read_text):
+                RepositoryAnalyzer(str(self.fixture), str(Path(tmp) / "out"), no_svg=True).run()
+        return walked, read
+
+    def test_the_repository_is_walked_once(self):
+        walked, _ = self._run()
+
+        self.assertEqual(walked, [str(self.fixture)], f"walked {len(walked)} times: {walked}")
+
+    def test_no_file_is_read_twice(self):
+        _, read = self._run()
+
+        counts = Counter(read)
+        duplicates = {Path(f).name: c for f, c in counts.items() if c > 1}
+        self.assertEqual(duplicates, {}, f"read more than once: {duplicates}")
+
+
 class TestReadOnceBudget(unittest.TestCase):
     """each file is read at most once per run."""
 
@@ -61,7 +108,6 @@ class TestReadOnceBudget(unittest.TestCase):
                 analyzer.run()
 
             package_json_reads = [p for p in read_calls if "package.json" in p]
-            from collections import Counter
             counts = Counter(package_json_reads)
             duplicates = {f: c for f, c in counts.items() if c > 1}
             self.assertEqual(

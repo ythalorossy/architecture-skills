@@ -442,6 +442,11 @@ def _dockerfiles(index):
     for file in index.walk(lambda name: name == "Dockerfile" or name.endswith(".Dockerfile") or name.startswith("Dockerfile.")):
         text = _file_text(file)
         stages = re.findall(r"^\s*FROM\s+(\S+)", text, re.MULTILINE | re.IGNORECASE)
+        # "Dockerfile." prefixes a real variant (Dockerfile.api) and a file
+        # that only writes about one (Dockerfile.md). Every Dockerfile has a
+        # FROM; a note about them does not.
+        if not stages:
+            continue
         exposed = re.findall(r"^\s*EXPOSE\s+(.+)$", text, re.MULTILINE | re.IGNORECASE)
         entry = re.findall(r"^\s*(?:ENTRYPOINT|CMD)\s+(.+)$", text, re.MULTILINE | re.IGNORECASE)
         result.append({
@@ -485,6 +490,13 @@ PLATFORM_FILES = [
     ("Chart.yaml", "Helm chart"), ("kustomization.yaml", "Kustomize"), ("main.tf", "Terraform"), ("template.yaml", "AWS SAM"),
     ("bicep", "Azure Bicep"),
 ]
+# Two of those names say nothing on their own: every framework has an app
+# config and every templating tool has a template. Claimed only when the file
+# also carries the marker the platform requires.
+PLATFORM_CONTENT = {
+    "app.yaml": re.compile(r"^runtime:\s*\S", re.MULTILINE),
+    "template.yaml": re.compile(r"AWSTemplateFormatVersion|Transform:\s*(?:'|\")?AWS::Serverless"),
+}
 
 
 def deployment(index):
@@ -499,6 +511,9 @@ def deployment(index):
                 ci.append({"tool": name, "file": relative})
         for marker, name in PLATFORM_FILES:
             if path.is_file() and (path.name == marker or (marker == "bicep" and path.suffix == ".bicep")):
+                required = PLATFORM_CONTENT.get(marker)
+                if required and not required.search(_file_text(path)):
+                    continue
                 platforms.append({"tool": name, "file": relative})
     return {
         "compose": [

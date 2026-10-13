@@ -1,3 +1,12 @@
+"""
+The dependency graph: which project references which.
+
+One mapping of project name -> referenced project names, over every ecosystem
+projects.py discovers (.NET, Node.js, Python, Java, Go). It is the input to
+dependency-graph.mmd and to the cycle check in the report, and it is
+deliberately a flat name-to-names map: anything richer belongs in the C4
+model, which is the agent's job rather than a detector's.
+"""
 from pathlib import PurePosixPath
 
 

@@ -1,3 +1,11 @@
+"""
+Go project discovery: modules, packages and the ones that build a binary.
+
+A go.mod names a module; the packages under it are the projects, expanded a
+level for the folders that conventionally hold several (EXPANDED, shared with
+the component view so both group services/ the same way). A package with a
+`package main` is a runnable container rather than a library.
+"""
 import re
 from pathlib import Path
 

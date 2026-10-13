@@ -1,3 +1,11 @@
+"""
+.NET project discovery: solutions, .csproj/.fsproj/.vbproj and their references.
+
+A project's references come from its <ProjectReference> elements, and a
+solution decides which projects are drawn: one outside every .sln is marked so
+the graph can leave it out. Names are the project file stems, made unique when
+two solutions hold the same one.
+"""
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path

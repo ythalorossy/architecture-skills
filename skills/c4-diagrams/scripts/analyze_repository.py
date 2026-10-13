@@ -1,3 +1,16 @@
+"""
+The analyzer: one command that reads a repository and writes the output folder.
+
+RepositoryAnalyzer.run() is the whole pipeline — detect the stack, discover
+projects, build the dependency graph and its diagram, write
+ArchitectureReport.md, then collect the C4 facts and hand them to render_c4.
+Everything is built in a staging folder beside the output and moved in only
+once the run succeeds, so a failure leaves the previous run untouched.
+
+Exit codes: 0 for ok and for degraded, 1 for an input the run cannot read at
+all, 2 only under --strict. "degraded" means the run finished and something in
+it needs attention; what that was is in summary.json.
+"""
 from pathlib import Path
 import argparse
 import json

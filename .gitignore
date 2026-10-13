@@ -10,6 +10,12 @@ skills-lock.json
 # Never committed.
 docs/
 audit/
+# ...but a fixture repository's own docs/ folder is analyzer input, not a
+# working folder of ours. Without this the deployment look-alike fixture
+# loses the prose that is half of what it exists to test, and the tests
+# over it pass on CI by finding nothing.
+!tests/fixtures/repos/**/docs/
+!tests/fixtures/repos/**/docs/**
 .serena
 .serena/**
 # Analyzer output when the skill is run on this repository itself

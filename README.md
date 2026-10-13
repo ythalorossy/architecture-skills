@@ -283,6 +283,8 @@ gemini-extension.json      Gemini CLI extension
 package.json, index.js     OpenCode plugin (registers skills/) and pi package
 ```
 
+Changing the skill rather than using it? [CONTRIBUTING.md](CONTRIBUTING.md) has the module map, the rules that are not obvious from the code, and a checklist for adding an ecosystem.
+
 **Releasing:** the version is repeated in `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `plugin.json`, `.cursor-plugin/plugin.json`, `.codex-plugin/plugin.json`, `gemini-extension.json`, `package.json`, the `SKILL.md` metadata and `scripts/generate_docs.py`. Bump them together (`tests/test_versions.py` fails if they differ), add a `CHANGELOG.md` entry, and publish a GitHub release for the tag.
 
 ## License
