@@ -1,103 +1,35 @@
 {
-  "system": {
-    "name": "Bookshop",
-    "description": "Online shop where readers find books and buy them"
-  },
+  "system": { "name": "Bookshop", "description": "Online shop where readers find books and buy them" },
   "people": [
-    {
-      "id": "reader",
-      "name": "Reader",
-      "description": "Searches the catalogue and buys books",
-      "assumption": true
-    }
+    { "id": "reader", "name": "Reader", "description": "Searches the catalogue and buys books",
+      "assumption": true }
   ],
   "containers": [
-    {
-      "id": "bookshop-web",
-      "name": "Web app",
-      "technology": "React, Vite",
+    { "id": "bookshop-web", "name": "Web app", "technology": "React, Vite",
       "description": "Search and checkout pages in the browser",
-      "evidence": [
-        "web/package.json:11",
-        "docker-compose.yml:20"
-      ]
-    },
-    {
-      "id": "bookshop-api",
-      "name": "Bookshop API",
-      "technology": "Python, FastAPI",
+      "evidence": ["web/package.json:11", "docker-compose.yml:20"] },
+    { "id": "bookshop-api", "name": "Bookshop API", "technology": "Python, FastAPI",
       "description": "Searches the catalogue and places orders",
-      "evidence": [
-        "api/bookshop/main.py:6",
-        "docker-compose.yml:9"
-      ]
-    },
-    {
-      "id": "db-postgresql",
-      "name": "Orders database",
-      "technology": "PostgreSQL 16",
-      "type": "database",
+      "evidence": ["api/bookshop/main.py:6", "docker-compose.yml:9"] },
+    { "id": "db-postgresql", "name": "Orders database", "technology": "PostgreSQL 16", "type": "database",
       "description": "Orders and their payment references",
-      "evidence": [
-        "api/bookshop/orders/service.py:15",
-        "docker-compose.yml:3"
-      ]
-    },
-    {
-      "id": "db-elasticsearch",
-      "name": "Catalogue index",
-      "technology": "Elasticsearch",
-      "type": "database",
-      "external": true,
-      "description": "Book catalogue search index, run and filled by the catalogue team",
-      "evidence": [
-        "api/bookshop/search/index.py:7",
-        "docker-compose.yml:13"
-      ]
-    }
+      "evidence": ["api/bookshop/orders/service.py:15", "docker-compose.yml:3"] },
+    { "id": "db-elasticsearch", "name": "Catalogue index", "technology": "Elasticsearch", "type": "database",
+      "external": true, "description": "Book catalogue search index, run and filled by the catalogue team",
+      "evidence": ["api/bookshop/search/index.py:7", "docker-compose.yml:13"] }
   ],
   "external_systems": [
-    {
-      "id": "ext-payments-example",
-      "name": "Payment provider",
+    { "id": "ext-payments-example", "name": "Payment provider",
       "description": "Charges the reader's card for an order",
-      "evidence": [
-        "api/bookshop/payments/client.py:10"
-      ]
-    }
+      "evidence": ["api/bookshop/payments/client.py:10"] }
   ],
   "relationships": [
-    {
-      "from": "reader",
-      "to": "bookshop-web",
-      "description": "Finds and buys books using",
-      "technology": "HTTPS",
-      "assumption": true
-    },
-    {
-      "from": "bookshop-web",
-      "to": "bookshop-api",
-      "description": "Searches books and places orders through",
-      "technology": "JSON/HTTPS"
-    },
-    {
-      "from": "bookshop-api",
-      "to": "db-postgresql",
-      "description": "Stores orders in",
-      "technology": "psycopg"
-    },
-    {
-      "from": "bookshop-api",
-      "to": "db-elasticsearch",
-      "description": "Searches the catalogue in",
-      "technology": "Elasticsearch client"
-    },
-    {
-      "from": "bookshop-api",
-      "to": "ext-payments-example",
-      "description": "Charges cards with",
-      "technology": "HTTPS, httpx"
-    }
+    { "from": "reader", "to": "bookshop-web", "description": "Finds and buys books using", "technology": "HTTPS",
+      "assumption": true },
+    { "from": "bookshop-web", "to": "bookshop-api", "description": "Searches books and places orders through", "technology": "JSON/HTTPS" },
+    { "from": "bookshop-api", "to": "db-postgresql", "description": "Stores orders in", "technology": "psycopg" },
+    { "from": "bookshop-api", "to": "db-elasticsearch", "description": "Searches the catalogue in", "technology": "Elasticsearch client" },
+    { "from": "bookshop-api", "to": "ext-payments-example", "description": "Charges cards with", "technology": "HTTPS, httpx" }
   ],
   "components": {
     "bookshop-web": {
@@ -116,76 +48,27 @@
       "name": "Reader buys a book",
       "description": "From the Buy button to the stored, paid order.",
       "steps": [
-        {
-          "from": "reader",
-          "to": "bookshop-web",
-          "description": "Clicks Buy on a book",
-          "evidence": [
-            "web/src/main.tsx:15 (the Buy button)"
-          ]
-        },
-        {
-          "from": "web/src/api",
-          "to": "bookshop.main",
-          "description": "POST /api/orders",
-          "technology": "JSON/HTTPS",
-          "evidence": [
-            "web/src/api/client.ts:12-18"
-          ]
-        },
-        {
-          "from": "bookshop.main",
-          "to": "bookshop.orders",
-          "description": "Places the order",
-          "evidence": [
-            "api/bookshop/main.py:16-18"
-          ]
-        },
-        {
-          "from": "bookshop.orders",
-          "to": "ext-payments-example",
-          "description": "POST /v1/charges",
-          "technology": "HTTPS",
-          "evidence": [
-            "api/bookshop/payments/client.py:9-12"
-          ]
-        },
-        {
-          "from": "bookshop.orders",
-          "to": "db-postgresql",
-          "description": "Inserts the order with its charge id",
-          "technology": "psycopg",
-          "evidence": [
-            "api/bookshop/orders/service.py:14-20"
-          ]
-        },
-        {
-          "from": "bookshop.main",
-          "to": "web/src/api",
-          "description": "Order id and charge id",
-          "reply": true,
-          "evidence": [
-            "api/bookshop/orders/service.py:30-33"
-          ]
-        }
+        { "from": "reader", "to": "bookshop-web", "description": "Clicks Buy on a book",
+          "evidence": ["web/src/main.tsx:15 (the Buy button)"] },
+        { "from": "web/src/api", "to": "bookshop.main", "description": "POST /api/orders", "technology": "JSON/HTTPS",
+          "evidence": ["web/src/api/client.ts:12-18"] },
+        { "from": "bookshop.main", "to": "bookshop.orders", "description": "Places the order",
+          "evidence": ["api/bookshop/main.py:16-18"] },
+        { "from": "bookshop.orders", "to": "ext-payments-example", "description": "POST /v1/charges", "technology": "HTTPS",
+          "evidence": ["api/bookshop/payments/client.py:9-12"] },
+        { "from": "bookshop.orders", "to": "db-postgresql", "description": "Inserts the order with its charge id", "technology": "psycopg",
+          "evidence": ["api/bookshop/orders/service.py:14-20"] },
+        { "from": "bookshop.main", "to": "web/src/api", "description": "Order id and charge id", "reply": true,
+          "evidence": ["api/bookshop/orders/service.py:30-33"] }
       ]
     }
   ],
   "code": [
-    {
-      "container": "bookshop-api",
-      "component": "bookshop.orders",
-      "description": "Order placement: payment first, then the order row",
-      "types": [
-        "OrderService"
-      ]
-    }
+    { "container": "bookshop-api", "component": "bookshop.orders",
+      "description": "Order placement: payment first, then the order row", "types": ["OrderService"] }
   ],
   "excluded": [
-    {
-      "id": "ext-covers-example",
-      "reason": "Called only by a one-off import script run by hand, not by the running system"
-    }
+    { "id": "ext-covers-example", "reason": "Called only by a one-off import script run by hand, not by the running system" }
   ],
   "summary": {
     "overview": "Bookshop sells books online. A React web app calls a FastAPI service, which keeps orders in its own PostgreSQL database, searches a catalogue index that the catalogue team runs, and charges cards through an external payment provider.",
