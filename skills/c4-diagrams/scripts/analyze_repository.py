@@ -448,6 +448,11 @@ class RepositoryAnalyzer:
                     []
                 )
             ),
+            "inferred_projects": sorted(
+                project["name"]
+                for project in scan_results.get("projects", [])
+                if project.get("inferred")
+            ),
             "folders_found": len(
                 scan_results.get(
                     "folders",

@@ -6,7 +6,7 @@
 
 **Technology Stack:**
 
-- Unknown
+- Python
 
 ---
 
@@ -14,9 +14,11 @@
 
 [//]: # (summary:start)
 
-No supported projects were found in compose_poly (.NET projects, Node.js package.json packages, Python packages, Maven or Gradle modules, Go modules), so this report says nothing about its structure. Analyze it directly.
+compose_poly has 1 projects (1 production, 0 test) with 0 project references between them.
 
 [//]: # (summary:end)
+
+The automated dependency checks found no structural concerns.
 
 ---
 
@@ -115,19 +117,20 @@ No CI pipeline or hosting configuration was found in the repository.
 
 [//]: # (strengths:start)
 
-No notable strengths detected automatically.
+- No circular project references.
+- Projects with no project references (the core that the rest builds on): app.
 
 [//]: # (strengths:end)
 
 ### Concerns
 
-Not analyzed: no supported projects found.
+No automated concerns detected.
 
 ---
 
 ## Recommendations
 
-Not analyzed: no supported projects found.
+No changes recommended from the automated checks. Review the diagram for boundaries the checks cannot see.
 
 ---
 
@@ -139,6 +142,8 @@ Every project or module and every reference between them, tests included. The au
 
 **Project folders:** none
 
+**Inferred projects:** app — read from the source layout because no manifest declares them. Check the boundaries before relying on them.
+
 <details>
 <summary>Full dependency graph</summary>
 
@@ -147,6 +152,7 @@ Every project or module and every reference between them, tests included. The au
 title: "compose_poly · Project dependency graph"
 ---
 graph TD
+    app["app"]
 ```
 
 </details>
@@ -155,10 +161,12 @@ graph TD
 
 | Project | Ecosystem | Folder | Kind | Depends on | Used by |
 |---|---|---|---|---|---|
+| app | Python | - | production | 0 | 0 |
 
 ### Dependency Analysis
 
-
+### app
+- no project references
 
 ---
 

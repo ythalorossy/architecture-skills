@@ -6,6 +6,12 @@ project per distribution, with edges from declared requirements that name
 another one. With a single distribution the names say nothing, so the
 top-level packages become the projects and their import statements the edges.
 A folder with only a requirements.txt counts as a service too.
+
+Where nothing declares anything — no manifest and no requirements file — the
+source roots are inferred from the layout instead, behind a noise guard so a
+release script in a Go repository is not reported as a Python project. Anything
+discovered that way carries ``inferred: True``, and so does a package sitting
+beside declared services, because no manifest names it either.
 """
 import ast
 import re
@@ -18,10 +24,10 @@ except ImportError:  # Python < 3.11
 
 try:
     from scripts.repo_index import is_ignored_dir, read_file_text, RepoIndex
-    from scripts.paths import REQUIREMENTS_FILE, project_group
+    from scripts.paths import REQUIREMENTS_FILE, TOOLING_DIRS, in_test_dir, project_group
 except ImportError:
     from repo_index import is_ignored_dir, read_file_text, RepoIndex
-    from paths import REQUIREMENTS_FILE, project_group
+    from paths import REQUIREMENTS_FILE, TOOLING_DIRS, in_test_dir, project_group
 
 
 MANIFESTS = ("pyproject.toml", "setup.py", "setup.cfg")
@@ -142,12 +148,108 @@ def _distribution_projects(repo, distributions):
             "group": project_group(d["file"].relative_to(repo).as_posix()),
             "ecosystem": "Python",
             "in_solution": None,
+            "inferred": False,
             "references": sorted(
                 {paths[name] for name in d["requirements"] if name in paths} - {d["file"].resolve()}
             ),
         }
         for d in distributions
     ]
+
+
+def requirements_services(repo, index=None, packaged=()):
+    """
+    Folders with their own requirements*.txt and no pyproject.toml/setup.py:
+    small services often have only that. One entry each; folders inside a
+    packaged distribution, tests and docs are skipped.
+
+    Shared with c4_facts, which turns the same folders into containers, so a
+    service is a project and a container by one rule rather than two.
+    """
+    repo = Path(repo).resolve()
+    index = RepoIndex.ensure(index, repo)
+    packaged = [Path(directory).resolve() for directory in packaged]
+
+    folders = set()
+    for file in index.walk(lambda name: REQUIREMENTS_FILE.match(name)):
+        folder = file.parent.resolve()
+        parts = [part.lower() for part in folder.relative_to(repo).parts]
+        if in_test_dir(parts) or any(part in ("docs", "doc") for part in parts):
+            continue
+        if any(folder == directory or folder.is_relative_to(directory) for directory in packaged):
+            continue
+        folders.add(folder)
+
+    return [
+        {"name": folder.name if folder != repo else repo.name, "directory": folder, "file": None, "requirements": []}
+        for folder in sorted(folders)
+    ]
+
+
+def _is_tooling(path, repo):
+    """True for a node under scripts/, tools/, docs/ and the like, or under a test folder."""
+    parts = path.relative_to(repo).parts
+    return parts[0].lower() in TOOLING_DIRS or in_test_dir(parts)
+
+
+def _folder_nodes(repo, declared, index=None):
+    """
+    Node map for the folder-level graph: ``{name: (path, import_root)}``.
+
+    The declared folders (services, distributions) plus the top-level packages
+    beside them, which is where a shared library lives in a repository built
+    this way. Every node imports against the repository root, so
+    ``import shared.models`` in a service resolves to the shared package.
+    """
+    nodes = {folder["directory"].name: (folder["directory"], repo) for folder in declared}
+    owned = [folder["directory"] for folder in declared]
+
+    for path in sorted(repo.iterdir()):
+        if not _is_package(path) or path.name in nodes:
+            continue
+        if _is_tooling(path, repo) or any(path.is_relative_to(directory) for directory in owned):
+            continue
+        nodes[path.name] = (path, repo)
+
+    return nodes
+
+
+def inferred_nodes(repo, index=None):
+    """
+    Source roots for a repository that declares no Python packaging at all.
+
+    ``{name: (path, import_root)}``: the top-level folders holding Python
+    source, or the top-level modules when there are no such folders. Empty when
+    the repository has a manifest or a requirements file — there is nothing to
+    infer then — and empty when the noise guard rejects what is left.
+
+    The guard is what keeps a release script out of a Go repository's report:
+    a tooling folder (scripts/, tools/, docs/, ...) and a test folder are never
+    a source root, and a single loose module at the repository root is a script
+    rather than a program, where two or more side by side are a flat layout.
+    """
+    repo = Path(repo).resolve()
+    index = RepoIndex.ensure(index, repo)
+
+    if any(index.walk(lambda name: name in MANIFESTS or REQUIREMENTS_FILE.match(name))):
+        return {}
+
+    folders = sorted(
+        path for path in repo.iterdir()
+        if path.is_dir() and not is_ignored_dir(path.name)
+        and path.name not in TEST_PACKAGES and not _is_tooling(path, repo)
+        and _python_files(path, index)
+    )
+    if folders:
+        return {path.name: (path, repo) for path in folders}
+
+    modules = sorted(
+        path for path in repo.glob("*.py")
+        if path.name not in {"setup.py", "conftest.py", "__init__.py"}
+    )
+    if len(modules) < 2:
+        return {}
+    return {path.stem: (path, repo) for path in modules}
 
 
 def _python_files(path, index=None):
@@ -239,7 +341,16 @@ def _module_nodes(base, index=None):
 
 
 def _module_projects(repo, base, collector=None, index=None):
-    nodes = _module_nodes(base, index)
+    return _projects_from_nodes(repo, _module_nodes(base, index), collector, index)
+
+
+def _projects_from_nodes(repo, nodes, collector=None, index=None, inferred=()):
+    """
+    One project per node, with an edge wherever a node imports another one.
+
+    ``inferred`` names the nodes no manifest and no requirements file vouches
+    for; they are marked so the report can say the layout was read as a guess.
+    """
     if not nodes:
         return []
 
@@ -269,6 +380,7 @@ def _module_projects(repo, base, collector=None, index=None):
             "group": project_group(relative),
             "ecosystem": "Python",
             "in_solution": None,
+            "inferred": name in inferred,
             "references": sorted(targets),
         })
 
@@ -281,8 +393,11 @@ def discover_projects(repo_path, index=None, collector=None):
 
     With several distributions (pyproject.toml / setup.py / setup.cfg), each is a
     node and edges come from declared requirements naming another distribution.
-    Otherwise nodes are packages/modules and edges come from import statements.
-    Nothing is returned unless the repository has a Python manifest.
+    With service folders carrying only a requirements.txt, each folder is a node
+    along with the packages beside it, and edges come from import statements.
+    With a single distribution and nothing else the names say nothing, so the
+    nodes are its packages/modules. With no packaging at all the source roots
+    are inferred from the layout, behind the guard in ``inferred_nodes``.
 
     Uses `index` (a RepoIndex) for discovery and reads; one is built when none is passed.
     Pass a DiagnosticsCollector to route warnings through the diagnostics channel.
@@ -292,10 +407,20 @@ def discover_projects(repo_path, index=None, collector=None):
     index = RepoIndex.ensure(index, repo, collector)
     has_manifest = any(index.walk(lambda name: name in MANIFESTS or REQUIREMENTS_FILE.match(name)))
     if not has_manifest:
-        return {"solutions": [], "projects": []}
+        nodes = inferred_nodes(repo, index)
+        projects = _projects_from_nodes(repo, nodes, collector, index, inferred=set(nodes))
+        return {"solutions": [], "projects": projects}
 
     distributions = _distributions(repo, index, collector)
-    if len(distributions) > 1:
+    services = requirements_services(repo, index, [d["directory"] for d in distributions])
+
+    if services:
+        # A repository of service folders: the folders are the nodes, and so
+        # are the packages beside them, which is where the shared code lives.
+        nodes = _folder_nodes(repo, services + distributions, index)
+        declared = {folder["directory"].name for folder in services + distributions}
+        projects = _projects_from_nodes(repo, nodes, collector, index, inferred=set(nodes) - declared)
+    elif len(distributions) > 1:
         projects = _distribution_projects(repo, distributions)
     else:
         base = distributions[0]["directory"] if distributions else repo

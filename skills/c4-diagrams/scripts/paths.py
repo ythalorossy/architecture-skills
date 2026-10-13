@@ -10,6 +10,7 @@ Path and name helpers shared by the ecosystem modules:
 - GO_EXPANDED_DIRS   Go folders whose second segment names the package group
 - GO_MODULE_LINE     the `module x` line of a go.mod
 - REQUIREMENTS_FILE  a Python requirements file name
+- TOOLING_DIRS       folder names that hold tooling rather than the system
 - GENERIC_URL_KEYS   setting names that say "a URL" and nothing else
 """
 import re
@@ -29,6 +30,15 @@ GO_MODULE_LINE = re.compile(r"^module\s+(\S+)", re.MULTILINE)
 
 # requirements.txt, requirements-dev.txt, requirements_prod.txt.
 REQUIREMENTS_FILE = re.compile(r"requirements.*\.txt$")
+
+# Folders that hold the tooling around a repository rather than the system it
+# ships: a release script, a generator, a sample. Used by the guard on inferred
+# Python source roots, so a Go repository with a `hack/gen.py` is not reported
+# as having a Python project.
+TOOLING_DIRS = frozenset({
+    "scripts", "script", "tools", "tooling", "build", "ci", "hack", "bin",
+    "examples", "example", "samples", "sample", "docs", "doc",
+})
 
 # Setting names that only say "this is a URL". When one is the last part of
 # a configuration key, the key above it is what names the thing.
