@@ -120,7 +120,7 @@ def discover_projects(repo_path, index=None, collector=None):
 
     # A lone package says nothing as one node; draw its folders instead.
     if len(packages) == 1 and not roots:
-        modules = module_projects(repo, packages[0]["path"].parent)
+        modules = module_projects(repo, packages[0]["path"].parent, index=index)
         if modules:
             return {"solutions": [], "projects": modules}
 

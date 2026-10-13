@@ -8,10 +8,10 @@ except ImportError:  # Python < 3.11
     tomllib = None
 
 try:
-    from scripts.repo_index import is_ignored_dir, RepoIndex
+    from scripts.repo_index import is_ignored_dir, read_file_text, RepoIndex
     from scripts.paths import REQUIREMENTS_FILE, project_group
 except ImportError:
-    from repo_index import is_ignored_dir, RepoIndex
+    from repo_index import is_ignored_dir, read_file_text, RepoIndex
     from paths import REQUIREMENTS_FILE, project_group
 
 
@@ -154,10 +154,13 @@ def _module_name(file, import_root):
     return ".".join(parts)
 
 
-def _imported_modules(file, import_root, collector=None):
+def _imported_modules(file, import_root, collector=None, index=None):
     """Absolute dotted names imported by a file, with relative imports resolved."""
+    source = index.read_text(file) if index is not None else None
+    if source is None:
+        source = read_file_text(file, "python_projects")
     try:
-        tree = ast.parse(file.read_text(encoding="utf-8", errors="replace"), filename=str(file))
+        tree = ast.parse(source, filename=str(file))
     except (SyntaxError, ValueError) as ex:
         if collector:
             collector.parse_error("python_projects", str(file), f"syntax error: {ex}")
@@ -185,7 +188,7 @@ def _is_package(path):
     return path.is_dir() and not is_ignored_dir(path.name) and (path / "__init__.py").exists()
 
 
-def _module_nodes(base):
+def _module_nodes(base, index=None):
     """
     Map node name -> (path, import root).
 
@@ -220,14 +223,14 @@ def _module_nodes(base):
     for folder in {import_root, base}:
         for name in TEST_PACKAGES:
             tests = folder / name
-            if tests.is_dir() and _python_files(tests):
+            if tests.is_dir() and _python_files(tests, index):
                 nodes.setdefault(name, (tests, folder))
 
     return nodes
 
 
-def _module_projects(repo, base, collector=None):
-    nodes = _module_nodes(base)
+def _module_projects(repo, base, collector=None, index=None):
+    nodes = _module_nodes(base, index)
     if not nodes:
         return []
 
@@ -243,8 +246,8 @@ def _module_projects(repo, base, collector=None):
     projects = []
     for name, (path, import_root) in nodes.items():
         targets = set()
-        for file in _python_files(path):
-            for module in _imported_modules(file, import_root, collector):
+        for file in _python_files(path, index):
+            for module in _imported_modules(file, import_root, collector, index):
                 target = owner(module)
                 if target and target != name:
                     targets.add(nodes[target][0].resolve())
@@ -287,6 +290,6 @@ def discover_projects(repo_path, index=None, collector=None):
         projects = _distribution_projects(repo, distributions)
     else:
         base = distributions[0]["directory"] if distributions else repo
-        projects = _module_projects(repo, base, collector)
+        projects = _module_projects(repo, base, collector, index)
 
     return {"solutions": [], "projects": projects}

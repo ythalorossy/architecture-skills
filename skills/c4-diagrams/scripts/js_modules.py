@@ -5,10 +5,10 @@ import re
 from pathlib import Path
 
 try:
-    from scripts.repo_index import is_ignored_dir, walk_files
+    from scripts.repo_index import is_ignored_dir, read_file_text, walk_files
     from scripts.paths import project_group
 except ImportError:
-    from repo_index import is_ignored_dir, walk_files
+    from repo_index import is_ignored_dir, read_file_text, walk_files
     from paths import project_group
 
 
@@ -29,17 +29,20 @@ def _is_source(name):
     return name.endswith(SOURCE_EXTENSIONS) and not name.endswith((".min.js", ".d.ts"))
 
 
-def _source_files(directory):
+def _source_files(directory, index=None):
+    """Source files under a directory, served from the run's index when there is one."""
+    if index is not None:
+        return list(index.walk(_is_source, under=directory))
     return list(walk_files(directory, _is_source))
 
 
-def _code_dirs(directory):
+def _code_dirs(directory, index=None):
     return sorted(
         child for child in directory.iterdir()
         if child.is_dir()
         and not is_ignored_dir(child.name)
         and child.name not in NON_CODE_DIRS
-        and _source_files(child)
+        and _source_files(child, index)
     )
 
 
@@ -136,7 +139,7 @@ def _resolve(spec, file, base_url, aliases):
     return None  # third-party package
 
 
-def _nodes(package_dir):
+def _nodes(package_dir, index=None):
     """
     Map node directory -> whether it owns its whole subtree.
 
@@ -148,12 +151,12 @@ def _nodes(package_dir):
     nodes = {}
 
     while True:
-        children = _code_dirs(current)
+        children = _code_dirs(current, index)
         if any(_is_source(f.name) for f in current.iterdir() if f.is_file()):
             nodes[current] = False
 
-        total = len(_source_files(current))
-        dominant = [c for c in children if total and len(_source_files(c)) / total >= DOMINANT_SHARE]
+        total = len(_source_files(current, index))
+        dominant = [c for c in children if total and len(_source_files(c, index)) / total >= DOMINANT_SHARE]
 
         for child in children:
             if child not in dominant:
@@ -164,9 +167,9 @@ def _nodes(package_dir):
         current = dominant[0]
 
 
-def module_projects(repo, package_dir, ecosystem="Node.js"):
+def module_projects(repo, package_dir, ecosystem="Node.js", index=None):
     package_dir = package_dir.resolve()
-    nodes = _nodes(package_dir)
+    nodes = _nodes(package_dir, index)
     if len(nodes) < 2:
         return []
 
@@ -183,13 +186,15 @@ def module_projects(repo, package_dir, ecosystem="Node.js"):
     projects = []
     for directory, whole_subtree in nodes.items():
         files = (
-            _source_files(directory) if whole_subtree
+            _source_files(directory, index) if whole_subtree
             else [f for f in sorted(directory.iterdir()) if f.is_file() and _is_source(f.name)]
         )
 
         targets = []
         for file in files:
-            text = file.read_text(encoding="utf-8", errors="replace")
+            text = index.read_text(file) if index is not None else None
+            if text is None:
+                text = read_file_text(file, "js_modules")
             for spec in IMPORT.findall(text):
                 resolved = _resolve(spec, file, base_url, aliases)
                 target = owner(resolved) if resolved else None

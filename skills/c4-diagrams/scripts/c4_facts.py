@@ -660,7 +660,7 @@ def collect_facts(repo_path, graph, index=None, discovery=None):
     of their own, so the run's collector is installed for the call.
     """
     index = RepoIndex.ensure(index, Path(repo_path).resolve())
-    with recording_skips(index.collector):
+    with recording_skips(index.collector, index):
         return _collect_facts(repo_path, graph, index=index, discovery=discovery)
 
 
