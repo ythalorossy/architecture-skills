@@ -97,7 +97,7 @@ Your overview, findings and recommendations are already in `ArchitectureReport.m
 1. **What the system is**: 2–3 sentences, from the Context level.
 2. **Diagrams**: the Context and Container Mermaid blocks inline, then the component, code, flow and deployment diagrams by file.
 3. **Findings**: the most important, each tied to a concrete element, component, file or edge. Say which came from the automated checks (appendix) and which are your judgement; for a cycle, name an import that causes it.
-4. **Assumptions**: the elements you marked, for the user to confirm.
+4. **Assumptions**: the elements, flows and flow steps you marked, for the user to confirm.
 5. **Recommendations**: only ones backed by a finding.
 6. **Artifacts**: the output folder and `ArchitectureReport.md` — the user's to keep, commit or delete; `c4-model.json` can be edited and re-rendered.
 

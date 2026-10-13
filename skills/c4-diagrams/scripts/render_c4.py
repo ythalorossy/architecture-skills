@@ -112,8 +112,8 @@ SUMMARY_KEYS = ("overview", "findings", "recommendations")
 # The keys c4-model-reference.md documents, and the only ones anything reads.
 # Everything else is dropped on the floor, so say so.
 RELATIONSHIP_KEYS = ("from", "to", "description", "technology", "assumption")
-FLOW_KEYS = ("id", "name", "description", "steps")
-STEP_KEYS = ("from", "to", "description", "technology", "reply", "async", "note")
+FLOW_KEYS = ("id", "name", "description", "steps", "evidence", "assumption")
+STEP_KEYS = ("from", "to", "description", "technology", "reply", "async", "note", "evidence", "assumption")
 
 
 def _did_you_mean(value, candidates):
@@ -299,8 +299,26 @@ def validate(model, facts, result=None, repo=None):
                 f"({flow.get('id') or flow.get('name')!r})"
             )
             continue
+        label = flow.get("id") or flow["name"]
+        # A flow is the most interpreted part of the model: which containers
+        # exist comes from the code, the order they talk in comes from reading
+        # it. Say so when nothing backs that reading, as for any element.
+        proven = flow.get("evidence") or any(step.get("evidence") for step in flow["steps"])
+        if not proven and not flow.get("assumption"):
+            warnings.append(f"flow {label!r} ({flow['name']}): no evidence and not marked as an assumption")
+        if repo is not None:
+            for entry in flow.get("evidence") or []:
+                problem = _evidence_problem(entry, Path(repo))
+                if problem:
+                    warnings.append(f"flow {label!r}: evidence {entry!r} {problem}")
+
         for number, step in enumerate(flow["steps"], 1):
             _unknown_keys(step, STEP_KEYS, f"flows[{flow_index}].steps[{number - 1}]", warnings)
+            if repo is not None:
+                for entry in step.get("evidence") or []:
+                    problem = _evidence_problem(entry, Path(repo))
+                    if problem:
+                        warnings.append(f"flow {label!r} step {number}: evidence {entry!r} {problem}")
             for end in ("from", "to"):
                 if step.get(end) not in known:
                     invalid(
@@ -1120,6 +1138,18 @@ def _seq_text(text):
     return _ms.label_text("sequence_msg", str(text)).replace("\n", " ")
 
 
+def _unproven(flow, step):
+    """
+    True when a flow step is a reading of the code rather than a trace of it.
+
+    Its own evidence settles it either way. Without evidence it is unproven
+    when the step or the whole flow is marked an assumption.
+    """
+    if step.get("evidence"):
+        return False
+    return bool(step.get("assumption") or flow.get("assumption"))
+
+
 def flow_diagrams(model, facts):
     """[(stem, title, mermaid, description)] for each key flow in the model, as sequence diagrams."""
     participants = _participants(model, facts)
@@ -1139,6 +1169,9 @@ def flow_diagrams(model, facts):
         for step in flow["steps"]:
             arrow = "-->>" if step.get("reply") else ("-)" if step.get("async") else "->>")
             text = _seq_text(step.get("description", ""))
+            if _unproven(flow, step):
+                # Nothing in the code backs this step: say so where it is read.
+                text += " (?)"
             if step.get("technology"):
                 text += f" [{_seq_text(step['technology'])}]"
             lines.append(f"    {safe[step['from']]}{arrow}{safe[step['to']]}: {text or ' '}")
@@ -1292,6 +1325,17 @@ def _assumptions(model):
     for r in model.get("relationships") or []:
         if r.get("assumption"):
             items.append(f"- **{r['from']} → {r['to']}**: {r.get('description', '')}")
+    for flow in model.get("flows") or []:
+        steps = flow.get("steps") or []
+        if flow.get("assumption"):
+            items.append(f"- **{flow['name']}** (key flow): {flow.get('description') or 'no description'}")
+            continue
+        for number, step in enumerate(steps, 1):
+            if _unproven(flow, step):
+                items.append(
+                    f"- **{flow['name']}**, step {number} ({step.get('from')} → {step.get('to')}): "
+                    f"{step.get('description') or 'no description'}"
+                )
     return items
 
 

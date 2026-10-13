@@ -7,7 +7,8 @@
       "group": "",
       "ecosystem": "Node.js",
       "in_solution": null,
-      "duplicate_name": false
+      "duplicate_name": false,
+      "inferred": false
     },
     {
       "name": "web/src/api",
@@ -15,7 +16,8 @@
       "group": "web",
       "ecosystem": "Node.js",
       "in_solution": null,
-      "duplicate_name": false
+      "duplicate_name": false,
+      "inferred": false
     },
     {
       "name": "bookshop.main",
@@ -23,7 +25,8 @@
       "group": "api",
       "ecosystem": "Python",
       "in_solution": null,
-      "duplicate_name": false
+      "duplicate_name": false,
+      "inferred": false
     },
     {
       "name": "bookshop.orders",
@@ -31,7 +34,8 @@
       "group": "api",
       "ecosystem": "Python",
       "in_solution": null,
-      "duplicate_name": false
+      "duplicate_name": false,
+      "inferred": false
     },
     {
       "name": "bookshop.payments",
@@ -39,7 +43,8 @@
       "group": "api",
       "ecosystem": "Python",
       "in_solution": null,
-      "duplicate_name": false
+      "duplicate_name": false,
+      "inferred": false
     },
     {
       "name": "bookshop.search",
@@ -47,7 +52,8 @@
       "group": "api",
       "ecosystem": "Python",
       "in_solution": null,
-      "duplicate_name": false
+      "duplicate_name": false,
+      "inferred": false
     }
   ],
   "orphan_projects": [],
