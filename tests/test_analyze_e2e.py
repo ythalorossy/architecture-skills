@@ -9,8 +9,14 @@ Masking is recursive into dicts and lists: ``mask_volatile`` in
 ``helpers.py`` replaces absolute path strings with ``<abs-path>`` and any
 key named ``run_id`` / ``Generated On`` or containing ``timestamp`` with
 ``<masked>``.
+
+To accept an intended change to c4-facts.json or summary.json, regenerate
+the goldens and review the diff:
+
+    C4_UPDATE_GOLDEN=1 python3 -m unittest discover -s tests -p test_analyze_e2e.py
 """
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -24,6 +30,7 @@ from helpers import mask_volatile, run_analyzer
 FIXTURES_ROOT = Path(__file__).resolve().parent / "fixtures" / "repos"
 GOLDEN_ROOT = Path(__file__).resolve().parent / "golden"
 ANALYZER = Path(__file__).resolve().parent.parent / "skills" / "c4-diagrams" / "scripts" / "analyze_repository.py"
+UPDATE = os.environ.get("C4_UPDATE_GOLDEN") == "1"
 
 # One entry per ecosystem. Listed in a fixed order so the subTest
 # iterations and the golden directory layout stay in lockstep.
@@ -45,6 +52,16 @@ def _golden_pair(fixture_name):
     facts = json.loads((golden_dir / "c4-facts.json").read_text(encoding="utf-8"))
     summary = json.loads((golden_dir / "summary.json").read_text(encoding="utf-8"))
     return facts, summary
+
+
+def _write_golden_pair(fixture_name, facts, summary):
+    """Rewrite the golden c4-facts.json / summary.json for one fixture."""
+    golden_dir = GOLDEN_ROOT / fixture_name
+    golden_dir.mkdir(parents=True, exist_ok=True)
+    for file_name, data in (("c4-facts.json", facts), ("summary.json", summary)):
+        (golden_dir / file_name).write_text(
+            json.dumps(mask_volatile(data), indent=2), encoding="utf-8"
+        )
 
 
 class TestDegradedAndStrictExits(unittest.TestCase):
@@ -271,6 +288,9 @@ class AnalyzeE2ETest(unittest.TestCase):
                 fixture = FIXTURES_ROOT / fixture_name
                 with tempfile.TemporaryDirectory() as tmp:
                     facts, summary = run_analyzer(fixture, tmp)
+                if UPDATE:
+                    _write_golden_pair(fixture_name, facts, summary)
+                    continue
                 expected_facts, expected_summary = _golden_pair(fixture_name)
                 self.assertEqual(mask_volatile(facts), expected_facts)
                 self.assertEqual(mask_volatile(summary), expected_summary)

@@ -412,18 +412,8 @@ def _edge_label(description, technology=""):
 
 
 def _with_title(mermaid, title):
-    """The diagram with a front-matter ``title``, so a shared `.mmd` says what it is.
-
-    JSON quoting is YAML's double-quoted scalar: a colon, a quote or a
-    backslash in a container name cannot end the header early. Non-ASCII
-    characters are left as they are, so a name stays readable in the file.
-    A diagram that already carries front matter (Level 4 sets a renderer
-    option) gets the title added to it rather than a second header.
-    """
-    header = f"title: {json.dumps(str(title), ensure_ascii=False)}\n"
-    if mermaid.startswith("---\n"):
-        return "---\n" + header + mermaid[len("---\n"):]
-    return "---\n" + header + "---\n" + mermaid
+    """The diagram with a front-matter ``title`` (see mermaid_syntax.with_title)."""
+    return _ms.with_title(mermaid, title)
 
 
 class Diagram:
@@ -457,7 +447,7 @@ class Diagram:
         for cls, ids in self.classes.items():
             out.append(f"    class {','.join(ids)} {cls}")
         for boundary in boundaries:
-            out.append(f"    style {boundary} fill:none,stroke:#444444,stroke-dasharray:6 4")
+            out.append(f"    style {boundary} {_ms.boundary_style()}")
         return "\n".join(out) + "\n"
 
 
@@ -739,6 +729,10 @@ def _component_views(graph, overview=True, full_list="the dependency graph appen
             edges = {n: [t for t in targets if t not in shared] for n, targets in edges.items()}
         groups, named = _flat_groups(nodes, edges)
         overview = overview and named
+    elif len(nodes) > MAX_COMPONENTS:
+        # Folders, but one of them can still be too large to read on its own.
+        rank = {node: index for index, node in enumerate(_dependency_order(nodes, edges))}
+        groups = _capped({g: sorted(m, key=rank.__getitem__) for g, m in groups.items()})
 
     if len(nodes) > MAX_COMPONENTS:
         group_of = {n: g for g, members in groups.items() for n in members}
@@ -908,7 +902,7 @@ def _graph_diagram(model, facts, container, container_fact, title, nodes, edges,
 
     out = d.text([boundary])
     for box in boxes:
-        out += f"    style {box} fill:#f4f8fc,stroke:#9fb6cc\n"
+        out += f"    style {box} {_ms.folder_style()}\n"
     return out
 
 
@@ -1048,10 +1042,18 @@ def deployment_diagram(facts, model):
 
 # ---------- output ----------
 
-def _section(title, stem, mermaid, svg_ok, notes=(), intro=""):
+def _section(title, stem, mermaid, svg_ok, notes=(), intro="", svg_error=None):
     lines = [title, ""]
     if intro:
         lines += [_prose(intro), ""]
+    notes = list(notes)
+    if svg_error:
+        # Without this the reader sees Mermaid source where the other
+        # diagrams have a picture, and nothing says the image is missing.
+        status, message = svg_error
+        notes.append(f"This diagram did not render to an image ({status}"
+                     + (f": {_prose(message)}" if message else "")
+                     + "). The Mermaid source is below.")
     lines += [f"> {note}" for note in notes] + ([""] if notes else [])
     if svg_ok:
         lines += [f"![{stem}]({stem}.svg)", "", "<details>", "<summary>Mermaid source</summary>", "",
@@ -1116,7 +1118,7 @@ def _key_section(diagrams):
     rows = [f"| {symbol} | {meaning} |" for kind, symbol, meaning in _KEY_ROWS if kind in used]
     if not rows:
         return []
-    return ["### Key", "", "What the shapes and lines in the diagrams below mean.", "",
+    return ["### Diagram key", "", "What the shapes and lines in the diagrams below mean.", "",
             "| Symbol | Meaning |", "|---|---|"] + rows + [""]
 
 
@@ -1174,13 +1176,13 @@ def _endpoints_section(facts, model):
     return lines
 
 
-def _deployment_section(facts, model, svg_ok, mermaid):
+def _deployment_section(facts, model, svg_ok, mermaid, svg_error=None):
     deployment = facts.get("deployment") or {}
     if not any(deployment.get(k) for k in ("compose", "dockerfiles", "kubernetes", "ci", "platforms")):
         return []
     lines = ["### Deployment", ""]
     if mermaid:
-        lines.append(_section("#### docker compose", "c4-deployment", mermaid, svg_ok))
+        lines.append(_section("#### docker compose", "c4-deployment", mermaid, svg_ok, svg_error=svg_error))
     if deployment.get("dockerfiles"):
         lines += ["#### Container images", "", "| Dockerfile | Build stages | Runtime image | Exposes | Starts with |", "|---|---|---|---|---|"]
         for f in deployment["dockerfiles"]:
@@ -1398,11 +1400,17 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
 
     rendered: dict = {}
     render_results: list = []
+    # Stems whose image failed for a reason the user can act on. A machine
+    # with no mermaid-cli is not one of them: that is one note for the whole
+    # run, not a note under every diagram.
+    svg_errors: dict = {}
     if svg and not env_disabled:
         stems = [(stem, output / f"{stem}.mmd") for stem in diagrams]
         render_results = _sr.render(stems, output)
         for r in render_results:
             rendered[r.stem] = r.status == "ok"
+            if r.status not in ("ok", "missing-tool", "skipped"):
+                svg_errors[r.stem] = (r.status, r.message)
 
     block = [BLOCK_START, ""] + _summary_section(use_model) + ["## Architecture (C4 model)", ""]
     if use_model.get("_facts_only"):
@@ -1420,9 +1428,11 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
     block += _key_section(diagrams.values())
 
     if "c4-context" in diagrams:
-        block.append(_section("### Level 1: System context", "c4-context", diagrams["c4-context"], rendered.get("c4-context")))
+        block.append(_section("### Level 1: System context", "c4-context", diagrams["c4-context"],
+                              rendered.get("c4-context"), svg_error=svg_errors.get("c4-context")))
     if "c4-container" in diagrams:
-        block.append(_section("### Level 2: Containers", "c4-container", diagrams["c4-container"], rendered.get("c4-container")))
+        block.append(_section("### Level 2: Containers", "c4-container", diagrams["c4-container"],
+                              rendered.get("c4-container"), svg_error=svg_errors.get("c4-container")))
         block += _containers_table(use_model, facts) + [""]
 
     if components:
@@ -1430,7 +1440,8 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
                   "For each container: the modules it is built from (when it has several), then the code structure "
                   "inside them (packages or namespaces and the imports between them).", ""]
         for stem, title, mermaid, notes, _kind in components:
-            block.append(_section(f"#### {title}", stem, mermaid, rendered.get(stem), notes))
+            block.append(_section(f"#### {title}", stem, mermaid, rendered.get(stem), notes,
+                                  svg_error=svg_errors.get(stem)))
 
     if code_entries:
         block += ["### Level 4: Code", "",
@@ -1438,14 +1449,17 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
                   "dependencies inside the component and public methods. Boxes marked external live in another component.", ""]
         for entry in code_entries:
             block.append(_section(f"#### {_prose(entry['title'])}", entry["stem"], entry["mermaid"],
-                                  rendered.get(entry["stem"]), code_diagrams.notes(entry), intro=entry["description"]))
+                                  rendered.get(entry["stem"]), code_diagrams.notes(entry), intro=entry["description"],
+                                  svg_error=svg_errors.get(entry["stem"])))
 
     if flows:
         block += ["### Key flows", "", "How a request moves through the system, step by step.", ""]
         for stem, title, mermaid, description in flows:
-            block.append(_section(f"#### {_prose(title)}", stem, mermaid, rendered.get(stem), intro=description))
+            block.append(_section(f"#### {_prose(title)}", stem, mermaid, rendered.get(stem), intro=description,
+                                  svg_error=svg_errors.get(stem)))
 
-    block += _deployment_section(facts, use_model, rendered.get("c4-deployment"), deployment)
+    block += _deployment_section(facts, use_model, rendered.get("c4-deployment"), deployment,
+                                 svg_error=svg_errors.get("c4-deployment"))
     block += _endpoints_section(facts, use_model)
     block += _configuration_section(facts, use_model)
     block += _inventory_section(facts, use_model)
@@ -1478,6 +1492,16 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
             # Executive Summary can only count projects. Now that the model is
             # loaded and valid, say what the system is made of instead.
             text = generate_docs.replace_summary(text, generate_docs.model_summary(use_model))
+            # Same reason as the summary: the analyzer could only describe the
+            # package graph, where a leaf package reads as a strength.
+            text = generate_docs.replace_strengths(
+                text,
+                generate_docs.model_strengths(
+                    use_model,
+                    _coverage(use_model, facts, result),
+                    generate_docs.graph_strengths(text),
+                ),
+            )
         report.write_text(text, encoding="utf-8")
 
     # Per-diagram SVG status for summary.json.

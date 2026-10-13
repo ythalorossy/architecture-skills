@@ -1,7 +1,10 @@
 from pathlib import Path
 import argparse
 import json
+import os
+import shutil
 import sys
+import tempfile
 
 # Allow running as a plain script from any directory, not only
 # `python -m scripts.analyze_repository` from the skill folder.
@@ -27,12 +30,30 @@ from scripts.repo_index import RepoIndex
 from scripts.projects import discover_all
 from scripts.diagnostics import DiagnosticsCollector
 
+# The fixed-name artifacts of a run. With the `c4-*.mmd` / `c4-*.svg`
+# diagrams they are the only files the analyzer ever deletes from the
+# output folder; `c4-model.json` and anything the user put there survive.
+GENERATED_FILES = frozenset({
+    "ArchitectureReport.md",
+    "c4-facts.json",
+    "dependency-graph.json",
+    "dependency-graph.mmd",
+    "dependency-graph.svg",
+    "repository-scan.json",
+    "summary.json",
+})
+
 
 class RepositoryAnalyzer:
     def __init__(self, repo_path: str, output_path: str, no_svg: bool = False,
                  strict: bool = False, timestamp: bool = False):
         self.repo_path = Path(repo_path).resolve()
         self.output_path = Path(output_path).resolve()
+        # Every artifact is written here and moved into output_path at the
+        # end, so a crash cannot leave half of one run next to half of
+        # another. It is a sibling of output_path, at the same depth, so the
+        # relative repository_root stored in c4-facts.json resolves from both.
+        self._work_path = self.output_path
         self.no_svg = no_svg
         self.strict = strict
         self.timestamp = timestamp
@@ -69,10 +90,57 @@ class RepositoryAnalyzer:
         self._validate_repository()
         self._prepare_output_folder()
 
+        staging = self._open_staging_folder()
+        try:
+            self._work_path = staging
+            summary = self._collect()
+            self._promote(staging)
+        finally:
+            self._work_path = self.output_path
+            shutil.rmtree(staging, ignore_errors=True)
+
+        self._print_summary(summary)
+
+        return summary
+
+    def _open_staging_folder(self):
+        """A sibling folder to build the run in. Same parent, so the relative
+        path from the output folder back to the repository is unchanged."""
+        try:
+            return Path(tempfile.mkdtemp(prefix=".architecture-docs-", dir=self.output_path.parent))
+        except OSError as ex:
+            raise UserError(
+                f"cannot create a temporary folder next to the output folder ({ex.strerror}); "
+                "pass --output a folder whose parent is writable",
+                path=self.output_path.parent,
+            )
+
+    def _promote(self, staging):
+        """Move the finished run into the output folder.
+
+        Artifacts an earlier run left behind and this one did not produce are
+        removed first, so the folder describes one run only. `c4-model.json`
+        is the user's file: it is never written back.
+        """
+        produced = {p.name for p in staging.iterdir() if p.is_file()} - {"c4-model.json"}
+        for old in self.output_path.iterdir():
+            if old.is_file() and old.name not in produced and self._is_generated(old.name):
+                old.unlink()
+        for name in sorted(produced):
+            os.replace(staging / name, self.output_path / name)
+
+    @staticmethod
+    def _is_generated(name):
+        """True for a file this script writes, so nothing else is ever deleted."""
+        return name in GENERATED_FILES or (
+            name.startswith("c4-") and name.endswith((".mmd", ".svg"))
+        )
+
+    def _collect(self):
         print(f"Analyzing repository: {self.repo_path}")
 
         # One walk of the repository for the whole run.
-        self._collector = DiagnosticsCollector()
+        self._collector = DiagnosticsCollector(root=self.repo_path)
         self._nothing_detected = False
         index = RepoIndex.build(self.repo_path, self._collector)
 
@@ -86,12 +154,12 @@ class RepositoryAnalyzer:
 
         self._save_json(
             scan_results,
-            self.output_path / "repository-scan.json"
+            self._work_path / "repository-scan.json"
         )
 
         self._save_json(
             dependency_graph,
-            self.output_path / "dependency-graph.json"
+            self._work_path / "dependency-graph.json"
         )
 
         mermaid = self._generate_mermaid(
@@ -120,10 +188,8 @@ class RepositoryAnalyzer:
 
         self._save_json(
             summary,
-            self.output_path / "summary.json"
+            self._work_path / "summary.json"
         )
-
-        self._print_summary(summary)
 
         return summary
 
@@ -177,11 +243,12 @@ class RepositoryAnalyzer:
 
         mermaid = generate_mermaid(
             dependency_graph,
-            groups
+            groups,
+            title=f"{self.repo_path.name} \u00b7 Project dependency graph",
         )
 
-        mermaid_file = self.output_path / "dependency-graph.mmd"
-        svg_file = self.output_path / "dependency-graph.svg"
+        mermaid_file = self._work_path / "dependency-graph.mmd"
+        svg_file = self._work_path / "dependency-graph.svg"
 
         mermaid_file.write_text(
             mermaid,
@@ -199,7 +266,7 @@ class RepositoryAnalyzer:
             from scripts import svg_render as _sr
             results = _sr.render(
                 [("dependency-graph", mermaid_file)],
-                self.output_path,
+                self._work_path,
                 svg_flag=True,
                 env_disabled=False,
             )
@@ -234,14 +301,14 @@ class RepositoryAnalyzer:
             mermaid=mermaid,
             diagram_image=(
                 "dependency-graph.svg"
-                if (self.output_path / "dependency-graph.svg").is_file()
+                if (self._work_path / "dependency-graph.svg").is_file()
                 else None
             ),
             timestamp=self.timestamp,
         )
 
         report_file = (
-            self.output_path /
+            self._work_path /
             "ArchitectureReport.md"
         )
 
@@ -282,10 +349,16 @@ class RepositoryAnalyzer:
 
         self._save_json(
             facts,
-            self.output_path / "c4-facts.json"
+            self._work_path / "c4-facts.json"
         )
 
         print("Drawing C4 diagrams...")
+
+        # The model is the user's file and stays in the output folder; the
+        # renderer reads it from the staging copy and never writes it back.
+        model_file = self.output_path / "c4-model.json"
+        if self._work_path != self.output_path and model_file.is_file():
+            shutil.copy(model_file, self._work_path / "c4-model.json")
 
 
         # An existing c4-model.json (written by the agent or edited by the user)
@@ -293,12 +366,22 @@ class RepositoryAnalyzer:
         # unreviewed facts are listed; on invalid (unknown ids, missing
         # elements) it falls back to facts-only.  c4-model.json is never
         # modified.
-        result = render_c4(self.output_path, svg=self._render_svg(), collector=self._collector)
+        result = render_c4(self._work_path, svg=self._render_svg(), collector=self._collector)
         model_status = result["status"]
         model_errors = result["errors"]
         # render() already drew the facts-only model when the model is invalid,
         # and drew the model with an Unreviewed facts section when it drifts.
         drift = [{"message": message} for message in result["drift"]]
+        for message in result["drift"]:
+            print(f"DRIFT: {message}")
+
+        # validate() hints: things to fix in c4-model.json that are not bad
+        # enough to stop the drawing. render_c4.py standalone prints them;
+        # without this they would be computed and thrown away here.
+        model_warnings = result["warnings"]
+        for warning in model_warnings:
+            print(f"WARNING: {warning}")
+            self._collector.model_warning("render_c4", warning)
 
         self._record_svg(result.get("svg", {}))
         svg = {}
@@ -316,6 +399,7 @@ class RepositoryAnalyzer:
             "diagrams": result["diagrams"],
             "model": "facts-only" if result["facts_only"] else "c4-model.json",
             "model_errors": model_errors,
+            "model_warnings": model_warnings,
             "model_status": model_status,
             "drift": drift,
             "svg": svg,
@@ -436,7 +520,7 @@ class RepositoryAnalyzer:
         if not summary["dependency_graph_available"]:
             print(
                 "WARNING: No supported projects found (.NET, Node.js, Python, "
-                "Maven, Gradle). Analyze this repository manually."
+                "Maven, Gradle, Go). Analyze this repository manually."
             )
 
         c4 = summary["c4"]

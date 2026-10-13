@@ -16,13 +16,14 @@ def _label(text):
     return _ms.label_text("flowchart_plain", text)
 
 
-def generate_mermaid(graph, groups=None):
+def generate_mermaid(graph, groups=None, title=None):
     """
     Render the dependency graph as a Mermaid flowchart.
 
     groups optionally maps a project name to a folder (e.g. src/Domain);
     projects sharing a folder are drawn inside one subgraph. Targets that are
-    not keys of the graph (unresolved references) get a dashed border.
+    not keys of the graph (unresolved references) get a dashed border. title
+    is written as front matter, so the file says what it is on its own.
     """
     groups = groups or {}
 
@@ -83,11 +84,12 @@ def generate_mermaid(graph, groups=None):
             + " external"
         )
 
-    return "\n".join(lines) + "\n"
+    mermaid = "\n".join(lines) + "\n"
+    return _ms.with_title(mermaid, title) if title else mermaid
 
 
-def save_mermaid(graph, output_file, groups=None):
-    content = generate_mermaid(graph, groups)
+def save_mermaid(graph, output_file, groups=None, title=None):
+    content = generate_mermaid(graph, groups, title)
 
     Path(output_file).write_text(
         content,

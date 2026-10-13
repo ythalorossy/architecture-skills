@@ -17,6 +17,7 @@ from pathlib import Path
 from helpers import run_analyzer, write
 
 from scripts import c4_facts
+from scripts.repo_index import MAX_TEXT_BYTES
 
 
 def _chain(root, packages, files):
@@ -79,7 +80,7 @@ class OwnershipTest(unittest.TestCase):
     def test_large_files_are_not_read(self):
         with tempfile.TemporaryDirectory() as tmp:
             big = Path(tmp) / "bundle.js"
-            big.write_bytes(b"import pg from 'pg';\n" + b"x" * c4_facts.MAX_TEXT_BYTES)
+            big.write_bytes(b"import pg from 'pg';\n" + b"x" * MAX_TEXT_BYTES)
             self.assertEqual(c4_facts._file_text(big), "")
             small = Path(tmp) / "small.js"
             small.write_text("import pg from 'pg';\n", encoding="utf-8")

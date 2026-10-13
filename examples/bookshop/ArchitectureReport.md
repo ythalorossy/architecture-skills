@@ -47,7 +47,7 @@ Bookshop sells books online. A React web app calls a FastAPI service, which keep
 
 Online shop where readers find books and buy them
 
-### Key
+### Diagram key
 
 What the shapes and lines in the diagrams below mean.
 
@@ -387,8 +387,16 @@ Not backed by code evidence; confirm with the team:
 
 ### Strengths
 
+[//]: # (strengths:start)
+
+- Every container, data store and external system found in the code is in the model.
+- Every container says what it is responsible for.
+- The model names who the system is for: Reader.
+- 1 key flow is written down end to end: Reader buys a book.
+- Every container and external system points at the code that proves it.
 - No circular project references.
-- Projects with no project references (the core that the rest builds on): bookshop.payments, bookshop.search, web/src/api.
+
+[//]: # (strengths:end)
 
 ### Concerns
 
@@ -416,6 +424,9 @@ Every project or module and every reference between them, tests included. The au
 ![Dependency graph](dependency-graph.svg)
 
 ```mermaid
+---
+title: "bookshop · Project dependency graph"
+---
 graph TD
     web_src__files["web/src (files)"]
     subgraph group_api["api"]

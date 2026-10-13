@@ -9,10 +9,10 @@ except ImportError:  # Python < 3.11
 
 try:
     from scripts.repo_index import is_ignored_dir, RepoIndex
-    from scripts.paths import project_group
+    from scripts.paths import REQUIREMENTS_FILE, project_group
 except ImportError:
     from repo_index import is_ignored_dir, RepoIndex
-    from paths import project_group
+    from paths import REQUIREMENTS_FILE, project_group
 
 
 MANIFESTS = ("pyproject.toml", "setup.py", "setup.cfg")
@@ -278,7 +278,7 @@ def discover_projects(repo_path, index=None, collector=None):
     repo = Path(repo_path).resolve()
 
     index = RepoIndex.ensure(index, repo, collector)
-    has_manifest = any(index.walk(lambda name: name in MANIFESTS or re.match(r"requirements.*\.txt$", name)))
+    has_manifest = any(index.walk(lambda name: name in MANIFESTS or REQUIREMENTS_FILE.match(name)))
     if not has_manifest:
         return {"solutions": [], "projects": []}
 

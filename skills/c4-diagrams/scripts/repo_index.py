@@ -10,7 +10,10 @@ API:
 - index.files()                      -> relative Paths
 - index.by_suffix(ext)               -> relative Paths
 - index.read_text / read_json / read_ini(path) -> value | None
+- read_file_text(path, source)      -> text ("" when unreadable or too large)
+- recording_skips(collector)        -> context manager: file the size drops
 """
+from contextlib import contextmanager
 from pathlib import Path
 import configparser
 import json
@@ -18,6 +21,44 @@ import os
 
 # Files larger than this are not read (generated bundles, data dumps).
 MAX_TEXT_BYTES = 2 * 1024 * 1024
+
+# Where read_file_text() files the size drops of the run it is inside.
+# The scanners in c4_facts and code_facts read files from module-level
+# helpers that have no collector of their own, so collect_facts installs
+# one here for the length of the run. One run at a time, single-threaded.
+_SKIP_SINK = None
+
+
+@contextmanager
+def recording_skips(collector):
+    """Record what read_file_text() drops, for the length of one run."""
+    global _SKIP_SINK
+    previous = _SKIP_SINK
+    _SKIP_SINK = collector
+    try:
+        yield
+    finally:
+        _SKIP_SINK = previous
+
+
+def read_file_text(path, source):
+    """Text of a file, or "" when it is unreadable or past MAX_TEXT_BYTES.
+
+    The cap keeps generated bundles and data dumps out of the scanners. A
+    file dropped for its size is recorded, so the run can say what it did
+    not read. An unreadable or missing one is not: callers probe for files
+    that may not be there (a Dockerfile next to a compose service).
+    """
+    try:
+        path = Path(path)
+        if path.stat().st_size > MAX_TEXT_BYTES:
+            if _SKIP_SINK is not None:
+                _SKIP_SINK.file_skipped(source, str(path), "too_large")
+            return ""
+        return path.read_text(encoding="utf-8-sig", errors="replace")
+    except OSError:
+        return ""
+
 
 # Folders never walked: build output, dependencies, tool caches.
 IGNORED_DIRS = {
@@ -83,6 +124,11 @@ class RepoIndex:
 
     # ---------- public API ----------
 
+    @property
+    def collector(self):
+        """The run's diagnostics collector (warn() / skipped() / file_skipped())."""
+        return self._collector
+
     def files(self):
         """Every indexed file, as sorted paths relative to the root."""
         return list(self._files)
@@ -146,7 +192,8 @@ class RepoIndex:
         try:
             text = path.read_text(encoding="utf-8-sig", errors="replace")
         except OSError as exc:
-            self._collector.skipped(path, f"oserror: {exc}")
+            # strerror only: the exception text repeats the absolute path.
+            self._collector.skipped(path, f"oserror: {exc.strerror or exc}")
             return None
         # Warn if replacement chars were added (Latin-1 or other non-UTF-8)
         if "�" in text:

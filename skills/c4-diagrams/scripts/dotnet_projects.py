@@ -26,7 +26,7 @@ def _skip(collector, file, error):
     matches RepoIndex.read_text so both skip channels read alike.
     """
     if collector:
-        collector.file_skipped("dotnet_projects", str(file), f"oserror: {error}")
+        collector.file_skipped("dotnet_projects", str(file), f"oserror: {error.strerror or error}")
 
 
 def solution_project_paths(solution_file, collector=None):

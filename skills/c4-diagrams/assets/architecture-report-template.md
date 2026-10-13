@@ -26,7 +26,11 @@
 
 ### Strengths
 
+[//]: # (strengths:start)
+
 {{strengths}}
+
+[//]: # (strengths:end)
 
 ### Concerns
 

@@ -28,7 +28,7 @@ The automated dependency checks found no structural concerns.
 
 > Drawn from code facts only: no `c4-model.json` yet, so people, external purposes, descriptions and key flows are missing and the System Context level is left out. Write `c4-model.json` and run `render_c4.py` to complete it.
 
-### Key
+### Diagram key
 
 What the shapes and lines in the diagrams below mean.
 
@@ -111,9 +111,13 @@ Runtime, frameworks and key libraries declared in each container's build files.
 
 ### Strengths
 
+[//]: # (strengths:start)
+
 - No circular project references.
 - Projects with no project references (the core that the rest builds on): Core.
 - Every project is listed in a solution, workspace or aggregator build.
+
+[//]: # (strengths:end)
 
 ### Concerns
 
@@ -139,6 +143,9 @@ Every project or module and every reference between them, tests included. The au
 <summary>Full dependency graph</summary>
 
 ```mermaid
+---
+title: "dotnet_sln · Project dependency graph"
+---
 graph TD
     Core["Core"]
     Web["Web"]

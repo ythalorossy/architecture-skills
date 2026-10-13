@@ -26,19 +26,19 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 try:
-    from scripts.paths import TEST_DIRS, local_tag
+    from scripts.paths import GENERIC_URL_KEYS, REQUIREMENTS_FILE, in_test_dir, local_tag
     from scripts.projects import discover_all
     from scripts.python_projects import _distributions, normalize, _python_files
     from scripts.generate_docs import is_test_project
     from scripts import code_facts, go_projects
-    from scripts.repo_index import RepoIndex, MAX_TEXT_BYTES
+    from scripts.repo_index import RepoIndex, read_file_text, recording_skips
 except ImportError:
     import code_facts, go_projects
-    from paths import TEST_DIRS, local_tag
+    from paths import GENERIC_URL_KEYS, REQUIREMENTS_FILE, in_test_dir, local_tag
     from projects import discover_all
     from python_projects import _distributions, normalize, _python_files
     from generate_docs import is_test_project
-    from repo_index import RepoIndex, MAX_TEXT_BYTES
+    from repo_index import RepoIndex, read_file_text, recording_skips
 
 
 SOURCE_EXTENSIONS = (".cs", ".fs", ".vb", ".py", ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".vue", ".svelte",
@@ -200,13 +200,7 @@ def _line_of(text, index):
 
 def _file_text(path):
     """File text, or "" when unreadable or larger than MAX_TEXT_BYTES (generated bundles, data dumps)."""
-    try:
-        path = Path(path)
-        if path.stat().st_size > MAX_TEXT_BYTES:
-            return ""
-        return path.read_text(encoding="utf-8-sig", errors="replace")
-    except OSError:
-        return ""
+    return read_file_text(path, "c4_facts")
 
 
 def _is_vendored(rel_parts):
@@ -224,7 +218,7 @@ def _source_files(repo, test_dirs, index=None):
     candidates = RepoIndex.ensure(index, repo).walk(lambda name: name.endswith(SOURCE_EXTENSIONS))
     for file in candidates:
         rel_parts = file.resolve().relative_to(repo).parts
-        if any(part.lower() in TEST_DIRS for part in rel_parts[:-1]):
+        if in_test_dir(rel_parts[:-1]):
             continue
         if _is_vendored(rel_parts):
             continue
@@ -272,24 +266,12 @@ def _config_urls(text):
             if match and _wanted_host(match.group(1).lower()):
                 # Drop year/number keys and generic leaf names: the setting is what's left.
                 named = [k for k in keys if not k.isdigit()]
-                generic = {"url", "uri", "baseurl", "apiurl", "endpoint", "host", "address"}
-                while len(named) > 1 and named[-1].lower() in generic:
+                while len(named) > 1 and named[-1].lower() in GENERIC_URL_KEYS:
                     named.pop()
                 found.append((":".join(named[-1:]) or "config", match.group(1).lower()))
 
     visit(data, [])
     return found
-
-
-def registry_get(registry, key, entry):
-    return registry.setdefault(key, entry)
-
-
-def _add(registry, key, entry, evidence):
-    item = registry.setdefault(key, entry)
-    if evidence and evidence not in item["evidence"] and len(item["evidence"]) < MAX_EVIDENCE:
-        item["evidence"].append(evidence)
-    return item
 
 
 # ---------- containers ----------
@@ -362,14 +344,14 @@ def _requirements_services(repo, index, packaged):
     a packaged distribution, tests and docs are skipped.
     """
     def wanted(name):
-        return re.match(r"requirements.*\.txt$", name)
+        return REQUIREMENTS_FILE.match(name)
 
     files = RepoIndex.ensure(index, repo).walk(wanted)
     folders = set()
     for file in files:
         folder = file.parent.resolve()
         parts = [p.lower() for p in folder.relative_to(repo).parts]
-        if any(p in TEST_DIRS or p in ("docs", "doc") for p in parts):
+        if in_test_dir(parts) or any(p in ("docs", "doc") for p in parts):
             continue
         if any(folder == d or folder.is_relative_to(d) for d in packaged):
             continue
@@ -399,7 +381,7 @@ def _python_containers(repo, index):
 
         code = [
             f for f in _python_files(directory, index)
-            if not any(p in TEST_DIRS for p in f.relative_to(directory).parts[:-1])
+            if not in_test_dir(f.relative_to(directory).parts[:-1])
             and not any(f.is_relative_to(n) for n in nested)
         ]
         imports = _python_imports(code)
@@ -494,7 +476,7 @@ def _has_jvm_main(module_dir, index):
     base = Path(module_dir).resolve()
     candidates = RepoIndex.ensure(index, base).walk(lambda n: n.endswith((".java", ".kt")), under=base)
     for file in candidates:
-        if any(part in TEST_DIRS for part in file.resolve().relative_to(base).parts[:-1]):
+        if in_test_dir(file.resolve().relative_to(base).parts[:-1]):
             continue
         text = _file_text(file)
         if "@SpringBootApplication" in text or "@QuarkusMain" in text or re.search(r"\bstatic\s+void\s+main\s*\(|^fun\s+main\s*\(", text, re.MULTILINE):
@@ -611,7 +593,7 @@ def _components(repo, container, projects, graph, all_containers):
     nodes = [
         n for n in nodes
         if not is_test_project(n)
-        and not any(part.lower() in TEST_DIRS for part in Path(by_id[n]["relative_path"]).parts)
+        and not in_test_dir(Path(by_id[n]["relative_path"]).parts)
     ]
     node_set = set(nodes)
     return {
@@ -672,6 +654,17 @@ class _Ownership:
 
 
 def collect_facts(repo_path, graph, index=None, discovery=None):
+    """Collect the facts, recording every file dropped for its size.
+
+    The scanners below read through module-level helpers with no collector
+    of their own, so the run's collector is installed for the call.
+    """
+    index = RepoIndex.ensure(index, Path(repo_path).resolve())
+    with recording_skips(index.collector):
+        return _collect_facts(repo_path, graph, index=index, discovery=discovery)
+
+
+def _collect_facts(repo_path, graph, index=None, discovery=None):
     repo = Path(repo_path).resolve()
     index = RepoIndex.ensure(index, repo)
     if discovery is None:
@@ -829,7 +822,8 @@ def collect_facts(repo_path, graph, index=None, discovery=None):
     for project in projects:
         if is_test_project(project["id"]) or not project["path"].is_file():
             continue
-        text = index.read_text(project["path"])
+        # None when the manifest is unreadable or past the size cap.
+        text = index.read_text(project["path"]) or ""
         for prefix, kind, technology in PACKAGE_SIGNALS:
             match = re.search(r"""(Include="|<artifactId>|['":])""" + re.escape(prefix), text)
             if match:
@@ -849,19 +843,19 @@ def collect_facts(repo_path, graph, index=None, discovery=None):
             config_urls.setdefault(setting, []).append((host, file, _line_of(text, max(text.find(host), 0))))
     config_ymls = index.walk(lambda name: re.match(r"(application|bootstrap)[\w-]*\.(ya?ml|properties)$|^config\.ya?ml$|^settings\.ya?ml$", name))
     for file in config_ymls:
-        if any(part in TEST_DIRS for part in file.relative_to(repo).parts[:-1]):
+        if in_test_dir(file.relative_to(repo).parts[:-1]):
             continue
         for setting, host, line in _yaml_urls(_file_text(file)):
             if host in KNOWN_HOSTS:
                 record(externals, KNOWN_HOSTS[host], new_entry(KNOWN_HOSTS[host]), file.resolve(), line)
                 continue
-            keys = [k for k in setting.split(".") if k.lower() not in ("url", "uri", "base-url", "baseurl", "base_url", "api-url", "endpoint", "host")]
+            keys = [k for k in setting.split(".") if k.lower() not in GENERIC_URL_KEYS]
             config_urls.setdefault(".".join(keys[-2:]) or setting, []).append((host, file, line))
     for setting, hits in config_urls.items():
         hosts = sorted({h for h, _, _ in hits})
         key = hosts[0] if len(hosts) == 1 else setting
         entry = new_entry(key)
-        item = registry_get(externals, key, entry)
+        item = externals.setdefault(key, entry)
         item.setdefault("hosts", set()).update(hosts)
         if len(hosts) == 1:
             item.setdefault("settings", set()).add(setting)

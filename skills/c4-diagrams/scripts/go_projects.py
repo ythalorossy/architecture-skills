@@ -3,17 +3,17 @@ from pathlib import Path
 
 try:
     from scripts.repo_index import RepoIndex
-    from scripts.paths import project_group
+    from scripts.paths import GO_EXPANDED_DIRS, GO_MODULE_LINE, project_group
     from scripts.code_facts import go_imports
 except ImportError:
     from repo_index import RepoIndex
-    from paths import project_group
+    from paths import GO_EXPANDED_DIRS, GO_MODULE_LINE, project_group
     from code_facts import go_imports
 
 
-MODULE = re.compile(r"^module\s+(\S+)", re.MULTILINE)
+MODULE = GO_MODULE_LINE
 REQUIRE = re.compile(r"^\s*(?:require\s+)?([\w.\-/]+)\s+v[\w.\-+]+", re.MULTILINE)
-EXPANDED = ("cmd", "internal", "pkg", "api", "app", "services")
+EXPANDED = GO_EXPANDED_DIRS
 
 
 def _go_file_text(path):
@@ -117,7 +117,7 @@ GO_WEB = ("net/http", "github.com/gin-gonic/gin", "github.com/labstack/echo", "g
 
 
 def main_packages(repo, index=None):
-    """Folders holding `package main` code: [(dir, kind, technology)]."""
+    """Folders holding `package main` code: [(dir, module, kind, technology)]."""
     found = []
     for module in _modules(repo, index):
         dirs = {}

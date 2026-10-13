@@ -80,6 +80,92 @@ class RunStatusTest(unittest.TestCase):
         self.assertEqual({info["status"] for info in summary["c4"]["svg"].values()}, {"ok"})
 
 
+class RunDiagnosticsTest(unittest.TestCase):
+    """What the run tells the user about files it skipped and diagrams it could not draw."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.repo = self.tmp / "repo"
+        shutil.copytree(BOOKSHOP, self.repo)
+        self.out = self.tmp / "out"
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def analyze(self, **env):
+        stdout = io.StringIO()
+        with mock.patch.dict(os.environ, {"C4_SVG": "0", **env}), contextlib.redirect_stdout(stdout):
+            RepositoryAnalyzer(str(self.repo), str(self.out), no_svg=env.get("C4_SVG") != "1").run()
+        summary = json.loads((self.out / "summary.json").read_text(encoding="utf-8"))
+        return summary, stdout.getvalue()
+
+    def _write_oversized(self, relative):
+        """A file past MAX_TEXT_BYTES, shaped like the generated bundles the cap is for."""
+        from scripts.repo_index import MAX_TEXT_BYTES
+        path = self.repo / relative
+        path.write_text("# padding\n" * (MAX_TEXT_BYTES // 10 + 100), encoding="utf-8")
+        return path
+
+    def test_a_source_file_too_large_to_read_is_reported(self):
+        """Dropped silently before: the facts are collected without it and nothing says so."""
+        self._write_oversized("api/bookshop/orders/generated.py")
+
+        summary, _ = self.analyze()
+
+        skipped = {entry["path"]: entry["reason"] for entry in summary["skipped_files"]}
+        self.assertIn("api/bookshop/orders/generated.py", skipped, summary["skipped_files"])
+        self.assertEqual(skipped["api/bookshop/orders/generated.py"], "too_large")
+
+    def test_a_module_too_large_to_read_does_not_stop_the_run(self):
+        """A top-level module is its own project, and its text was used unchecked."""
+        self._write_oversized("api/bookshop/generated.py")
+
+        summary, _ = self.analyze()
+
+        self.assertEqual(summary["repository"], "repo")
+        self.assertIn("api/bookshop/generated.py",
+                      {entry["path"] for entry in summary["skipped_files"]})
+
+    def test_a_skipped_file_is_named_relative_to_the_repository(self):
+        self._write_oversized("api/bookshop/orders/generated.py")
+
+        summary, _ = self.analyze()
+
+        for entry in summary["skipped_files"]:
+            self.assertFalse(Path(entry["path"]).is_absolute(), entry)
+        for warning in summary["warnings"]:
+            self.assertFalse(Path(warning.get("path") or "").is_absolute(), warning)
+
+    def test_drift_is_printed(self):
+        self.out.mkdir()
+        shutil.copy(BOOKSHOP / "c4-model.json", self.out / "c4-model.json")
+        (self.repo / "api" / "bookshop" / "cache.py").write_text(
+            "import redis\nclient = redis.Redis()\n", encoding="utf-8")
+
+        summary, stdout = self.analyze()
+
+        self.assertEqual(summary["c4"]["model_status"], "drift")
+        self.assertTrue(any(line.startswith("DRIFT: ") for line in stdout.splitlines()), stdout)
+
+    def test_a_diagram_that_failed_to_render_says_so_in_the_report(self):
+        fake = mock.patch.object(svg_render, "_resolve",
+                                 return_value=("mmdc", [sys.executable, str(FAKE_MMDC)]))
+        with fake:
+            summary, _ = self.analyze(C4_SVG="1", FAKE_MMDC_MODE="syntax")
+
+        self.assertEqual(summary["status"], "degraded")
+        report = (self.out / "ArchitectureReport.md").read_text(encoding="utf-8")
+        self.assertIn("did not render", report)
+
+    def test_a_machine_without_a_renderer_gets_no_per_diagram_note(self):
+        with mock.patch.object(svg_render.shutil, "which", return_value=None):
+            summary, _ = self.analyze(C4_SVG="1")
+
+        self.assertEqual(summary["status"], "ok")
+        report = (self.out / "ArchitectureReport.md").read_text(encoding="utf-8")
+        self.assertNotIn("did not render", report)
+
+
 class StrictExitTest(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())

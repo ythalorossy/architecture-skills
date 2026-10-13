@@ -1,7 +1,9 @@
 """
 Mermaid syntax in one place:
-id allocation per diagram kind, text escaping per diagram kind, and the C4 palette.
+id allocation per diagram kind, text escaping per diagram kind, the front-matter
+title, and the C4 palette.
 """
+import json
 import re
 
 
@@ -277,7 +279,23 @@ C4_PALETTE = {
     "shared":     "#dbe9f6",
     "shared_stroke": "#5d82a8",
     "shared_text": "#000000",
+
+    # The dashed outline around a system or container boundary, and the
+    # pale box a folder of components is drawn in.
+    "boundary_stroke": "#444444",
+    "folder":     "#f4f8fc",
+    "folder_stroke": "#9fb6cc",
 }
+
+
+def boundary_style() -> str:
+    """Mermaid ``style`` body for a system or container boundary."""
+    return f"fill:none,stroke:{C4_PALETTE['boundary_stroke']},stroke-dasharray:6 4"
+
+
+def folder_style() -> str:
+    """Mermaid ``style`` body for the box around one folder of components."""
+    return f"fill:{C4_PALETTE['folder']},stroke:{C4_PALETTE['folder_stroke']}"
 
 # Formatted classDef lines (flowchart)
 def flowchart_classdef_lines() -> list[str]:
@@ -304,3 +322,18 @@ def shared_style() -> str:
         f"fill:{C4_PALETTE['shared']},stroke:{C4_PALETTE['shared_stroke']},"
         f"color:{C4_PALETTE['shared_text']},stroke-dasharray:4 3"
     )
+
+
+def with_title(mermaid: str, title: str) -> str:
+    """The diagram with a front-matter ``title``, so a shared `.mmd` says what it is.
+
+    JSON quoting is YAML's double-quoted scalar: a colon, a quote or a
+    backslash in a container name cannot end the header early. Non-ASCII
+    characters are left as they are, so a name stays readable in the file.
+    A diagram that already carries front matter (Level 4 sets a renderer
+    option) gets the title added to it rather than a second header.
+    """
+    header = f"title: {json.dumps(str(title), ensure_ascii=False)}\n"
+    if mermaid.startswith("---\n"):
+        return "---\n" + header + mermaid[len("---\n"):]
+    return "---\n" + header + "---\n" + mermaid

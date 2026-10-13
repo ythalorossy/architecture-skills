@@ -236,6 +236,19 @@ class PaletteTest(unittest.TestCase):
         self.assertIn("#5d82a8", comp_style)
         self.assertIn("#000000", comp_style)
 
+    def test_no_colour_is_written_outside_the_palette(self):
+        """Every hex colour the renderer draws with is declared in one table."""
+        import re
+
+        source = (REPO_ROOT / "skills" / "c4-diagrams" / "scripts" / "render_c4.py").read_text(encoding="utf-8")
+        self.assertEqual(re.findall(r"#[0-9a-fA-F]{6}\b", source), [],
+                         "render_c4.py writes a colour of its own; add it to mermaid_syntax.C4_PALETTE")
+
+    def test_the_boundary_and_the_folder_box_are_in_the_palette(self):
+        palette = mermaid_syntax.C4_PALETTE
+        for role in ("boundary_stroke", "folder", "folder_stroke"):
+            self.assertIn(role, palette)
+
     def test_shared_style_from_palette(self):
         """SHARED_STYLE in code_diagrams matches the palette."""
         shared_style = mermaid_syntax.shared_style()
