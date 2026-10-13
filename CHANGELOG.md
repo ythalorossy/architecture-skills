@@ -1,6 +1,25 @@
 # Changelog
 
-## Unreleased
+## 3.4.0 — 2026-10-12
+
+### Upgrading from 3.3.x
+
+Update the plugin and carry on: the two commands and all of their options are
+unchanged, and an `architecture-docs/` folder written by 3.3.x is read as it
+is — `c4-facts.json` keeps the same seven keys, and your `c4-model.json` is
+never rewritten. Two things look different on the first run after the update:
+
+- **Every diagram is redrawn**, because each one now carries a title. The
+  picture is the same; the file is not.
+- **A flow with no `evidence` on it or on any of its steps is now a warning**,
+  since no model written before this release could carry it. It is a warning
+  and nothing more: the run still reports `ok`, exits 0 and draws the flow.
+  Add the evidence, or mark the flow `"assumption": true`, when you next edit
+  the model.
+- **A repository whose containers share a library gains two files**,
+  `c4-component-shared.mmd` and `c4-structure-shared.mmd`, and the container
+  diagrams that used to repeat those boxes now point at them. Diagrams an
+  earlier run wrote and this one does not are removed, as before.
 
 ### Fixed
 

@@ -68,6 +68,12 @@ It symlinks one copy into each agent's skills folder (`.agents/skills/`, `~/.cod
 
 Copy `skills/c4-diagrams/` (or any skill folder under `skills/`) into your agent's skills folder (for example `~/.claude/skills/`, `~/.codex/skills/`, `~/.agents/skills/`).
 
+## Updating
+
+Use your agent's update command from the table above — `/plugin marketplace update ythalorossy`, `npx skills update`, `gemini extensions update architecture-skills`. Nothing else is needed: no command or option has ever been removed, so anything you were running keeps working, and an existing `architecture-docs/` folder is read as it is. Your `c4-model.json` is never rewritten by a run, so the descriptions, people and flows you wrote survive every update.
+
+After updating to 3.4.0, the first run redraws every diagram (each now carries a title) and warns once per key flow that carries no `evidence`, which no model written before 3.4.0 could. That is a warning, not an error: the run still reports `ok`. See the [CHANGELOG](CHANGELOG.md#upgrading-from-33x).
+
 ## Upgrading from 2.x
 
 Until 2.2.0 the repository, plugin and skill were all called `architecture-diagram-generator`. From 3.0.0 the repository and plugin are `architecture-skills` and the skill is `c4-diagrams`, so Claude Code shows `/architecture-skills:c4-diagrams`. The old repository URL redirects to the new one.
