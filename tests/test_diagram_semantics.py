@@ -616,3 +616,97 @@ class SharedLibrariesTest(unittest.TestCase):
         }
         stems = [stem for stem, _, _, _, _ in self._views(facts)]
         self.assertEqual(stems, ["c4-component-worker", "c4-component-shared"])
+
+
+def _code(modules, edges=()):
+    """A code-component graph: {module: [package, ...]} keyed ``module::package``."""
+    nodes = {
+        f"{module}::{package}": {"module": module, "group": module, "label": package, "path": "."}
+        for module, packages in modules.items() for package in packages
+    }
+    graph = {"nodes": nodes, "edges": {node: [] for node in nodes}}
+    for source, target in edges:
+        graph["edges"][source].append(target)
+    return graph
+
+
+SHARED_CODE_FACTS = {
+    "repository": "shop",
+    "containers": [
+        {**_container("api", ["api-app", "core", "contracts"],
+                      [("api-app", "core"), ("core", "contracts")]),
+         "code_components": _code({"api-app": ["web", "jobs"], "core": ["orders"], "contracts": ["dto"]},
+                                  [("api-app::web", "core::orders"), ("core::orders", "contracts::dto")])},
+        {**_container("worker", ["worker-app", "core", "contracts"],
+                      [("worker-app", "core"), ("core", "contracts")]),
+         "code_components": _code({"worker-app": ["poll", "retry"], "core": ["orders"], "contracts": ["dto"]},
+                                  [("worker-app::poll", "core::orders"), ("core::orders", "contracts::dto")])},
+    ],
+    "data_stores": [], "external_systems": [], "relationships": [],
+}
+
+
+class SharedCodeStructureTest(unittest.TestCase):
+    """
+    B-36: B-25 stopped at the module views, so `c4-structure-*` still drew the
+    packages of a shared library inside every container that used it — the same
+    duplication one level down.
+    """
+
+    def _views(self, facts=None):
+        facts = facts or SHARED_CODE_FACTS
+        model = render_c4.facts_only_model(facts)
+        return render_c4.component_diagrams(model, facts)
+
+    def _structure(self):
+        return {stem: m for stem, _, m, _, kind in self._views() if kind == "code"}
+
+    def test_a_shared_library_s_packages_are_drawn_once(self):
+        drawn = {}
+        for stem, mermaid in self._structure().items():
+            for package in ("orders", "dto"):
+                if f">{package}<" in mermaid or f'"{package}' in mermaid:
+                    drawn.setdefault(package, []).append(stem)
+        self.assertEqual(drawn, {
+            "orders": ["c4-structure-shared"],
+            "dto": ["c4-structure-shared"],
+        })
+
+    def test_each_container_keeps_its_own_packages(self):
+        api = self._structure()["c4-structure-api"]
+        self.assertIn("web", api)
+        self.assertIn("jobs", api)
+
+    def test_each_container_has_one_collapsed_node(self):
+        for stem, mermaid in self._structure().items():
+            if stem == "c4-structure-shared":
+                continue
+            with self.subTest(stem=stem):
+                self.assertIn("Shared libraries (2)", mermaid)
+                self.assertEqual(mermaid.count("Shared libraries"), 1)
+
+    def test_the_shared_view_groups_the_packages_by_library(self):
+        shared = self._structure()["c4-structure-shared"]
+        self.assertIn("core", shared)
+        self.assertIn("contracts", shared)
+        # The edge between the two libraries' packages survives, drawn once.
+        self.assertEqual(shared.count("-->"), 1)
+
+    def test_nothing_is_collapsed_without_a_shared_library(self):
+        facts = {
+            "repository": "shop",
+            "containers": [
+                {**_container("api", ["api-app"]),
+                 "code_components": _code({"api-app": ["web", "jobs"]}, [("api-app::web", "api-app::jobs")])},
+                {**_container("worker", ["worker-app"]),
+                 "code_components": _code({"worker-app": ["poll", "retry"]}, [])},
+            ],
+            "data_stores": [], "external_systems": [], "relationships": [],
+        }
+        stems = [stem for stem, _, _, _, kind in self._views(facts) if kind == "code"]
+        self.assertEqual(stems, ["c4-structure-api", "c4-structure-worker"])
+
+    def test_the_views_say_where_the_packages_went(self):
+        notes = {stem: " ".join(notes) for stem, _, _, notes, kind in self._views() if kind == "code"}
+        self.assertIn("c4-structure-shared", notes["c4-structure-api"])
+        self.assertIn("used by more than one container", notes["c4-structure-shared"])

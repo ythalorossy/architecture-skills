@@ -14,7 +14,7 @@
 
 [//]: # (summary:start)
 
-dotnet_sln has 2 projects (2 production, 0 test) with 1 project references between them.
+dotnet_sln has 2 projects (2 production, 0 tests) with 1 project reference between them.
 
 [//]: # (summary:end)
 

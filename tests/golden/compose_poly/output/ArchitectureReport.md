@@ -14,7 +14,7 @@
 
 [//]: # (summary:start)
 
-compose_poly has 1 projects (1 production, 0 test) with 0 project references between them.
+compose_poly has 1 project (1 production, 0 tests) with 0 project references between them.
 
 [//]: # (summary:end)
 

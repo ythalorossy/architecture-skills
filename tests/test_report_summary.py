@@ -122,8 +122,23 @@ class ExecutiveSummaryTest(unittest.TestCase):
 
     def test_without_a_model_the_projects_are_described(self):
         section = self.summary(self.render(None))
-        self.assertIn("bookshop has 6 projects (6 production, 0 test) with 4 project references between them.",
+        self.assertIn("bookshop has 6 projects (6 production, 0 tests) with 4 project references between them.",
                       section)
+
+    def test_the_counts_are_pluralised(self):
+        """B-37: 'compose_poly has 1 projects' reached a committed golden."""
+        from scripts import generate_docs
+
+        one = generate_docs.generate_report(
+            project_name="solo", stacks=["Python"], graph={"app": []},
+            scan={"projects": [{"name": "app", "ecosystem": "Python"}]}, groups={}, mermaid="")
+        self.assertIn("solo has 1 project (1 production, 0 tests) with 0 project references between them.", one)
+
+        two = generate_docs.generate_report(
+            project_name="pair", stacks=["Python"], graph={"app": ["lib"], "lib": []},
+            scan={"projects": [{"name": "app", "ecosystem": "Python"},
+                               {"name": "lib", "ecosystem": "Python"}]}, groups={}, mermaid="")
+        self.assertIn("pair has 2 projects (2 production, 0 tests) with 1 project reference between them.", two)
 
     def test_rerendering_keeps_one_summary(self):
         out = self.render(self.reference())
