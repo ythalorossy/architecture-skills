@@ -1,0 +1,15 @@
+---
+title: "shared_libs · Project dependency graph"
+---
+graph TD
+    subgraph group_src["src"]
+        Shop_Admin["Shop.Admin"]
+        Shop_Api["Shop.Api"]
+        Shop_Contracts["Shop.Contracts"]
+        Shop_Core["Shop.Core"]
+        Shop_Worker["Shop.Worker"]
+    end
+    Shop_Admin --> Shop_Contracts
+    Shop_Api --> Shop_Core
+    Shop_Core --> Shop_Contracts
+    Shop_Worker --> Shop_Core

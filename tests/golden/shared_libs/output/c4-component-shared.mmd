@@ -1,0 +1,24 @@
+---
+title: "shared_libs · Shared libraries"
+---
+flowchart TB
+    subgraph boundary["shared_libs · Shared libraries"]
+        Shop_Contracts["Contracts<br/>[Component]"]
+        Shop_Core["Core<br/>[Component]"]
+    end
+    shop_admin["Shop.Admin<br/>[Container: ASP.NET Core, net8.0]<br/>web api"]
+    shop_admin -->|"Uses"| Shop_Contracts
+    shop_api["Shop.Api<br/>[Container: ASP.NET Core, net8.0]<br/>web api"]
+    shop_api -->|"Uses"| Shop_Core
+    shop_worker["Shop.Worker<br/>[Container: .NET Worker Service, net8.0]<br/>worker"]
+    shop_worker -->|"Uses"| Shop_Core
+    Shop_Core --> Shop_Contracts
+    classDef person fill:#08427b,stroke:#052e56,color:#ffffff
+    classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
+    classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff
+    classDef component fill:#85bbf0,stroke:#5d82a8,color:#000000
+    classDef external fill:#999999,stroke:#6b6b6b,color:#ffffff
+    classDef shared fill:#dbe9f6,stroke:#5d82a8,color:#000000,stroke-dasharray:4 3
+    class Shop_Contracts,Shop_Core component
+    class shop_admin,shop_api,shop_worker container
+    style boundary fill:none,stroke:#444444,stroke-dasharray:6 4

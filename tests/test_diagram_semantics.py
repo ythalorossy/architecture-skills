@@ -511,3 +511,108 @@ class FactsOnlyContainerDiagramTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _container(name, components, edges=()):
+    """A container fact whose component graph is ``components`` (a list of node names)."""
+    graph = {
+        "nodes": {node: {"path": node, "group": ""} for node in components},
+        "edges": {node: [] for node in components},
+    }
+    for source, target in edges:
+        graph["edges"][source].append(target)
+    return {
+        "id": name, "name": name.title(), "kind": "service", "technology": "C#",
+        "evidence": [], "used_by": [], "components": graph,
+    }
+
+
+SHARED_FACTS = {
+    "repository": "shop",
+    "containers": [
+        _container("api", ["api-app", "core", "contracts"],
+                   [("api-app", "core"), ("core", "contracts")]),
+        _container("worker", ["worker-app", "core", "contracts"],
+                   [("worker-app", "core"), ("core", "contracts")]),
+        _container("admin", ["admin-app", "contracts"],
+                   [("admin-app", "contracts")]),
+    ],
+    "data_stores": [], "external_systems": [], "relationships": [],
+}
+
+
+class SharedLibrariesTest(unittest.TestCase):
+    """
+    B-25 / SPEC-18 AC9a: a component several containers are built from is drawn
+    once, in its own view, and each container's Level 3 collapses it into a
+    single node pointing there.
+    """
+
+    def _views(self, facts=None):
+        facts = facts or SHARED_FACTS
+        model = render_c4.facts_only_model(facts)
+        return render_c4.component_diagrams(model, facts)
+
+    def test_a_shared_library_is_drawn_once(self):
+        drawn = {}
+        for stem, _, mermaid, _, _ in self._views():
+            for library in ("core", "contracts"):
+                if library in mermaid:
+                    drawn.setdefault(library, []).append(stem)
+        self.assertEqual(drawn, {
+            "core": ["c4-component-shared"],
+            "contracts": ["c4-component-shared"],
+        })
+
+    def test_the_shared_view_keeps_the_edges_between_the_libraries(self):
+        shared = next(m for stem, _, m, _, _ in self._views() if stem == "c4-component-shared")
+        self.assertIn("core", shared)
+        self.assertIn("contracts", shared)
+        # core → contracts, drawn once rather than twice.
+        self.assertEqual(shared.count("-->"), 1 + 3, "one library edge, one per using container")
+
+    def test_each_container_has_one_collapsed_node(self):
+        for stem, _, mermaid, _, _ in self._views():
+            if stem == "c4-component-shared":
+                continue
+            with self.subTest(stem=stem):
+                count = 2 if stem.startswith("c4-component-api") or stem.startswith("c4-component-worker") else 1
+                self.assertIn(f"Shared libraries ({count})", mermaid)
+                self.assertEqual(mermaid.count("Shared libraries"), 1)
+
+    def test_the_container_keeps_its_own_components(self):
+        api = next(m for stem, _, m, _, _ in self._views() if stem == "c4-component-api")
+        self.assertIn("api-app", api)
+
+    def test_a_library_only_one_container_uses_is_not_collapsed(self):
+        facts = {
+            "repository": "shop",
+            "containers": [
+                _container("api", ["api-app", "only-here"], [("api-app", "only-here")]),
+                _container("worker", ["worker-app", "core"], [("worker-app", "core")]),
+            ],
+            "data_stores": [], "external_systems": [], "relationships": [],
+        }
+        stems = [stem for stem, _, _, _, _ in self._views(facts)]
+        self.assertEqual(stems, ["c4-component-api", "c4-component-worker"])
+        api = next(m for stem, _, m, _, _ in self._views(facts) if stem == "c4-component-api")
+        self.assertIn("only-here", api)
+
+    def test_the_views_say_where_the_libraries_went(self):
+        notes = {stem: " ".join(notes) for stem, _, _, notes, _ in self._views()}
+        self.assertIn("contracts", notes["c4-component-admin"])
+        self.assertIn("c4-component-shared", notes["c4-component-admin"])
+        self.assertIn("used by more than one container", notes["c4-component-shared"])
+
+    def test_a_container_made_only_of_shared_libraries_gets_no_view_of_its_own(self):
+        facts = {
+            "repository": "shop",
+            "containers": [
+                _container("api", ["core", "contracts"], [("core", "contracts")]),
+                _container("worker", ["worker-app", "core", "contracts"],
+                           [("worker-app", "core")]),
+            ],
+            "data_stores": [], "external_systems": [], "relationships": [],
+        }
+        stems = [stem for stem, _, _, _, _ in self._views(facts)]
+        self.assertEqual(stems, ["c4-component-worker", "c4-component-shared"])
