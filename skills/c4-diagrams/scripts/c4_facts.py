@@ -26,17 +26,17 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 try:
-    from scripts.paths import GENERIC_URL_KEYS, REQUIREMENTS_FILE, in_test_dir, local_tag
+    from scripts.paths import GENERIC_URL_KEYS, in_test_dir, local_tag
     from scripts.projects import discover_all
-    from scripts.python_projects import _distributions, normalize, _python_files
+    from scripts.python_projects import _distributions, inferred_nodes, normalize, _python_files, requirements_services
     from scripts.generate_docs import is_test_project
     from scripts import code_facts, code_types, go_projects
     from scripts.repo_index import RepoIndex, read_file_text, recording_skips
 except ImportError:
     import code_facts, code_types, go_projects
-    from paths import GENERIC_URL_KEYS, REQUIREMENTS_FILE, in_test_dir, local_tag
+    from paths import GENERIC_URL_KEYS, in_test_dir, local_tag
     from projects import discover_all
-    from python_projects import _distributions, normalize, _python_files
+    from python_projects import _distributions, inferred_nodes, normalize, _python_files, requirements_services
     from generate_docs import is_test_project
     from repo_index import RepoIndex, read_file_text, recording_skips
 
@@ -337,35 +337,27 @@ def _python_imports(files):
     return names
 
 
-def _requirements_services(repo, index, packaged):
+def _python_candidates(repo, index):
     """
-    Folders with their own requirements*.txt and no pyproject.toml/setup.py:
-    small services often have only that. One candidate each; folders inside
-    a packaged distribution, tests and docs are skipped.
+    The folders a Python container could live in: packaged distributions, the
+    service folders that carry only a requirements.txt, and — where nothing is
+    declared at all — the inferred source roots. The first two rules are shared
+    with python_projects, so a folder is a project and a container by one rule.
     """
-    def wanted(name):
-        return REQUIREMENTS_FILE.match(name)
-
-    files = RepoIndex.ensure(index, repo).walk(wanted)
-    folders = set()
-    for file in files:
-        folder = file.parent.resolve()
-        parts = [p.lower() for p in folder.relative_to(repo).parts]
-        if in_test_dir(parts) or any(p in ("docs", "doc") for p in parts):
-            continue
-        if any(folder == d or folder.is_relative_to(d) for d in packaged):
-            continue
-        folders.add(folder)
+    distributions = _distributions(repo, index)
+    distributions += requirements_services(repo, index, [d["directory"] for d in distributions])
+    if distributions:
+        return distributions
     return [
-        {"name": folder.name if folder != repo else repo.name, "directory": folder, "file": None, "requirements": []}
-        for folder in sorted(folders)
+        {"name": name, "directory": path, "file": None, "requirements": []}
+        for name, (path, _) in sorted(inferred_nodes(repo, index).items())
+        if path.is_dir()
     ]
 
 
 def _python_containers(repo, index):
     repo = Path(repo).resolve()
-    distributions = _distributions(repo, index)
-    distributions += _requirements_services(repo, index, [d["directory"] for d in distributions])
+    distributions = _python_candidates(repo, index)
 
     containers = []
     for dist in distributions:

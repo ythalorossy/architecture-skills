@@ -48,12 +48,18 @@
       "name": "Reader buys a book",
       "description": "From the Buy button to the stored, paid order.",
       "steps": [
-        { "from": "reader", "to": "bookshop-web", "description": "Clicks Buy on a book" },
-        { "from": "web/src/api", "to": "bookshop.main", "description": "POST /api/orders", "technology": "JSON/HTTPS" },
-        { "from": "bookshop.main", "to": "bookshop.orders", "description": "Places the order" },
-        { "from": "bookshop.orders", "to": "ext-payments-example", "description": "POST /v1/charges", "technology": "HTTPS" },
-        { "from": "bookshop.orders", "to": "db-postgresql", "description": "Inserts the order with its charge id", "technology": "psycopg" },
-        { "from": "bookshop.main", "to": "web/src/api", "description": "Order id and charge id", "reply": true }
+        { "from": "reader", "to": "bookshop-web", "description": "Clicks Buy on a book",
+          "evidence": ["web/src/main.tsx:15 (the Buy button)"] },
+        { "from": "web/src/api", "to": "bookshop.main", "description": "POST /api/orders", "technology": "JSON/HTTPS",
+          "evidence": ["web/src/api/client.ts:12-18"] },
+        { "from": "bookshop.main", "to": "bookshop.orders", "description": "Places the order",
+          "evidence": ["api/bookshop/main.py:16-18"] },
+        { "from": "bookshop.orders", "to": "ext-payments-example", "description": "POST /v1/charges", "technology": "HTTPS",
+          "evidence": ["api/bookshop/payments/client.py:9-12"] },
+        { "from": "bookshop.orders", "to": "db-postgresql", "description": "Inserts the order with its charge id", "technology": "psycopg",
+          "evidence": ["api/bookshop/orders/service.py:14-20"] },
+        { "from": "bookshop.main", "to": "web/src/api", "description": "Order id and charge id", "reply": true,
+          "evidence": ["api/bookshop/orders/service.py:30-33"] }
       ]
     }
   ],

@@ -62,12 +62,18 @@ This is the complete model of Bookshop, a small synthetic sample system: a React
       "name": "Reader buys a book",
       "description": "From the Buy button to the stored, paid order.",
       "steps": [
-        { "from": "reader", "to": "bookshop-web", "description": "Clicks Buy on a book" },
-        { "from": "web/src/api", "to": "bookshop.main", "description": "POST /api/orders", "technology": "JSON/HTTPS" },
-        { "from": "bookshop.main", "to": "bookshop.orders", "description": "Places the order" },
-        { "from": "bookshop.orders", "to": "ext-payments-example", "description": "POST /v1/charges", "technology": "HTTPS" },
-        { "from": "bookshop.orders", "to": "db-postgresql", "description": "Inserts the order with its charge id", "technology": "psycopg" },
-        { "from": "bookshop.main", "to": "web/src/api", "description": "Order id and charge id", "reply": true }
+        { "from": "reader", "to": "bookshop-web", "description": "Clicks Buy on a book",
+          "evidence": ["web/src/main.tsx:15 (the Buy button)"] },
+        { "from": "web/src/api", "to": "bookshop.main", "description": "POST /api/orders", "technology": "JSON/HTTPS",
+          "evidence": ["web/src/api/client.ts:12-18"] },
+        { "from": "bookshop.main", "to": "bookshop.orders", "description": "Places the order",
+          "evidence": ["api/bookshop/main.py:16-18"] },
+        { "from": "bookshop.orders", "to": "ext-payments-example", "description": "POST /v1/charges", "technology": "HTTPS",
+          "evidence": ["api/bookshop/payments/client.py:9-12"] },
+        { "from": "bookshop.orders", "to": "db-postgresql", "description": "Inserts the order with its charge id", "technology": "psycopg",
+          "evidence": ["api/bookshop/orders/service.py:14-20"] },
+        { "from": "bookshop.main", "to": "web/src/api", "description": "Order id and charge id", "reply": true,
+          "evidence": ["api/bookshop/orders/service.py:30-33"] }
       ]
     }
   ],
@@ -97,11 +103,11 @@ This is the complete model of Bookshop, a small synthetic sample system: a React
 
 - **Cover every fact.** Every `id` in `c4-facts.json` (`containers`, `data_stores`, `external_systems`) must appear in the model: as an element with the same `id`, in some element's `facts` list (to merge or rename facts), or in `excluded` with a reason. A fact you missed is drift: `render_c4.py` prints a `DRIFT:` line for it and exits 0 (exit 2 with `--strict`).
 - **Data stores are containers.** Put a database, cache or queue the system owns in `containers` with `"type": "database"` (or `"queue"`). A store the system doesn't own (a SaaS vector DB, another team's database) goes there too, with `"external": true`; it is then drawn outside the system boundary.
-- **Evidence or assumption.** Give each person, container and external system `evidence` (repo-relative `file` or `file:line`), or mark it `"assumption": true`. Assumptions are listed in the report for the team to confirm. People are usually assumptions unless the code names them (auth roles, UI copy, README).
+- **Evidence or assumption.** Give each person, container and external system — and each flow or flow step — `evidence` (repo-relative `file` or `file:line`), or mark it `"assumption": true`. A flow is read out of the code rather than found in it, so say which steps you traced and which you inferred. Assumptions are listed in the report for the team to confirm. People are usually assumptions unless the code names them (auth roles, UI copy, README).
 - **Don't invent.** Only add elements and relationships the code, config or docs support. When you have no evidence for who calls the API, say so with one `assumption` person rather than inventing several.
 - **Relationship text** reads from → to: "Stores orders in", "Charges cards with". `technology` is the protocol or library (HTTPS, gRPC, EF Core, SQS).
 - **`components`** gives a one-line description per component, keyed by container id and then a component id from `c4-facts.json`: a module (`containers[].components.nodes`) or a package/namespace inside one (`containers[].code_components.nodes`, ids like `module::package`). Describe the important ones; the nodes and edges themselves come from the code and can't be changed in the model.
-- **`flows`** are the key request paths, drawn as sequence diagrams. Each has an `id`, a `name`, an optional `description` and ordered `steps`. A step's `from`/`to` is a person, container or external system id, or a component id (module or `module::package`) when the step happens inside a container. Optional per step: `technology`, `"reply": true` (dashed return arrow), `"async": true`, and `note`. Trace real code paths: 1–3 flows of 4–10 steps each, starting from an endpoint, UI action, CLI command or scheduled job you can point to.
+- **`flows`** are the key request paths, drawn as sequence diagrams. Each has an `id`, a `name`, an optional `description` and ordered `steps`. A step's `from`/`to` is a person, container or external system id, or a component id (module or `module::package`) when the step happens inside a container. Optional per step: `technology`, `"reply": true` (dashed return arrow), `"async": true`, `note`, and — as for any element — `evidence` or `"assumption": true`. A flow takes both too, covering every step that carries neither. A step nothing backs is drawn with `(?)` after its text and listed under Assumptions. Trace real code paths: 1–3 flows of 4–10 steps each, starting from an endpoint, UI action, CLI command or scheduled job you can point to.
 - **`code`** (Level 4) lists the 2–5 key components to draw as class diagrams. Each entry has `container` (a model container id), `component` (a module or `module::package` id from `c4-facts.json`), an optional `description`, and optional `types` to center the diagram on (they are drawn with their direct neighbours). Without `types` the most connected types are drawn, at most 12. Type names must exist in that component's code: `render_c4.py` fails and suggests close names otherwise. Pick components with behaviour, not model or DTO folders.
 - **`summary`** is your own analysis, written into `ArchitectureReport.md` as an "Architecture overview" right after the Executive Summary: an `overview` paragraph (what the system does and how it is built), `findings` (what matters for the team: risks, coupling, missing pieces, each with a `file:line`), and `recommendations` (each backed by a finding). All three are optional; leave out what you have nothing evidence-based to say about.
 - **Ids** are short kebab-case strings, unique across people, containers and external systems. Keep fact ids as they are so re-runs line up.

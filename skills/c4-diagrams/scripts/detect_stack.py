@@ -10,8 +10,10 @@ from pathlib import Path
 
 try:
     from scripts.repo_index import RepoIndex
+    from scripts.python_projects import inferred_nodes
 except ImportError:
     from repo_index import RepoIndex
+    from python_projects import inferred_nodes
 
 
 def _uses_react(package_json_data):
@@ -47,6 +49,10 @@ def detect_stack(repo_path, index=None):
             # A requirements.txt is only evidence of Python with Python source
             # beside it: a lone docs/requirements.txt pins a Sphinx build, and
             # a repository with no .py file is not a Python project.
+            found.append(stack)
+        elif stack == "Python" and inferred_nodes(repo, index):
+            # Nothing declares the packaging, but the layout holds source roots
+            # that clear the noise guard: a Python repository nobody packaged.
             found.append(stack)
     for rel in index.by_suffix(".json"):
         if rel.name == "package.json":

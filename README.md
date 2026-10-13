@@ -152,7 +152,7 @@ By default the files are written to `./architecture-docs/<repo name>/` in the cu
 Output files:
 
 - `ArchitectureReport.md`
-- `c4-facts.json`, `c4-container.*`, `c4-component-<container>.*` (modules), `c4-structure-<container>.*` (packages/namespaces), `c4-deployment.*`, and with a model `c4-context.*`, `c4-flow-<flow>.*` and `c4-code-<container>-<component>.*` (Level 4 class diagrams)
+- `c4-facts.json`, `c4-container.*`, `c4-component-<container>.*` (modules), `c4-component-shared.*` (the components more than one container is built from, drawn once), `c4-structure-<container>.*` (packages/namespaces), `c4-deployment.*`, and with a model `c4-context.*`, `c4-flow-<flow>.*` and `c4-code-<container>-<component>.*` (Level 4 class diagrams)
 - `dependency-graph.mmd` / `.svg` / `.json`, `repository-scan.json`, `summary.json`
 
 Run on its own, the analyzer draws the Container and Component levels from code facts only. Through the skill, the agent also writes `c4-model.json` (people, external systems, component descriptions and key flows, each backed by evidence or marked as an assumption) and draws the System Context level, the flow diagrams and the Level 4 class diagrams of the key components. You can edit `c4-model.json` and redraw every diagram:

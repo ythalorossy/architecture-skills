@@ -1,0 +1,28 @@
+---
+title: "Shop.Api · code structure"
+---
+flowchart TB
+    subgraph boundary["Shop.Api · code structure [Container]"]
+        subgraph module_Shop_Api["Shop.Api"]
+            Shop_Api___root["(root)<br/>[Component]"]
+        end
+        subgraph module_Shop_Contracts["Shop.Contracts"]
+            Shop_Contracts___root["(root)<br/>[Component]"]
+        end
+        subgraph module_Shop_Core["Shop.Core"]
+            Shop_Core___root["(root)<br/>[Component]"]
+        end
+    end
+    Shop_Api___root --> Shop_Core___root
+    Shop_Core___root --> Shop_Contracts___root
+    classDef person fill:#08427b,stroke:#052e56,color:#ffffff
+    classDef container fill:#1168bd,stroke:#0b4884,color:#ffffff
+    classDef system fill:#1168bd,stroke:#0b4884,color:#ffffff
+    classDef component fill:#85bbf0,stroke:#5d82a8,color:#000000
+    classDef external fill:#999999,stroke:#6b6b6b,color:#ffffff
+    classDef shared fill:#dbe9f6,stroke:#5d82a8,color:#000000,stroke-dasharray:4 3
+    class Shop_Api___root,Shop_Contracts___root,Shop_Core___root component
+    style boundary fill:none,stroke:#444444,stroke-dasharray:6 4
+    style module_Shop_Api fill:#f4f8fc,stroke:#9fb6cc
+    style module_Shop_Contracts fill:#f4f8fc,stroke:#9fb6cc
+    style module_Shop_Core fill:#f4f8fc,stroke:#9fb6cc

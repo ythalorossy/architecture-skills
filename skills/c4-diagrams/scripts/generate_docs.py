@@ -459,6 +459,21 @@ def generate_report(
         f"**Project folders:** {', '.join(folders) or 'none'}"
     ]
 
+    inferred = sorted(
+        project["name"]
+        for project in (scan or {}).get("projects", [])
+        if project.get("inferred")
+    )
+    if inferred:
+        # Say which projects are a reading of the layout rather than a fact,
+        # so nobody takes a guessed boundary for a declared one.
+        overview += [
+            "",
+            f"**Inferred projects:** {', '.join(inferred)} — read from the source "
+            "layout because no manifest declares them. Check the boundaries before "
+            "relying on them.",
+        ]
+
     if mermaid and diagram_image:
         # The image shows in every Markdown viewer; the source stays for
         # viewers that render Mermaid (GitHub, GitLab) and for editing.

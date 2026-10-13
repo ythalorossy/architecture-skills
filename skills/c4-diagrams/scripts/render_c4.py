@@ -112,8 +112,8 @@ SUMMARY_KEYS = ("overview", "findings", "recommendations")
 # The keys c4-model-reference.md documents, and the only ones anything reads.
 # Everything else is dropped on the floor, so say so.
 RELATIONSHIP_KEYS = ("from", "to", "description", "technology", "assumption")
-FLOW_KEYS = ("id", "name", "description", "steps")
-STEP_KEYS = ("from", "to", "description", "technology", "reply", "async", "note")
+FLOW_KEYS = ("id", "name", "description", "steps", "evidence", "assumption")
+STEP_KEYS = ("from", "to", "description", "technology", "reply", "async", "note", "evidence", "assumption")
 
 
 def _did_you_mean(value, candidates):
@@ -299,8 +299,26 @@ def validate(model, facts, result=None, repo=None):
                 f"({flow.get('id') or flow.get('name')!r})"
             )
             continue
+        label = flow.get("id") or flow["name"]
+        # A flow is the most interpreted part of the model: which containers
+        # exist comes from the code, the order they talk in comes from reading
+        # it. Say so when nothing backs that reading, as for any element.
+        proven = flow.get("evidence") or any(step.get("evidence") for step in flow["steps"])
+        if not proven and not flow.get("assumption"):
+            warnings.append(f"flow {label!r} ({flow['name']}): no evidence and not marked as an assumption")
+        if repo is not None:
+            for entry in flow.get("evidence") or []:
+                problem = _evidence_problem(entry, Path(repo))
+                if problem:
+                    warnings.append(f"flow {label!r}: evidence {entry!r} {problem}")
+
         for number, step in enumerate(flow["steps"], 1):
             _unknown_keys(step, STEP_KEYS, f"flows[{flow_index}].steps[{number - 1}]", warnings)
+            if repo is not None:
+                for entry in step.get("evidence") or []:
+                    problem = _evidence_problem(entry, Path(repo))
+                    if problem:
+                        warnings.append(f"flow {label!r} step {number}: evidence {entry!r} {problem}")
             for end in ("from", "to"):
                 if step.get(end) not in known:
                     invalid(
@@ -906,14 +924,128 @@ def _graph_diagram(model, facts, container, container_fact, title, nodes, edges,
     return out
 
 
+SHARED_STEM = "c4-component-shared"
+# Key of the one node a container's Level 3 collapses its shared libraries
+# into. Not a component name: no node can be called this.
+SHARED_NODE = "(shared libraries)"
+
+
+def _shared_libraries(facts, by_fact):
+    """
+    ``{component: [container id, ...]}`` for every component more than one
+    container is built from.
+
+    A library several containers compile in is part of all of them, so it used
+    to be redrawn in every Level 3 diagram. Those are the components that get
+    one view of their own instead.
+    """
+    users = {}
+    for container_fact in facts["containers"]:
+        if by_fact.get(container_fact["id"]) is None:
+            continue  # excluded in the model
+        for node in ((container_fact.get("components") or {}).get("nodes") or {}):
+            users.setdefault(node, []).append(container_fact["id"])
+    return {node: ids for node, ids in sorted(users.items()) if len(ids) > 1}
+
+
+def _collapse_shared(components, shared):
+    """
+    (the container's component graph with the shared libraries replaced by one
+    node, the names replaced). An edge into a library becomes an edge into that
+    node, which is drawn as a stub pointing at the shared view.
+    """
+    mine = [node for node in components.get("nodes", {}) if node in shared]
+    if not mine:
+        return components, []
+
+    nodes = {node: info for node, info in components["nodes"].items() if node not in shared}
+    edges = {}
+    for node in nodes:
+        targets = []
+        for target in components.get("edges", {}).get(node, []):
+            target = SHARED_NODE if target in shared else target
+            if target not in targets and target != node:
+                targets.append(target)
+        edges[node] = targets
+
+    nodes[SHARED_NODE] = {
+        "group": "",
+        "label": f"Shared libraries ({len(mine)})",
+        "stub": f"drawn once in {SHARED_STEM}.mmd",
+    }
+    edges[SHARED_NODE] = []
+    return {"nodes": nodes, "edges": edges}, mine
+
+
+def _shared_edges(facts, shared):
+    """``{library: [library, ...]}``: the dependencies between the shared libraries."""
+    edges = {}
+    for container_fact in facts["containers"]:
+        components = container_fact.get("components") or {}
+        for source, targets in (components.get("edges") or {}).items():
+            if source not in shared:
+                continue
+            for target in targets:
+                if target in shared and target != source:
+                    edges.setdefault(source, set()).add(target)
+    return {source: sorted(targets) for source, targets in sorted(edges.items())}
+
+
+def _shared_diagram(model, facts, shared, by_fact, texts, title):
+    """The shared libraries, the edges between them, and the containers that use them."""
+    d = Diagram()
+    short = _short_names(list(shared))
+    boundary_key = _ms.IdAllocator.internal_key("boundary")
+    boundary = d.id(boundary_key)
+    d.lines.append(f'    subgraph {boundary}["{_clean(title)}"]')
+    for node in shared:
+        d.node(node, _label(short[node], "Component", texts.get(node, "")), "component", indent="        ")
+    d.lines.append("    end")
+
+    for container_fact in facts["containers"]:
+        container = by_fact.get(container_fact["id"])
+        if container is None:
+            continue
+        components = container_fact.get("components") or {}
+        own = [node for node in components.get("nodes", {}) if node not in shared]
+        used = {
+            target
+            for node in (own or components.get("nodes", {}))
+            for target in components.get("edges", {}).get(node, [])
+            if target in shared
+        }
+        if not used:
+            # Nothing of its own points at a library: it is built from them.
+            used = {node for node in components.get("nodes", {}) if node in shared}
+        if not used:
+            continue
+        if container["id"] not in d:
+            _element_node(d, container, "containers")
+        for node in sorted(used):
+            d.edge(container["id"], node, _edge_label("Uses", ""))
+
+    for source, targets in _shared_edges(facts, shared).items():
+        for target in targets:
+            d.edge(source, target)
+
+    return _with_title(d.text([boundary]), title)
+
+
 def component_diagrams(model, facts):
     """
     [(file stem, title, mermaid, notes, kind)] per container: its modules (when it has
     at least two) and the code structure inside them (packages/namespaces).
+
+    A component more than one container is built from is drawn once, in a view
+    of its own, and each container's Level 3 collapses the ones it uses into a
+    single node. A container left with fewer than two nodes that way is built
+    only from shared libraries and gets no module view: the shared one has it.
     """
     by_fact = _container_lookup(model)
     descriptions = model.get("components") or {}
     results = []
+
+    shared_users = _shared_libraries(facts, by_fact)
 
     for container_fact in facts["containers"]:
         container = by_fact.get(container_fact["id"])
@@ -921,10 +1053,20 @@ def component_diagrams(model, facts):
             continue  # excluded in the model
         texts = descriptions.get(container["id"]) or {}
 
-        components = container_fact.get("components") or {}
+        declared = container_fact.get("components") or {}
+        components, collapsed = _collapse_shared(declared, shared_users) if shared_users else (declared, [])
         has_modules = len(components.get("nodes", {})) >= 2
         if has_modules:
-            for suffix, subtitle, nodes, edges, notes in _component_views(components):
+            views = _component_views(components)
+            for index, (suffix, subtitle, nodes, edges, notes) in enumerate(views):
+                if index == 0 and collapsed:
+                    names = ", ".join(sorted(collapsed))
+                    notes = notes + [
+                        f"{names} is shared with another container and drawn once in {SHARED_STEM}.mmd."
+                        if len(collapsed) == 1 else
+                        f"{len(collapsed)} components are shared with other containers and drawn once "
+                        f"in {SHARED_STEM}.mmd: {names}."
+                    ]
                 title = container["name"] + (f" / {subtitle}" if subtitle else "")
                 stem = f"c4-component-{container['id']}{suffix}"
                 mermaid = _with_title(
@@ -936,7 +1078,7 @@ def component_diagrams(model, facts):
         # A module holding one package named after it draws the same boxes and
         # the same arrows as the module view above; a second copy of a diagram
         # is not a second level of detail, so it is left out.
-        echoes_modules = has_modules and _drawn_graph(code) == _drawn_graph(components)
+        echoes_modules = has_modules and _drawn_graph(code) == _drawn_graph(declared)
         if len(code.get("nodes", {})) >= 2 and not echoes_modules:
             for suffix, subtitle, nodes, edges, notes in _component_views(
                 code, overview=not has_modules, full_list="c4-facts.json (`code_components`)"
@@ -947,6 +1089,28 @@ def component_diagrams(model, facts):
                     _graph_diagram(model, facts, container, container_fact, title, nodes, edges, texts, "used_by_code"),
                     title)
                 results.append((stem, title, mermaid, notes, "code"))
+
+    if shared_users:
+        title = f"{model['system']['name']} · Shared libraries"
+        texts = {
+            node: text
+            for container_id, described in (model.get("components") or {}).items()
+            for node, text in described.items()
+            if node in shared_users
+        }
+        note = (
+            "Components used by more than one container, drawn once here instead of in each "
+            "container's diagram: "
+            + "; ".join(f"{node} ({', '.join(users)})" for node, users in shared_users.items())
+            + "."
+        )
+        results.append((
+            SHARED_STEM,
+            title,
+            _shared_diagram(model, facts, shared_users, by_fact, texts, title),
+            [note],
+            "modules",
+        ))
 
     return results
 
@@ -974,6 +1138,18 @@ def _seq_text(text):
     return _ms.label_text("sequence_msg", str(text)).replace("\n", " ")
 
 
+def _unproven(flow, step):
+    """
+    True when a flow step is a reading of the code rather than a trace of it.
+
+    Its own evidence settles it either way. Without evidence it is unproven
+    when the step or the whole flow is marked an assumption.
+    """
+    if step.get("evidence"):
+        return False
+    return bool(step.get("assumption") or flow.get("assumption"))
+
+
 def flow_diagrams(model, facts):
     """[(stem, title, mermaid, description)] for each key flow in the model, as sequence diagrams."""
     participants = _participants(model, facts)
@@ -993,6 +1169,9 @@ def flow_diagrams(model, facts):
         for step in flow["steps"]:
             arrow = "-->>" if step.get("reply") else ("-)" if step.get("async") else "->>")
             text = _seq_text(step.get("description", ""))
+            if _unproven(flow, step):
+                # Nothing in the code backs this step: say so where it is read.
+                text += " (?)"
             if step.get("technology"):
                 text += f" [{_seq_text(step['technology'])}]"
             lines.append(f"    {safe[step['from']]}{arrow}{safe[step['to']]}: {text or ' '}")
@@ -1072,7 +1251,7 @@ _KEY_ROWS = (
     ("container", "Blue box", "**Container** — an application or service that runs on its own."),
     ("database", "Blue cylinder", "**Data store** — a database, cache or queue."),
     ("component", "Light blue box", "**Component** — a module, package or namespace inside one container."),
-    ("shared", "Pale dashed box", "Used by most of the other components, or drawn in another part of the same view."),
+    ("shared", "Pale dashed box", "Used by most of the other components, drawn in another part of the same view, or shared with another container and drawn once in the shared-libraries view."),
     ("external", "Grey box", "**External system** — run by someone else."),
     ("boundary", "Dashed grey outline", "The system or the container the diagram is about."),
     ("arrow", "Solid arrow", "A dependency or a call, labelled with what it does and the technology it uses."),
@@ -1146,6 +1325,17 @@ def _assumptions(model):
     for r in model.get("relationships") or []:
         if r.get("assumption"):
             items.append(f"- **{r['from']} → {r['to']}**: {r.get('description', '')}")
+    for flow in model.get("flows") or []:
+        steps = flow.get("steps") or []
+        if flow.get("assumption"):
+            items.append(f"- **{flow['name']}** (key flow): {flow.get('description') or 'no description'}")
+            continue
+        for number, step in enumerate(steps, 1):
+            if _unproven(flow, step):
+                items.append(
+                    f"- **{flow['name']}**, step {number} ({step.get('from')} → {step.get('to')}): "
+                    f"{step.get('description') or 'no description'}"
+                )
     return items
 
 

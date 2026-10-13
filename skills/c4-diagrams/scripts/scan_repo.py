@@ -29,7 +29,10 @@ def scan_repo(repo_path, index=None, discovery=None):
             "group": project["group"],
             "ecosystem": project["ecosystem"],
             "in_solution": project["in_solution"],
-            "duplicate_name": project["duplicate_name"]
+            "duplicate_name": project["duplicate_name"],
+            # True where no manifest names the project and the layout was read
+            # as a guess; only Python infers today, so the rest are False.
+            "inferred": project.get("inferred", False),
         }
         for project in discovery["projects"]
     ]

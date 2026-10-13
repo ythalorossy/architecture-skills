@@ -1,9 +1,14 @@
 {
   "repository": "compose_poly",
-  "technology_stack": [],
-  "projects_found": 0,
+  "technology_stack": [
+    "Python"
+  ],
+  "projects_found": 1,
+  "inferred_projects": [
+    "app"
+  ],
   "folders_found": 1,
-  "components_found": 0,
+  "components_found": 1,
   "dependencies_found": 0,
   "test_projects": [],
   "orphan_projects": [],
@@ -11,7 +16,7 @@
   "unresolved_references": [],
   "cycles": [],
   "untested_projects": [],
-  "dependency_graph_available": false,
+  "dependency_graph_available": true,
   "status": "ok",
   "warnings": [],
   "skipped_files": [],

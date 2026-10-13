@@ -11,8 +11,15 @@
         "docker-compose.yml:9 (compose service app)"
       ],
       "components": {
-        "nodes": {},
-        "edges": {}
+        "nodes": {
+          "app": {
+            "path": "app",
+            "group": ""
+          }
+        },
+        "edges": {
+          "app": []
+        }
       },
       "code_components": null,
       "inventory": [],
