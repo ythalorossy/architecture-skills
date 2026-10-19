@@ -73,6 +73,8 @@ Copy `skills/c4-diagrams/` (or any skill folder under `skills/`) into your agent
 
 Use your agent's update command from the table above — `/plugin marketplace update ythalorossy`, `npx skills update`, `gemini extensions update architecture-skills`. Nothing else is needed: no command or option has ever been removed, so anything you were running keeps working, and an existing `architecture-docs/` folder is read as it is. Your `c4-model.json` is never rewritten by a run, so the descriptions, people and flows you wrote survive every update.
 
+After updating to 3.5.0, a second skill, `architecture-review`, is installed with the plugin, and a request for an architecture review goes to it instead of `c4-diagrams`. It reads `c4-diagrams`' output, so run that first. Nothing `c4-diagrams` does or writes has changed. See the [CHANGELOG](CHANGELOG.md#upgrading-from-34x).
+
 After updating to 3.4.0, the first run redraws every diagram (each now carries a title) and warns once per key flow that carries no `evidence`, which no model written before 3.4.0 could. That is a warning, not an error: the run still reports `ok`. See the [CHANGELOG](CHANGELOG.md#upgrading-from-33x).
 
 ## Upgrading from 2.x
