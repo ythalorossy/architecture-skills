@@ -10,7 +10,7 @@
       "name": "architecture-skills",
       "source": "./",
       "version": "3.4.0",
-      "description": "Agent skills for software architecture: C4 diagrams, key flows, deployment, API and configuration views for a local repository."
+      "description": "Agent skills for software architecture: C4 diagrams, key flows, deployment, API and configuration views for a local repository, and a prioritized architecture review built on them."
     }
   ]
 }
