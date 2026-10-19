@@ -1,0 +1,11 @@
+services:
+  api:
+    build: ./api
+    environment:
+      - DATABASE_URL=postgres://orders:dev-secret-key@db/orders
+  worker:
+    build: ./worker
+    environment:
+      - DATABASE_URL=postgres://orders:dev-secret-key@db/orders
+  db:
+    image: postgres:16

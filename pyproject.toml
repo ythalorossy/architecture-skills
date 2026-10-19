@@ -1,7 +1,7 @@
 # Dev-tool configuration only.
 #
 # This repository is not a pip package and is never installed: the skill runs
-# as plain scripts from skills/c4-diagrams/scripts/. There is deliberately no
+# as plain scripts from skills/<name>/scripts/. There is deliberately no
 # [project] table, build-system or dependency list, so nothing here can be
 # mistaken for runtime metadata. The runtime is stdlib-only; coverage and ruff
 # are dev tools, installed in .github/workflows/ci.yml.
@@ -17,9 +17,10 @@ line-length = 120
 #     input, some deliberately malformed. Findings there would be about the
 #     fixture, not about us.
 #   * tests/golden/**   — generated snapshots, never hand-edited.
+#   * tests/architecture_review/fixtures/** — the review skill's own fixtures, same reason.
 # Excluding these directories (not `tests/` as a whole) keeps tests/test_*.py
 # under lint.
-extend-exclude = ["tests/fixtures", "tests/golden"]
+extend-exclude = ["tests/fixtures", "tests/golden", "tests/architecture_review/fixtures"]
 
 [tool.ruff.lint]
 # E9  syntax and indentation errors

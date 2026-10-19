@@ -1,0 +1,72 @@
+# Architecture Review: <repository name>
+
+**Date:** <YYYY-MM-DD> · **Inputs:** c4-facts.json, review-evidence.json, <the files you read>
+
+## Executive summary
+
+<Three to six sentences. What the system is, your overall judgment of how sound its design is, and the
+three actions that matter most. A reader who stops here should know what to do first.>
+
+## Goals and quality attributes
+
+<What the system has to do well, and which qualities matter most for it (security, availability,
+changeability, operability, cost...). Say where each came from, e.g. "(inferred from README)". A goal
+you could not find evidence for is an assumption: mark it.>
+
+## Scope and inputs
+
+<What was reviewed and what was left out. Name the c4 diagrams or model you used, if any.>
+
+## Overall architecture
+
+<The containers, data stores and external systems, how they talk, and where the trust boundaries are.
+Two or three paragraphs, from the c4 facts and the code. Compare it with what the documents claim.>
+
+## Analysis by lens
+
+### Security
+
+<What is sound, what is risky (cite findings as F1, F2...), and what you could not tell.>
+
+### Data
+
+<As above.>
+
+### Application
+
+<As above.>
+
+### Infrastructure
+
+<As above.>
+
+## Key findings and action items
+
+### F1: <Short title that states the problem>
+
+- **Priority:** High | Medium | Low — <why this rank, in one sentence>
+- **Lens:** Security | Data | Application | Infrastructure
+- **Evidence:** `path/to/file.py:12`, `path/to/other.py:30-41`, `sec-01`
+- **Scenario:** <Who or what is affected, and what goes wrong, in a concrete situation. Not a restatement
+  of the evidence.>
+- **Fix:** <What to change, specific enough to start on.>
+- **Tradeoff:** <What the fix costs or gives up, and what else it touches.>
+- **Confidence:** High | Medium | Low — <what the claim rests on, or the assumption it depends on; split by claim if it differs>
+
+<Order findings by priority, High first. Each F-number appears once. In Evidence, backticks hold only full repo-relative
+locations (`path:line` or `path:start-end`) and signal ids; put config keys and prose outside them. For an
+absence, cite where the thing would belong and say what is missing in the Scenario. Write the findings
+before the lens analysis above, which cites them. Lens is where the fix lives; if a finding spans
+two, the one whose owner would act on it. Every signal id appears in the review: in a finding's
+evidence, or in the last section with the reason you set it aside.>
+
+## Action plan
+
+| Order | Action | Findings | Effort |
+|---|---|---|---|
+| 1 | <first thing to do> | F1, F2 | <hours, days, weeks> |
+
+## What I inspected and what I did not
+
+<Files and facts you read. Signals you checked and found to be false alarms. What a static review
+cannot see here: runtime behaviour, production configuration, anything in `not_checked`.>

@@ -1,0 +1,5 @@
+[tool.poetry]
+name = "inventory-worker"
+version = "0.1.0"
+description = "Inventory tracking worker"
+dependencies = ["celery"]
