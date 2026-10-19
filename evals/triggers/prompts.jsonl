@@ -4,7 +4,7 @@
 {"id": "t04", "prompt": "What does the deployment look like for this project?", "should_fire": true, "why": "the deployment overview is one of the generated views; deliberately relies on working-directory context rather than an explicit repository mention, so the ambiguity is intentional"}
 {"id": "t05", "prompt": "Give me an overview of this API's endpoints and configuration", "should_fire": true, "why": "API and configuration overview, named in the description"}
 {"id": "t06", "prompt": "Generate a dependency graph of the modules in this repository", "should_fire": true, "why": "a dependency graph of a codebase is a named output"}
-{"id": "t07", "prompt": "Can you do an architecture review of this repo?", "should_fire": true, "why": "architecture review is named in the description"}
+{"id": "t07", "prompt": "Can you do an architecture review of this repo?", "should_fire": false, "why": "a critical review is the architecture-review skill's job; c4-diagrams documents and diagrams"}
 {"id": "t08", "prompt": "How do the projects in this monorepo fit together?", "should_fire": true, "why": "explaining how a repository's projects fit together is a named use"}
 {"id": "t09", "prompt": "Explain the structure of this .NET solution and how the layers depend on each other", "should_fire": true, "why": "a supported ecosystem plus a structure-and-dependency question"}
 {"id": "t10", "prompt": "Document how this Go service is put together, with diagrams", "should_fire": true, "why": "architecture documentation with diagrams on a supported ecosystem"}

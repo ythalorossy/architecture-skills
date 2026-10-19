@@ -35,6 +35,11 @@ jobs:
       - name: Run the test suite
         run: python -m unittest discover -s tests
 
+      # architecture-review's tests run in their own process: its `scripts`
+      # package shares a name with c4-diagrams'.
+      - name: Run the architecture-review tests
+        run: python -m unittest discover -s tests/architecture_review
+
   # Coverage is reported in the run summary; there is no threshold, so this
   # job never fails the build on a coverage number.
   coverage:
@@ -146,6 +151,44 @@ jobs:
           printf '%s\n' "$output"
           if [ "$status" -ne 1 ]; then
             echo "::error::render_c4.py --help must exit 1 on Python 3.10, got $status"
+            exit 1
+          fi
+          case "$output" in
+            *"Python 3.11+ is required"*) ;;
+            *)
+              echo "::error::guard message missing; got: $output"
+              exit 1
+              ;;
+          esac
+
+      - name: architecture-review collect_evidence.py must exit 1 on Python 3.10
+        run: |
+          set +e
+          output="$(python skills/architecture-review/scripts/collect_evidence.py --help 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ "$status" -ne 1 ]; then
+            echo "::error::architecture-review collect_evidence.py --help must exit 1 on Python 3.10, got $status"
+            exit 1
+          fi
+          case "$output" in
+            *"Python 3.11+ is required"*) ;;
+            *)
+              echo "::error::guard message missing; got: $output"
+              exit 1
+              ;;
+          esac
+
+      - name: architecture-review check_review.py must exit 1 on Python 3.10
+        run: |
+          set +e
+          output="$(python skills/architecture-review/scripts/check_review.py --help 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ "$status" -ne 1 ]; then
+            echo "::error::architecture-review check_review.py --help must exit 1 on Python 3.10, got $status"
             exit 1
           fi
           case "$output" in

@@ -1,11 +1,11 @@
 ---
 name: c4-diagrams
-description: Use when the user asks for architecture documentation, C4 diagrams, the key request flows of a codebase as sequence diagrams, a deployment, API or configuration overview, a dependency graph or diagram, an architecture review, or an explanation of how a repository's projects, packages or modules fit together. Works on local repository paths (.NET, Java/Kotlin, Go, Node.js/TypeScript, Python). Not for a quick question about one file or import, for changing code, or for diagrams unrelated to a codebase.
+description: Use when the user asks for architecture documentation, C4 diagrams, the key request flows of a codebase as sequence diagrams, a deployment, API or configuration overview, a dependency graph or diagram, or an explanation of how a repository's projects, packages or modules fit together. Works on local repository paths (.NET, Java/Kotlin, Go, Node.js/TypeScript, Python). Not for a quick question about one file or import, for changing code, or for diagrams unrelated to a codebase.
 license: MIT
 compatibility: Requires python3 (3.11+, checked at startup). Node.js with @mermaid-js/mermaid-cli is optional, for SVG rendering.
 metadata:
   author: ythalorossy
-  version: "3.4.0"
+  version: "3.5.0"
 ---
 
 # Architecture Diagram Generator
@@ -101,7 +101,7 @@ Your overview, findings and recommendations are already in `ArchitectureReport.m
 5. **Recommendations**: only ones backed by a finding.
 6. **Artifacts**: the output folder and `ArchitectureReport.md` — the user's to keep, commit or delete; `c4-model.json` can be edited and re-rendered.
 
-For an architecture review, walk through `<skill>/assets/architecture-review-checklist.md`. For a system overview or per-service docs, fill `<skill>/assets/system-overview-template.md` / `<skill>/assets/service-template.md`.
+To check dependency structure, walk through `<skill>/assets/architecture-review-checklist.md`. For a system overview or per-service docs, fill `<skill>/assets/system-overview-template.md` / `<skill>/assets/service-template.md`.
 
 **If nothing was detected** (no containers, empty graph — e.g. an unsupported stack): build the picture from the source yourself, write the model by hand, and tell the user the diagrams were derived manually.
 

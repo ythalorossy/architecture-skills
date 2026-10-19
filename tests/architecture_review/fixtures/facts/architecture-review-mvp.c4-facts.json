@@ -1,0 +1,157 @@
+{
+  "repository": "architecture-review-mvp",
+  "containers": [
+    {
+      "id": "inventory-api",
+      "name": "inventory-api",
+      "kind": "web-api",
+      "technology": "Python, FastAPI",
+      "path": "api",
+      "evidence": [
+        "api/pyproject.toml: FastAPI",
+        "docker-compose.yml:2 (compose service api)"
+      ],
+      "components": {
+        "nodes": {
+          "inventory-api": {
+            "path": "api/pyproject.toml",
+            "group": ""
+          }
+        },
+        "edges": {
+          "inventory-api": []
+        }
+      },
+      "code_components": null,
+      "inventory": [
+        "fastapi",
+        "sqlalchemy"
+      ],
+      "compose_services": [
+        "api"
+      ]
+    },
+    {
+      "id": "inventory-worker",
+      "name": "inventory-worker",
+      "kind": "worker",
+      "technology": "Python, Celery",
+      "path": "worker",
+      "evidence": [
+        "worker/pyproject.toml: Celery",
+        "docker-compose.yml:6 (compose service worker)"
+      ],
+      "components": {
+        "nodes": {
+          "inventory-worker": {
+            "path": "worker/pyproject.toml",
+            "group": ""
+          }
+        },
+        "edges": {
+          "inventory-worker": []
+        }
+      },
+      "code_components": null,
+      "inventory": [
+        "celery"
+      ],
+      "compose_services": [
+        "worker"
+      ]
+    }
+  ],
+  "data_stores": [
+    {
+      "id": "db-postgresql",
+      "name": "PostgreSQL",
+      "technology": "PostgreSQL",
+      "evidence": [
+        "docker-compose.yml:10"
+      ],
+      "used_by": [],
+      "used_by_components": {},
+      "used_by_code": {}
+    }
+  ],
+  "external_systems": [],
+  "relationships": [],
+  "endpoints": [
+    {
+      "method": "GET",
+      "path": "/items",
+      "file": "api/app.py",
+      "line": 7,
+      "container": "inventory-api"
+    }
+  ],
+  "deployment": {
+    "compose": [
+      {
+        "name": "api",
+        "image": null,
+        "build": "./api",
+        "ports": [],
+        "depends_on": [],
+        "environment": {
+          "DATABASE_URL": "postgres://orders:***@db/orders"
+        },
+        "file": "docker-compose.yml",
+        "line": 2
+      },
+      {
+        "name": "worker",
+        "image": null,
+        "build": "./worker",
+        "ports": [],
+        "depends_on": [],
+        "environment": {
+          "DATABASE_URL": "postgres://orders:***@db/orders"
+        },
+        "file": "docker-compose.yml",
+        "line": 6
+      },
+      {
+        "name": "db",
+        "image": "postgres:16",
+        "build": null,
+        "ports": [],
+        "depends_on": [],
+        "environment": {},
+        "file": "docker-compose.yml",
+        "line": 10
+      }
+    ],
+    "dockerfiles": [
+      {
+        "file": "worker/Dockerfile",
+        "base_images": [
+          "python:3.12-slim"
+        ],
+        "runtime_image": "python:3.12-slim",
+        "expose": "",
+        "entrypoint": "[\"celery\", \"-A\", \"tasks\", \"worker\"]"
+      }
+    ],
+    "kubernetes": [],
+    "ci": [],
+    "platforms": []
+  },
+  "configuration": {
+    "variables": [
+      {
+        "name": "DATABASE_URL",
+        "default": "postgres://orders:***@db/orders",
+        "sources": [
+          "api/settings.py:3",
+          "docker-compose.yml:2"
+        ],
+        "containers": [
+          "inventory-api"
+        ]
+      }
+    ],
+    "files": []
+  },
+  "repository_root": "<masked>"
+}

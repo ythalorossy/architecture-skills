@@ -18,8 +18,10 @@ def _json_version(relative, *path):
 class VersionTest(unittest.TestCase):
     def test_one_version_everywhere(self):
         skill = (REPO_ROOT / "skills" / "c4-diagrams" / "SKILL.md").read_text(encoding="utf-8")
+        review_skill = (REPO_ROOT / "skills" / "architecture-review" / "SKILL.md").read_text(encoding="utf-8")
         versions = {
             "SKILL.md": re.search(r'^\s+version:\s*"([^"]+)"', skill, re.M).group(1),
+            "architecture-review.SKILL.md": re.search(r'^\s+version:\s*"([^"]+)"', review_skill, re.M).group(1),
             "generate_docs.GENERATOR_VERSION": generate_docs.GENERATOR_VERSION,
             "package.json": _json_version("package.json"),
             "plugin.json": _json_version("plugin.json"),

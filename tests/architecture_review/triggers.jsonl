@@ -1,0 +1,10 @@
+{"id": "ar01", "skill": "architecture-review", "prompt": "Review the architecture of this repository", "should_fire": true, "why": "an explicit architecture-review request"}
+{"id": "ar02", "skill": "architecture-review", "prompt": "I'm integrating with this codebase — what should I know about the gaps between the documented architecture and the actual one?", "should_fire": true, "why": "the gap between model and reality is the skill's reason for being"}
+{"id": "ar03", "skill": "architecture-review", "prompt": "What are the hidden couplings and trust assumptions in this codebase?", "should_fire": true, "why": "the meta-concern thread's signature questions"}
+{"id": "ar04", "skill": "architecture-review", "prompt": "Is this monolith actually a monolith, or are there hidden services?", "should_fire": true, "why": "an architecture-review-shaped question on a local repo"}
+{"id": "ar05", "skill": "architecture-review", "prompt": "What does the deployment actually look like for this project, including the workers and cron jobs the diagrams don't show?", "should_fire": true, "why": "infrastructure-lens-shaped question; the 'what the diagram hides' framing"}
+{"id": "ar06", "skill": "architecture-review", "prompt": "Review this PR for code style", "should_fire": false, "why": "code-style review is not an architecture review"}
+{"id": "ar07", "skill": "architecture-review", "prompt": "What does this function do on line 42?", "should_fire": false, "why": "a single-line question; the skill excludes these"}
+{"id": "ar08", "skill": "architecture-review", "prompt": "Draw an org chart for my company", "should_fire": false, "why": "not a codebase; the skill excludes non-codebases"}
+{"id": "ar09", "skill": "architecture-review", "prompt": "Draw the C4 container diagram for this repo", "should_fire": false, "why": "a diagram request: c4-diagrams owns it, and this skill only judges what c4 produced"}
+{"id": "ar10", "skill": "architecture-review", "prompt": "Generate architecture documentation for this codebase", "should_fire": false, "why": "documentation is c4-diagrams' output; a review is a judgment with priorities and fixes"}

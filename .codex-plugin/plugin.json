@@ -1,7 +1,7 @@
 {
   "name": "architecture-skills",
-  "version": "3.4.0",
-  "description": "Agent skills for software architecture. c4-diagrams analyzes a local repository (.NET, Java/Kotlin, Go, Node.js/TypeScript, Python) and generates C4 model diagrams (context, container, component, code), key-flow, deployment, API and configuration views, and evidence-based recommendations.",
+  "version": "3.5.0",
+  "description": "Agent skills for software architecture. architecture-review gives a critical, prioritized review of a repository, built on c4-diagrams output. c4-diagrams analyzes a local repository (.NET, Java/Kotlin, Go, Node.js/TypeScript, Python) and generates C4 model diagrams (context, container, component, code), key-flow, deployment, API and configuration views, and evidence-based recommendations.",
   "author": {
     "name": "Ythalo Saldanha",
     "url": "https://github.com/ythalorossy"
@@ -20,7 +20,7 @@
   "hooks": {},
   "interface": {
     "displayName": "Architecture Skills",
-    "shortDescription": "C4 diagrams and an architecture report for a local repository",
+    "shortDescription": "C4 diagrams, an architecture report and a prioritized architecture review for a local repository",
     "longDescription": "Analyze a .NET, Java/Kotlin, Go, Node.js/TypeScript or Python repository and produce C4 model diagrams (system context, containers, components), a Markdown architecture report with the full dependency graph, and recommendations backed by evidence from the code.",
     "developerName": "Ythalo Saldanha",
     "category": "Developer Tools",

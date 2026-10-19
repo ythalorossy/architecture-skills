@@ -5,7 +5,8 @@ The README is for people *using* the skill. This file is for people changing it.
 ## Running things
 
 ```bash
-python3 -m unittest discover -s tests      # the whole suite, ~15 s
+python3 -m unittest discover -s tests      # the c4-diagrams suite, ~15 s
+python3 -m unittest discover -s tests/architecture_review   # architecture-review, its own process
 python3 -m unittest discover -s tests -p test_scale.py      # one file
 ruff check .                                # lint; CI pins ruff==0.17.0
 ```
@@ -97,3 +98,16 @@ under a new heading, and publish a GitHub release for the tag.
 CHANGELOG entries describe the user-visible symptom, not the patch. Read the
 existing ones before writing a new one; "the folder overview no longer drops
 dependencies" is the voice, not "fixed `group_edges`".
+
+## The architecture-review skill
+
+It is judgment on top of evidence, so the work splits the same way:
+
+- `skills/architecture-review/scripts/signals.py` holds one detector per kind of signal. A detector returns facts with `file:line` and never a secret's value; it does not rank or word a finding. To add one, write the detector, add it to `DETECTORS`, add a row to `references/lens-guide.md`, and add a test in `tests/architecture_review/test_signals.py` for what it flags and what it must leave alone.
+- The review itself is written by the agent. `skills/architecture-review/assets/example-review.md` is the reference for what a good one looks like. `skills/architecture-review/scripts/check_review.py` is the skill's feedback loop, the way `render_c4.py` is for the C4 model: it lists every problem (a citation past the end of a file, a missing field, a finding no lens cites) until the agent's review is clean. It checks shape and groundedness, never correctness:
+
+  ```bash
+  python3 skills/architecture-review/scripts/check_review.py <ArchitectureReview.md> <repository>
+  ```
+
+- Its fixtures, helpers and trigger prompts are all under `tests/architecture_review/`; it reads nothing from `tests/` or from c4-diagrams, and `tests/test_skill_isolation.py` fails if that changes.

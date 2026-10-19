@@ -1,5 +1,31 @@
 # Changelog
 
+## 3.5.0 — 2026-10-19
+
+### Upgrading from 3.4.x
+
+Update the plugin and carry on: c4-diagrams' commands, options and output
+files are unchanged, and an `architecture-docs/` folder written by 3.4.x is
+read as it is. Two things are new:
+
+- **A second skill, `architecture-review`, is installed with the plugin.**
+  It writes `ArchitectureReview.md` next to the c4 output and reads that
+  output, so run c4-diagrams on a repository before reviewing it.
+- **A request for an architecture review now goes to `architecture-review`.**
+  c4-diagrams' description no longer claims it; asking c4-diagrams to draw,
+  document or explain a repository works as before.
+
+### Added
+
+- **A second skill, `architecture-review`**: a critical review of a repository, built on the output of `c4-diagrams`. The agent writes `ArchitectureReview.md`: an executive summary, goals and quality attributes, an analysis per lens (security, data, application, infrastructure), findings ranked High, Medium or Low, each with its evidence, a scenario, a fix, the fix's tradeoff and a confidence, an action plan, and what was and was not inspected. The skill ships a report template and a finished example review, and tells the agent to read the code behind each protection the documents claim, since a documented, tested control can still be broken.
+- **`collect_evidence.py`** gathers the evidence first: it reads `c4-facts.json`, `c4-model.json` when present, and the repository, and writes `review-evidence.json`. Ten kinds of signal, each with `file:line`, a confidence and never a secret's value: hardcoded secrets in source and in JSON (nested settings by path), YAML, INI, `.env`, `.npmrc` and XML config; passwords in connection strings, as URLs or as `Host=…;Password=…`; endpoints with no authentication marker; published data-store ports; containers that run as root; models with no migrations; stores shared by several containers; containers that import each other; missing health checks; unpinned images. In a git work tree it reads only what git tracks or would track, so build output never produces a signal; placeholder values and commented-out lines are skipped, and a setting repeated per entry is one signal. The evidence also carries the context: containers, stores and endpoints from the c4 facts, what the c4 model adds, CI and hosting files, and the documents to compare the code against.
+- **`check_review.py`**, the review's feedback loop, the way `render_c4.py` is the model's: the agent runs it on its own review until it prints `Review check: ok`. It lists a citation past the end of a file or on blank lines (line ranges, bare paths and `:N` shorthand are understood, and a bare file name gets the full path as a hint), a finding without real content, findings out of priority order, a lens that never cites a finding, a signal the review never mentions, and a scenario that only restates its signal. It checks shape and groundedness, not whether a finding is right.
+
+### Changed
+
+- **`c4-diagrams` no longer claims "an architecture review".** Its description stops there; a critical review is `architecture-review`'s job. Its dependency-structure checklist stays, as the check of the dependency structure it is.
+- **Each skill is self-contained.** `architecture-review` carries its own `scripts/cli_support.py` and imports nothing from `c4-diagrams`; the only link between them is the `c4-facts.json` file one writes and the other reads. Its tests, fixtures and trigger prompts are under `tests/architecture_review/` and run in their own process, and `tests/test_skill_isolation.py` fails if a skill reaches into another.
+
 ## 3.4.0 — 2026-10-12
 
 ### Upgrading from 3.3.x
