@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.5.1 — 2026-10-19
+
+### Fixed
+
+- **`architecture-review` loads in hosts that read frontmatter strictly.** Its description contained a colon followed by a space, which a strict YAML parser reads as the start of a nested mapping, so the whole frontmatter failed to parse. The description now uses a dash in that place. Its wording and behaviour are otherwise unchanged.
+
 ## 3.5.0 — 2026-10-19
 
 ### Upgrading from 3.4.x

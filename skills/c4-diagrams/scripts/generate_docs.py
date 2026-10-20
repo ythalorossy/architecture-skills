@@ -11,7 +11,7 @@ from pathlib import Path
 import re
 
 
-GENERATOR_VERSION = "3.5.0"
+GENERATOR_VERSION = "3.5.1"
 
 
 def _generated_date():
