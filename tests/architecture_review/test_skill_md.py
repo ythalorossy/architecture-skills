@@ -45,6 +45,11 @@ class FrontmatterTest(unittest.TestCase):
         after = TEXT.split("description:", 1)[1].split("\n", 1)[1]
         self.assertFalse(after.startswith((" ", "\t")), "description must not continue on an indented line")
 
+    def test_description_is_valid_as_a_plain_yaml_scalar(self):
+        # A strict YAML parser (the IDE preview, other hosts) reads ": " as a nested mapping and " #" as a comment.
+        self.assertNotIn(": ", self.description)
+        self.assertNotIn(" #", self.description)
+
     def test_description_says_when_to_fire_and_when_not_to(self):
         self.assertTrue(self.description.startswith("Use when "))
         self.assertIn("Not for ", self.description)

@@ -81,6 +81,12 @@ class DescriptionShapeTest(unittest.TestCase):
         self.assertFalse(after.startswith((" ", "\t")),
                          "description must not be continued on an indented line")
 
+    def test_description_is_valid_as_a_plain_yaml_scalar(self):
+        description = self.fields.get("description", "")
+        # Unquoted, ": " starts a nested mapping and " #" a comment for a strict YAML parser.
+        self.assertNotIn(": ", description, "a strict YAML parser reads ': ' in a plain scalar as a nested mapping")
+        self.assertNotIn(" #", description, "a strict YAML parser reads ' #' in a plain scalar as a comment")
+
     def test_description_says_when_to_fire_and_when_not_to(self):
         description = self.fields.get("description", "")
         self.assertTrue(description.startswith("Use when "),

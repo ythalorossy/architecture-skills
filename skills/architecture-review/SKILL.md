@@ -1,6 +1,6 @@
 ---
 name: architecture-review
-description: Use when the user asks for a critical review of a repository's architecture: where the design is risky or fragile, what to fix first, hidden couplings, security, data and deployment assumptions, or where the documents and the code disagree. Builds on c4-diagrams output. Not for generating diagrams or architecture documentation (use c4-diagrams), a quick question about one file, reviewing a diff or pull request, or changing code.
+description: Use when the user asks for a critical review of a repository's architecture — where the design is risky or fragile, what to fix first, hidden couplings, security, data and deployment assumptions, or where the documents and the code disagree. Builds on c4-diagrams output. Not for generating diagrams or architecture documentation (use c4-diagrams), a quick question about one file, reviewing a diff or pull request, or changing code.
 license: MIT
 compatibility: Requires python3 (3.11+, checked at startup) and the c4-facts.json that the c4-diagrams skill writes. Reads a local repository path.
 metadata:
