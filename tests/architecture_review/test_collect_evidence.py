@@ -41,6 +41,12 @@ class FixtureEvidenceTest(unittest.TestCase):
                 lines = (H.FIXTURE_REPO / rel).read_text(encoding="utf-8").splitlines()
                 self.assertTrue(1 <= int(line) <= len(lines), location)
 
+    def test_the_evidence_names_the_tool_that_wrote_it(self):
+        generator = self.evidence["generator"]
+        self.assertEqual((generator["plugin"], generator["skill"]), ("architecture-skills", "architecture-review"))
+        self.assertEqual(generator["version"], collect_evidence.VERSION)
+        self.assertTrue(generator["source"].startswith("https://github.com/"))
+
     def test_no_secret_value_reaches_the_evidence(self):
         self.assertNotIn("dev-secret-key", json.dumps(self.evidence))
 
