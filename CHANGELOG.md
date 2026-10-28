@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.6.0 — 2026-10-28
+
+### Changed
+
+- **Both reports say what produced them.** `ArchitectureReport.md` and `ArchitectureReview.md` end with a Report Metadata block naming the plugin (`architecture-skills`), the skill, its version and the repository URL, so a reader who only has the file can find the tool. `review-evidence.json` carries the same as `generator`, and `check_review.py` reports a review whose Report Metadata section is missing or names another version.
+
 ## 3.5.1 — 2026-10-19
 
 ### Fixed

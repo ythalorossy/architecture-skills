@@ -93,6 +93,22 @@ class ShallowReviewTest(unittest.TestCase):
         i = EXAMPLE.index("## What I inspected")
         self.assertIn("inspected", failed(EXAMPLE[:i] + "## What I inspected and what I did not\n\nNothing.\n"))
 
+    def test_a_review_with_no_report_metadata_fails(self):
+        i = EXAMPLE.index("## Report Metadata")
+        self.assertIn("missing section: Report Metadata", check(EXAMPLE[:i])["sections"])
+
+    def test_report_metadata_naming_another_version_fails(self):
+        bad = EXAMPLE.replace(f"Generator Version: {collect_evidence.VERSION}", "Generator Version: 0.0.1")
+        problems = check(bad)["metadata"]
+        self.assertEqual(len(problems), 1)
+        self.assertIn(collect_evidence.VERSION, problems[0])
+
+    def test_the_template_carries_the_metadata_the_checker_wants_but_the_version(self):
+        template = (H.SKILL / "assets" / "review-report-template.md").read_text(encoding="utf-8")
+        for line in collect_evidence.report_metadata_lines():
+            if "Generator Version" not in line:
+                self.assertIn(line, template)
+
     def test_a_signal_list_dressed_as_a_review_fails_broadly(self):
         report = "# Architecture Review\n\n## Headline findings\n\n- **[Major]** Dockerfile has no HEALTHCHECK\n"
         self.assertGreaterEqual(len(failed(report)), 4)

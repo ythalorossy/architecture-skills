@@ -15,6 +15,13 @@ def _json_version(relative, *path):
     return data["version"]
 
 
+def _python_constant(relative, name):
+    # Read, not imported: the review skill's scripts package shares the name `scripts`
+    # with the c4 skill's, which this suite already has on sys.path.
+    text = (REPO_ROOT / relative).read_text(encoding="utf-8")
+    return re.search(rf'^{name} = "([^"]+)"', text, re.M).group(1)
+
+
 class VersionTest(unittest.TestCase):
     def test_one_version_everywhere(self):
         skill = (REPO_ROOT / "skills" / "c4-diagrams" / "SKILL.md").read_text(encoding="utf-8")
@@ -23,6 +30,8 @@ class VersionTest(unittest.TestCase):
             "SKILL.md": re.search(r'^\s+version:\s*"([^"]+)"', skill, re.M).group(1),
             "architecture-review.SKILL.md": re.search(r'^\s+version:\s*"([^"]+)"', review_skill, re.M).group(1),
             "generate_docs.GENERATOR_VERSION": generate_docs.GENERATOR_VERSION,
+            "collect_evidence.VERSION": _python_constant(
+                "skills/architecture-review/scripts/collect_evidence.py", "VERSION"),
             "package.json": _json_version("package.json"),
             "plugin.json": _json_version("plugin.json"),
             "gemini-extension.json": _json_version("gemini-extension.json"),

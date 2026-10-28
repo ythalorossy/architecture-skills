@@ -6,13 +6,14 @@ is the feedback loop for that, the way `render_c4.py` is for the C4 model: it
 lists every problem, the agent fixes them, and it runs again until it prints
 `Review check: ok`.
 
-Nine measures: the required sections are present and in order; every finding
+Ten measures: the required sections are present and in order; every finding
 has all seven fields with real content; every piece of evidence resolves to a
 real line (or range) or a real signal id; findings are ranked High first; each
 lens has an analysis that cites every finding; no scenario merely restates the
 signal it came from; every signal is either cited or explained; the action plan
-covers every finding; and the report says what it did not inspect. It checks
-shape and groundedness, never correctness.
+covers every finding; the report says what it did not inspect; and it ends by
+naming the tool, version and source that produced it. It checks shape and
+groundedness, never correctness.
 
     python3 check_review.py <ArchitectureReview.md> <repository> [--evidence review-evidence.json]
 """
@@ -34,6 +35,7 @@ from scripts.cli_support import UserError, require_python, run_cli
 # Must run before the imports below: they use 3.10+ syntax.
 require_python()
 
+from scripts.collect_evidence import report_metadata_lines
 from scripts.repo_scan import SKIP_DIRS
 
 SECTIONS = [
@@ -45,6 +47,7 @@ SECTIONS = [
     "Key findings and action items",
     "Action plan",
     "What I inspected and what I did not",
+    "Report Metadata",
 ]
 LENSES = ["Security", "Data", "Application", "Infrastructure"]
 FIELDS = ["Priority", "Lens", "Evidence", "Scenario", "Fix", "Tradeoff", "Confidence"]
@@ -68,7 +71,7 @@ SIGNAL_ID = re.compile(r"^(sec|dat|app|inf)-\d+$")
 FINDING_ID = re.compile(r"\bF(\d+)\b")
 
 MEASURES = ["sections", "finding_fields", "evidence_resolves", "ranked", "lens_analysis",
-            "not_restating", "signals_accounted", "action_plan", "inspected"]
+            "not_restating", "signals_accounted", "action_plan", "inspected", "metadata"]
 
 
 def words(text):
@@ -308,6 +311,15 @@ def check_inspected(found):
     return []
 
 
+def check_metadata(found):
+    """The Report Metadata section names the plugin, skill, version and source, as the template has them."""
+    if "Report Metadata" not in found:
+        return []  # check_sections already reports the missing section
+    present = [line.strip() for line in found["Report Metadata"].splitlines()]
+    return [f"Report Metadata is missing the line: {line}"
+            for line in report_metadata_lines() if line not in present]
+
+
 def check_review(report, repo, evidence=None):
     """{measure: [problems]} for a review; an empty list means the measure passes."""
     found = sections(report)
@@ -323,6 +335,7 @@ def check_review(report, repo, evidence=None):
         "signals_accounted": check_signals_accounted(report, signals),
         "action_plan": check_action_plan(found, findings),
         "inspected": check_inspected(found),
+        "metadata": check_metadata(found),
     }
 
 

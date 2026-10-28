@@ -166,7 +166,7 @@ By default the files are written to `./architecture-docs/<repo name>/` in the cu
 
 Output files:
 
-- `ArchitectureReport.md`
+- `ArchitectureReport.md`, which ends with a Report Metadata block naming the plugin, the skill, its version and this repository
 - `c4-facts.json`, `c4-container.*`, `c4-component-<container>.*` (modules), `c4-component-shared.*` (the components more than one container is built from, drawn once), `c4-structure-<container>.*` (packages/namespaces), `c4-structure-shared.*` (the packages inside those shared components), `c4-deployment.*`, and with a model `c4-context.*`, `c4-flow-<flow>.*` and `c4-code-<container>-<component>.*` (Level 4 class diagrams)
 - `dependency-graph.mmd` / `.svg` / `.json`, `repository-scan.json`, `summary.json`
 
@@ -195,7 +195,7 @@ python3 skills/architecture-review/scripts/check_review.py ./architecture-docs/<
 Output files, next to the c4 output in `./architecture-docs/<repo name>/`:
 
 - `review-evidence.json`: signals (hardcoded secrets in source and config, credentials in connection strings, published data-store ports, containers that run as root, models with no migrations, stores shared by several containers, containers that import each other, missing health checks, unpinned images, endpoints with no authentication marker), each with `file:line` and a confidence and never a secret's value; plus the context (containers, stores, CI and hosting files, documents, and what `c4-model.json` adds) and what the signals cannot see
-- `ArchitectureReview.md`: an executive summary, goals and quality attributes, the overall architecture, an analysis per lens (security, data, application, infrastructure), findings ranked High, Medium or Low (each with evidence, scenario, fix, tradeoff and confidence), an action plan, and what was and was not inspected
+- `ArchitectureReview.md`: an executive summary, goals and quality attributes, the overall architecture, an analysis per lens (security, data, application, infrastructure), findings ranked High, Medium or Low (each with evidence, scenario, fix, tradeoff and confidence), an action plan, what was and was not inspected, and the same Report Metadata block as `ArchitectureReport.md`
 
 `check_review.py` lists every problem as a `PROBLEM:` line: a citation past the end of a file or on blank lines, a missing field, findings out of priority order, a finding no lens cites, a signal the review never mentions, a scenario that only restates its signal. The agent fixes each and runs it again until it prints `Review check: ok`. A finished example is [`skills/architecture-review/assets/example-review.md`](skills/architecture-review/assets/example-review.md).
 
@@ -363,7 +363,7 @@ package.json, index.js     OpenCode plugin (registers skills/) and pi package
 
 Changing the skill rather than using it? [CONTRIBUTING.md](CONTRIBUTING.md) has the module map, the rules that are not obvious from the code, and a checklist for adding an ecosystem.
 
-**Releasing:** the version is repeated in `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `plugin.json`, `.cursor-plugin/plugin.json`, `.codex-plugin/plugin.json`, `gemini-extension.json`, `package.json`, the metadata of both `SKILL.md` files and `skills/c4-diagrams/scripts/generate_docs.py`. Bump them together (`tests/test_versions.py` fails if they differ), add a `CHANGELOG.md` entry, and publish a GitHub release for the tag.
+**Releasing:** the version is repeated in `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `plugin.json`, `.cursor-plugin/plugin.json`, `.codex-plugin/plugin.json`, `gemini-extension.json`, `package.json`, the metadata of both `SKILL.md` files, `skills/c4-diagrams/scripts/generate_docs.py` and `skills/architecture-review/scripts/collect_evidence.py`. Bump them together (`tests/test_versions.py` fails if they differ), add a `CHANGELOG.md` entry, and publish a GitHub release for the tag.
 
 ## License
 

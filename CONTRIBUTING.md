@@ -88,10 +88,11 @@ Two things are worth knowing before you edit:
 
 ## Releasing
 
-One version string is repeated across nine files: `.claude-plugin/plugin.json`,
+One version string is repeated across eleven places: `.claude-plugin/plugin.json`,
 `.claude-plugin/marketplace.json`, `plugin.json`, `.cursor-plugin/plugin.json`,
 `.codex-plugin/plugin.json`, `gemini-extension.json`, `package.json`, the
-`SKILL.md` metadata, and `generate_docs.GENERATOR_VERSION`. Bump them together
+metadata of both `SKILL.md` files, `generate_docs.GENERATOR_VERSION` and
+`collect_evidence.VERSION`. Bump them together
 — `tests/test_versions.py` fails if they differ — add the `CHANGELOG.md` entry
 under a new heading, and publish a GitHub release for the tag.
 

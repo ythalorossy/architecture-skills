@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires python3 (3.11+, checked at startup) and the c4-facts.json that the c4-diagrams skill writes. Reads a local repository path.
 metadata:
   author: ythalorossy
-  version: "3.5.1"
+  version: "3.6.0"
 ---
 
 # Architecture Review
@@ -60,7 +60,7 @@ Rank by consequence. **High**: a failure, breach or data loss on a normal path, 
 
 In the Evidence field, backtick only locations and signal ids; put config keys and prose outside. For an absence, cite where the thing would belong and name what is missing in the Scenario. Take line numbers from one file at a time (`grep -n`, or `sed -n` on one file): running numbers across several files are wrong. Every signal id must appear: in a finding's evidence, or in the last section with why you set it aside. Write the findings first; the lens analysis cites them.
 
-State goals and quality attributes you inferred as inferred. Say plainly what you did not inspect.
+State goals and quality attributes you inferred as inferred. Say plainly what you did not inspect. End with the template's Report Metadata, its version from the evidence's `generator`.
 
 Then check the review:
 
