@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires python3 (3.11+, checked at startup) and the c4-facts.json that the c4-diagrams skill writes. Reads a local repository path.
 metadata:
   author: ythalorossy
-  version: "3.5.1"
+  version: "3.6.0"
 ---
 
 # Architecture Review

@@ -1,5 +1,5 @@
 {
   "name": "architecture-skills",
-  "version": "3.5.1",
+  "version": "3.6.0",
   "description": "Agent skills for software architecture: C4 diagrams, key flows, deployment, API and configuration views for a local repository, and a prioritized architecture review built on them."
 }

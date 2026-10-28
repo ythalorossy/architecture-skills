@@ -29,7 +29,7 @@ from scripts.signals import DETECTORS, Context
 
 EVIDENCE_FILE = "review-evidence.json"
 SCHEMA = 1
-VERSION = "3.5.1"
+VERSION = "3.6.0"
 # Who wrote the evidence, and so the review: the review ends with these lines
 # (check_review.py holds it to them), so a reader with only the file can find the tool.
 GENERATOR = {

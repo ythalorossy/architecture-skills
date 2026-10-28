@@ -11,7 +11,7 @@ from pathlib import Path
 import re
 
 
-GENERATOR_VERSION = "3.5.1"
+GENERATOR_VERSION = "3.6.0"
 # Names the tool in every report, so a reader who only has the file can find
 # where it came from.
 GENERATOR = "architecture-skills plugin, c4-diagrams skill"
