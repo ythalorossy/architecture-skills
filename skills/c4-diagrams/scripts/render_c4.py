@@ -112,8 +112,16 @@ SUMMARY_KEYS = ("overview", "findings", "recommendations")
 # The keys c4-model-reference.md documents, and the only ones anything reads.
 # Everything else is dropped on the floor, so say so.
 RELATIONSHIP_KEYS = ("from", "to", "description", "technology", "assumption")
-FLOW_KEYS = ("id", "name", "description", "steps", "evidence", "assumption")
+FLOW_KEYS = ("id", "name", "description", "steps", "evidence", "assumption", "scenarios")
 STEP_KEYS = ("from", "to", "description", "technology", "reply", "async", "note", "evidence", "assumption")
+# A scenario is one concrete run of a flow: its steps may also name the payload
+# and the data-store write. Flow steps take neither.
+SCENARIO_KEYS = ("id", "name", "given", "steps", "evidence", "assumption")
+SCENARIO_STEP_KEYS = STEP_KEYS + ("payload", "store")
+PAYLOAD_KEYS = ("type", "fields")
+STORE_KEYS = ("target", "kind", "operation")
+STORE_KINDS = ("table", "collection", "key", "topic", "queue", "bucket", "file")
+STORE_OPERATIONS = ("read", "insert", "update", "upsert", "delete", "publish", "consume")
 
 
 def _did_you_mean(value, candidates):
@@ -128,6 +136,16 @@ def _unknown_keys(item, allowed, label, warnings):
     for key in item:
         if key not in allowed:
             warnings.append(f"{label}: unknown key {key!r}{_did_you_mean(key, allowed)}; it is ignored")
+
+
+def _check_evidence_entries(entries, repo, prefix, warnings):
+    """Warn about each evidence entry that points at nothing (needs a repo)."""
+    if repo is None:
+        return
+    for entry in entries or []:
+        problem = _evidence_problem(entry, Path(repo))
+        if problem:
+            warnings.append(f"{prefix}: evidence {entry!r} {problem}")
 
 
 def _evidence_problem(entry, repo):
@@ -306,19 +324,11 @@ def validate(model, facts, result=None, repo=None):
         proven = flow.get("evidence") or any(step.get("evidence") for step in flow["steps"])
         if not proven and not flow.get("assumption"):
             warnings.append(f"flow {label!r} ({flow['name']}): no evidence and not marked as an assumption")
-        if repo is not None:
-            for entry in flow.get("evidence") or []:
-                problem = _evidence_problem(entry, Path(repo))
-                if problem:
-                    warnings.append(f"flow {label!r}: evidence {entry!r} {problem}")
+        _check_evidence_entries(flow.get("evidence"), repo, f"flow {label!r}", warnings)
 
         for number, step in enumerate(flow["steps"], 1):
             _unknown_keys(step, STEP_KEYS, f"flows[{flow_index}].steps[{number - 1}]", warnings)
-            if repo is not None:
-                for entry in step.get("evidence") or []:
-                    problem = _evidence_problem(entry, Path(repo))
-                    if problem:
-                        warnings.append(f"flow {label!r} step {number}: evidence {entry!r} {problem}")
+            _check_evidence_entries(step.get("evidence"), repo, f"flow {label!r} step {number}", warnings)
             for end in ("from", "to"):
                 if step.get(end) not in known:
                     invalid(
@@ -326,6 +336,54 @@ def validate(model, facts, result=None, repo=None):
                         f"{number}: unknown {end} {step.get(end)!r}{_did_you_mean(step.get(end), known)} "
                         "(use a person, container or external system id, or a component id from c4-facts.json)"
                     )
+
+        data_stores = {e["id"] for e in model.get("containers") or []
+                       if e.get("id") and e.get("type") in ("database", "queue")}
+        scenarios = flow.get("scenarios") or []
+        seen_ids = set()
+        for j, scenario in enumerate(scenarios):
+            if not isinstance(scenario, dict) or not isinstance(scenario.get("steps"), list):
+                continue  # model_check reports the structure
+            where = f"flows[{flow_index}].scenarios[{j}]"
+            _unknown_keys(scenario, SCENARIO_KEYS, where, warnings)
+            scenario_label = scenario.get("id") or scenario.get("name")
+            if scenario.get("id") in seen_ids:
+                warnings.append(f"flow {label!r}: duplicate scenario id {scenario['id']!r} ({where})")
+            seen_ids.add(scenario.get("id"))
+            steps = [st for st in scenario["steps"] if isinstance(st, dict)]
+            proven = scenario.get("evidence") or any(st.get("evidence") for st in steps)
+            if not proven and not scenario.get("assumption") and not flow.get("assumption"):
+                warnings.append(f"flow {label!r} scenario {scenario_label!r}: "
+                                "no evidence and not marked as an assumption")
+            _check_evidence_entries(scenario.get("evidence"), repo,
+                                    f"flow {label!r} scenario {scenario_label!r}", warnings)
+            for number, step in enumerate(steps, 1):
+                step_where = f"{where}.steps[{number - 1}]"
+                _unknown_keys(step, SCENARIO_STEP_KEYS, step_where, warnings)
+                _check_evidence_entries(step.get("evidence"), repo,
+                                        f"flow {label!r} scenario {scenario_label!r} step {number}", warnings)
+                for end in ("from", "to"):
+                    if step.get(end) not in known:
+                        invalid(
+                            f"{step_where}: flow {flow['name']!r} scenario {scenario_label!r} step "
+                            f"{number}: unknown {end} {step.get(end)!r}{_did_you_mean(step.get(end), known)} "
+                            "(use a person, container or external system id, or a component id from c4-facts.json)"
+                        )
+                payload = step.get("payload")
+                if isinstance(payload, dict):
+                    _unknown_keys(payload, PAYLOAD_KEYS, f"{step_where}.payload", warnings)
+                store = step.get("store")
+                if isinstance(store, dict):
+                    _unknown_keys(store, STORE_KEYS, f"{step_where}.store", warnings)
+                    for key, allowed in (("kind", STORE_KINDS), ("operation", STORE_OPERATIONS)):
+                        if key in store and store[key] not in allowed:
+                            warnings.append(
+                                f"{step_where}.store: unknown {key} {store[key]!r}"
+                                f"{_did_you_mean(store[key], allowed)}; use {', '.join(allowed)}")
+                    if step.get("from") not in data_stores and step.get("to") not in data_stores:
+                        warnings.append(
+                            f"{step_where}: store is set but neither end is a data store "
+                            "(a database or queue container); it is ignored")
 
     for key in (model.get("summary") or {}):
         if key not in SUMMARY_KEYS:
@@ -1440,13 +1498,26 @@ def _assumptions(model):
         steps = flow.get("steps") or []
         if flow.get("assumption"):
             items.append(f"- **{flow['name']}** (key flow): {flow.get('description') or 'no description'}")
-            continue
-        for number, step in enumerate(steps, 1):
-            if _unproven(flow, step):
-                items.append(
-                    f"- **{flow['name']}**, step {number} ({step.get('from')} → {step.get('to')}): "
-                    f"{step.get('description') or 'no description'}"
-                )
+        else:
+            for number, step in enumerate(steps, 1):
+                if _unproven(flow, step):
+                    items.append(
+                        f"- **{flow['name']}**, step {number} ({step.get('from')} → {step.get('to')}): "
+                        f"{step.get('description') or 'no description'}"
+                    )
+        for scenario in flow.get("scenarios") or []:
+            name = f"{flow['name']} · {scenario.get('name')}"
+            if scenario.get("assumption"):
+                items.append(f"- **{name}** (scenario): {scenario.get('given') or 'no starting conditions'}")
+                continue
+            # An assumption flow makes its scenarios' unbacked steps unproven too.
+            owner = flow if flow.get("assumption") else scenario
+            for number, step in enumerate(scenario.get("steps") or [], 1):
+                if _unproven(owner, step):
+                    items.append(
+                        f"- **{name}**, step {number} ({step.get('from')} → {step.get('to')}): "
+                        f"{step.get('description') or 'no description'}"
+                    )
     return items
 
 
