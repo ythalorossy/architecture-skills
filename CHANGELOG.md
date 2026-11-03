@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.7.0 — 2026-11-03
+
+### Added
+
+- **Key flows can show their data.** Each key flow in `c4-model.json` can carry optional `scenarios` — by default its main success case and its most important failure. Each scenario is drawn as a new sequence diagram next to its flow, with the payload type and key fields on every arrow and the table, key or topic each write lands in, and a data table sits under the diagram. Existing diagrams and sections are unchanged, and a model without scenarios renders exactly as before. The bookshop example now shows both scenarios.
+- **Scenario warnings.** `render_c4.py` warns about unknown keys in a scenario, `payload` or `store`; a `store.kind` or `store.operation` outside the allowed values; a store on a step that touches no data store; a scenario with no evidence that is not marked as an assumption; duplicate scenario ids; and a payload type, payload field or store target that its cited lines don't show. `payload` and `store` on a plain flow step are ignored, with a warning.
+
 ## 3.6.0 — 2026-10-28
 
 ### Changed
