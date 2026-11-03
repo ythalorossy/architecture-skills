@@ -9,7 +9,7 @@ from pathlib import Path
 
 import helpers  # noqa: F401  (puts the c4 scripts on sys.path)
 from helpers import run_analyzer
-from scripts import model_check, render_c4
+from scripts import mermaid_syntax, model_check, render_c4
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "repos" / "bookshop"
 
@@ -284,12 +284,19 @@ class ScenarioDiagramTest(unittest.TestCase):
         self.assertEqual(render_c4._data_text({}), "")
 
     def test_payload_text_is_escaped(self):
-        mermaid = self.with_data(payload={"type": "Map<String; #Order>", "fields": ["a;b"]})
+        mermaid = self.with_data(payload={"type": "Map<String, List<Order>>", "fields": ["items[]", 'a"b']})
         line = self.messages(mermaid)[0]
-        data = line.split("<br/>", 1)[1]
-        self.assertNotIn(";", data.replace("#59;", "").replace("#35;", "").replace("#lt;", "").replace("#gt;", ""))
-        self.assertNotIn("#Order", data)
         self.assertEqual(line.count("<br/>"), 1)
+        data = line.split("<br/>", 1)[1]
+        self.assertIn("Map#lt;String, List#lt;Order#gt;#gt;", data)
+        self.assertNotIn("<", data)
+        self.assertNotIn(">", data)
+        # # and ; are entity codes (as sequence_msg produces), encoded once.
+        hashed = self.with_data(payload={"type": "Map<String; #Order>"})
+        data = self.messages(hashed)[0].split("<br/>", 1)[1]
+        self.assertEqual(data, "Map#lt;String#59; #35;Order#gt;")
+        # the message text is what mermaid_syntax produces for sequence messages
+        self.assertEqual(mermaid_syntax.label_text("sequence_msg", "a;#"), "a#59;#35;")
 
     def test_stem_uses_flow_name_when_id_missing(self):
         model = self.model()

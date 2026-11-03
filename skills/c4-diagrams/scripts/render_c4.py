@@ -1349,6 +1349,17 @@ def _step_line(owner, step, safe, with_data=True):
     return lines
 
 
+def _data_part(text):
+    """
+    A payload or store part, safe beside the literal `<br/>`.
+
+    Mermaid reads sequence messages as sanitized HTML, so a raw `<String>` is
+    taken for a tag and dropped. Encoding after `_seq_text` cannot double-encode:
+    its `#35;`/`#59;` codes hold no angle brackets.
+    """
+    return _seq_text(text).replace("<", "#lt;").replace(">", "#gt;")
+
+
 def _data_text(step):
     """Second message line of a scenario step: payload type and key fields, then the store write."""
     parts = []
@@ -1361,14 +1372,14 @@ def _data_text(step):
             if len(fields) > PAYLOAD_FIELDS_SHOWN:
                 shown.append("\u2026")
             text += " {" + ", ".join(shown) + "}"
-        parts.append(_seq_text(text))
+        parts.append(_data_part(text))
     store = step.get("store")
     if isinstance(store, dict) and store.get("target"):
         text = f"{str(store['operation']).upper()} " if store.get("operation") else ""
         text += str(store["target"])
         if store.get("kind"):
             text += f" ({store['kind']})"
-        parts.append(_seq_text(text))
+        parts.append(_data_part(text))
     return " \u00b7 ".join(parts)
 
 
