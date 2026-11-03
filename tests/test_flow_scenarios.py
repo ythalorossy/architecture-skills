@@ -343,7 +343,9 @@ class ScenarioDiagramTest(unittest.TestCase):
         self.assertEqual(self.diagrams(self.model([])), [])
 
 
-class ScenarioReportTest(unittest.TestCase):
+class _ScenarioReportFixture:
+    """The bookshop model and a payment-declined scenario shared by the report tests."""
+
     @classmethod
     def setUpClass(cls):
         cls.reference = json.loads((FIXTURE / "c4-model.json").read_text(encoding="utf-8"))
@@ -357,6 +359,8 @@ class ScenarioReportTest(unittest.TestCase):
         return [{"id": "payment-declined", "name": "Payment declined",
                  "given": "card is declined by the provider", "steps": steps}]
 
+
+class ScenarioReportTest(_ScenarioReportFixture, unittest.TestCase):
     def render(self, scenarios=None, with_model_scenarios=True):
         """(report text, output dir listing) for the bookshop model, optionally with scenarios."""
         with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()):
@@ -417,6 +421,10 @@ class ScenarioReportTest(unittest.TestCase):
                 kept.append(line)
         self.assertEqual("\n".join(kept), without)
 
+
+class ScenarioRealRenderTest(_ScenarioReportFixture, unittest.TestCase):
+    """Named with "Real" so CI's real-render job (`-k Real`) runs it."""
+
     @unittest.skipUnless(os.environ.get("C4_REAL_RENDER") == "1",
                          "set C4_REAL_RENDER=1 to render with the real mermaid-cli")
     def test_scenario_svg_renders_with_second_line(self):
@@ -433,7 +441,6 @@ class ScenarioReportTest(unittest.TestCase):
         self.assertIn("order_id, charge_id", svg)
         self.assertIn("INSERT orders (table)", svg)
         self.assertIn("![", report.split("##### Scenario: Payment declined")[1].split("###")[0])
-
 
 
 class ScenarioEvidenceCheckTest(unittest.TestCase):
