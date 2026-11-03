@@ -82,6 +82,7 @@ class ScenarioValidationTest(unittest.TestCase):
         flow.pop("scenarios", None)
         steps = [copy.deepcopy(s) for s in flow["steps"][:3]]
         steps[0]["payload"] = {"type": "dict", "fields": ["book_id"]}
+        steps[0]["evidence"] = ["web/src/api/client.ts:16"]  # the line that shows book_id
         flow["scenarios"] = [{"id": "happy", "name": "Happy path", "given": "a stocked book",
                               "steps": steps, "evidence": ["web/src/main.tsx:15"]}]
         return model
@@ -436,3 +437,94 @@ class ScenarioReportTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ScenarioEvidenceCheckTest(unittest.TestCase):
+    """A payload field, a named type or a store target must appear in the cited lines."""
+
+    @classmethod
+    def setUpClass(cls):
+        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()):
+            cls.facts, _ = run_analyzer(FIXTURE, tmp)
+        cls.reference = json.loads((FIXTURE / "c4-model.json").read_text(encoding="utf-8"))
+
+    def model(self, **step):
+        model = copy.deepcopy(self.reference)
+        flow = model["flows"][0]
+        flow.pop("scenarios", None)
+        base = copy.deepcopy(flow["steps"][0])
+        base.update(step)
+        flow["scenarios"] = [{"id": "happy", "name": "Happy path", "given": "a stocked book",
+                              "steps": [base], "evidence": ["web/src/main.tsx:15"]}]
+        return model
+
+    def check(self, **step):
+        result = render_c4.validate(self.model(**step), self.facts, repo=FIXTURE)
+        self.assertEqual(result.errors, [])
+        return [w for w in result.warnings if "is not in its cited lines" in w]
+
+    def test_field_present_at_its_line_does_not_warn(self):
+        self.assertEqual(self.check(
+            payload={"type": "object", "fields": ["book_id", "quantity?", "card_token[]"]},
+            evidence=["web/src/api/client.ts:16"]), [])
+
+    def test_field_missing_from_its_line_warns_once(self):
+        warnings = self.check(payload={"type": "object", "fields": ["book_id", "isbn"]},
+                              evidence=["web/src/api/client.ts:16"])
+        self.assertEqual(warnings, [
+            "flow 'place-order' scenario 'happy' step 1: payload field 'isbn' is not in its cited lines"])
+
+    def test_named_type_missing_warns_and_literal_type_does_not(self):
+        named = self.check(payload={"type": "OrderDTO", "fields": ["book_id"]},
+                           evidence=["web/src/api/client.ts:16"])
+        self.assertEqual(len(named), 1, named)
+        self.assertIn("payload type 'OrderDTO' is not in its cited lines", named[0])
+        for literal in ("dict", "object", "tuple", "String"):
+            self.assertEqual(self.check(payload={"type": literal, "fields": ["book_id"]},
+                                        evidence=["web/src/api/client.ts:16"]), [], literal)
+
+    def test_type_found_in_a_second_cited_declaration(self):
+        self.assertEqual(self.check(
+            payload={"type": "Order", "fields": ["book_id"]},
+            evidence=["web/src/api/client.ts:16", "api/bookshop/orders/service.py:9"]), [])
+
+    def test_store_target_present_and_absent(self):
+        step = dict(from_="x")
+        store = {"target": "orders", "kind": "table", "operation": "insert"}
+        model = self.model(evidence=["api/bookshop/orders/service.py:17-18"], store=store)
+        step = model["flows"][0]["scenarios"][0]["steps"][0]
+        step.update({"from": "bookshop.orders", "to": "db-postgresql"})
+        ok = render_c4.validate(model, self.facts, repo=FIXTURE).warnings
+        self.assertFalse([w for w in ok if "store target" in w], ok)
+        step["store"] = {"target": "rate-limit bucket", "kind": "key", "operation": "update"}
+        bad = [w for w in render_c4.validate(model, self.facts, repo=FIXTURE).warnings
+               if "store target" in w]
+        self.assertEqual(bad, [
+            "flow 'place-order' scenario 'happy' step 1: store target 'rate-limit bucket' "
+            "is not in its cited lines"])
+
+    def test_evidence_without_a_line_number_is_skipped(self):
+        self.assertEqual(self.check(payload={"type": "OrderDTO", "fields": ["nothing"]},
+                                    evidence=["web/src/api/client.ts"]), [])
+
+    def test_no_repo_skips_the_check(self):
+        model = self.model(payload={"type": "OrderDTO", "fields": ["nothing"]},
+                           evidence=["web/src/api/client.ts:16"])
+        warnings = render_c4.validate(model, self.facts).warnings
+        self.assertFalse([w for w in warnings if "cited lines" in w], warnings)
+
+    def test_each_cited_file_is_read_once(self):
+        model = self.model(payload={"type": "object", "fields": ["book_id", "quantity"]},
+                           evidence=["web/src/api/client.ts:16"])
+        steps = model["flows"][0]["scenarios"][0]["steps"]
+        steps.append(copy.deepcopy(steps[0]))
+        reads = []
+        original = Path.read_text
+
+        def counting(path, *args, **kwargs):
+            reads.append(Path(path).name)
+            return original(path, *args, **kwargs)
+
+        with mock.patch.object(Path, "read_text", counting):
+            render_c4.validate(model, self.facts, repo=FIXTURE)
+        self.assertEqual(reads.count("client.ts"), 1, reads)

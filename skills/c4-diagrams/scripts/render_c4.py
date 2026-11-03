@@ -138,17 +138,77 @@ def _unknown_keys(item, allowed, label, warnings):
             warnings.append(f"{label}: unknown key {key!r}{_did_you_mean(key, allowed)}; it is ignored")
 
 
-def _check_evidence_entries(entries, repo, prefix, warnings):
+def _check_evidence_entries(entries, repo, prefix, warnings, cache=None):
     """Warn about each evidence entry that points at nothing (needs a repo)."""
     if repo is None:
         return
     for entry in entries or []:
-        problem = _evidence_problem(entry, Path(repo))
+        problem = _evidence_problem(entry, Path(repo), cache)
         if problem:
             warnings.append(f"{prefix}: evidence {entry!r} {problem}")
 
 
-def _evidence_problem(entry, repo):
+def _cited_lines(file, cache):
+    """The lines of a cited file, read once per `cache`; None when unreadable."""
+    if cache is not None and file in cache:
+        return cache[file]
+    try:
+        lines = file.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        lines = None
+    if cache is not None:
+        cache[file] = lines
+    return lines
+
+
+def _parse_evidence(entry):
+    """("path", first line or None, last line or None) of "path", "path:12", "path:3-9 (note)"."""
+    reference = str(entry).split(" (")[0].strip()
+    found = re.fullmatch(r"(.+?):(\d+)(?:-(\d+))?", reference)
+    if not found:
+        return reference, None, None
+    first = int(found.group(2))
+    return found.group(1), first, int(found.group(3) or first)
+
+
+# Types that name no declaration to look for.
+LITERAL_TYPES = {"dict", "object", "tuple", "list", "array", "map", "string", "str", "int", "integer",
+                 "long", "float", "double", "decimal", "number", "bool", "boolean", "bytes", "any", "void"}
+
+
+def _check_scenario_evidence(step, repo, cache, prefix, warnings):
+    """Warn about a payload type or field, or a store target, that its cited lines do not show."""
+    payload, store = step.get("payload"), step.get("store")
+    payload = payload if isinstance(payload, dict) else {}
+    store = store if isinstance(store, dict) else {}
+    tokens = []
+    ptype = payload.get("type")
+    if isinstance(ptype, str) and ptype.strip().rstrip("[]?").lower() not in LITERAL_TYPES:
+        tokens.append(("payload type", ptype.strip(), re.sub(r"[\[\]?<>].*$", "", ptype.strip()) or ptype.strip()))
+    for field in payload.get("fields") or []:
+        if isinstance(field, str):
+            tokens.append(("payload field", field, field.rstrip("[]?")))
+    if isinstance(store.get("target"), str):
+        tokens.append(("store target", store["target"], store["target"]))
+    if not tokens or repo is None:
+        return
+    text, resolved = [], False
+    for entry in step.get("evidence") or []:
+        path, first, last = _parse_evidence(entry)
+        file = Path(repo) / path
+        lines = _cited_lines(file, cache) if first is not None and file.is_file() else None
+        if lines is not None:
+            resolved = True
+            text.extend(lines[first - 1:last])
+    if not resolved:
+        return
+    shown = "\n".join(text).lower()
+    for kind, name, token in tokens:
+        if token.lower() not in shown:
+            warnings.append(f"{prefix}: {kind} {name!r} is not in its cited lines")
+
+
+def _evidence_problem(entry, repo, cache=None):
     """Why an evidence entry ("path", "path:12", "path:3-9 (note)") points at nothing, or None."""
     reference = str(entry).split(" (")[0].strip()
     path, line = reference, None
@@ -159,10 +219,10 @@ def _evidence_problem(entry, repo):
     if not file.exists():
         return "does not exist in the repository"
     if line is not None and file.is_file():
-        try:
-            count = len(file.read_text(encoding="utf-8", errors="replace").splitlines())
-        except OSError:
+        lines = _cited_lines(file, cache)
+        if lines is None:
             return None
+        count = len(lines)
         if line > count:
             return f"is past the end of the file ({count} lines)"
     return None
@@ -187,6 +247,7 @@ def validate(model, facts, result=None, repo=None):
     errors = result.errors
     drift = result.drift
     warnings = result.warnings
+    cited = {}  # cited file -> lines: each file is read once per validation
 
     def invalid(message):
         errors.append(f"c4-model.json: {message}")
@@ -324,11 +385,11 @@ def validate(model, facts, result=None, repo=None):
         proven = flow.get("evidence") or any(step.get("evidence") for step in flow["steps"])
         if not proven and not flow.get("assumption"):
             warnings.append(f"flow {label!r} ({flow['name']}): no evidence and not marked as an assumption")
-        _check_evidence_entries(flow.get("evidence"), repo, f"flow {label!r}", warnings)
+        _check_evidence_entries(flow.get("evidence"), repo, f"flow {label!r}", warnings, cited)
 
         for number, step in enumerate(flow["steps"], 1):
             _unknown_keys(step, STEP_KEYS, f"flows[{flow_index}].steps[{number - 1}]", warnings)
-            _check_evidence_entries(step.get("evidence"), repo, f"flow {label!r} step {number}", warnings)
+            _check_evidence_entries(step.get("evidence"), repo, f"flow {label!r} step {number}", warnings, cited)
             for end in ("from", "to"):
                 if step.get(end) not in known:
                     invalid(
@@ -357,12 +418,13 @@ def validate(model, facts, result=None, repo=None):
                 warnings.append(f"flow {label!r} scenario {scenario_label!r}: "
                                 "no evidence and not marked as an assumption")
             _check_evidence_entries(scenario.get("evidence"), repo,
-                                    f"flow {label!r} scenario {scenario_label!r}", warnings)
+                                    f"flow {label!r} scenario {scenario_label!r}", warnings, cited)
             for number, step in enumerate(steps, 1):
                 step_where = f"{where}.steps[{number - 1}]"
                 _unknown_keys(step, SCENARIO_STEP_KEYS, step_where, warnings)
-                _check_evidence_entries(step.get("evidence"), repo,
-                                        f"flow {label!r} scenario {scenario_label!r} step {number}", warnings)
+                step_label = f"flow {label!r} scenario {scenario_label!r} step {number}"
+                _check_evidence_entries(step.get("evidence"), repo, step_label, warnings, cited)
+                _check_scenario_evidence(step, repo, cited, step_label, warnings)
                 for end in ("from", "to"):
                     if step.get(end) not in known:
                         invalid(
