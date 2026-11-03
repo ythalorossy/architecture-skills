@@ -202,5 +202,136 @@ class ScenarioValidationTest(unittest.TestCase):
                       render_c4._assumptions(model))
 
 
+class ScenarioDiagramTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()):
+            cls.facts, _ = run_analyzer(FIXTURE, tmp)
+        cls.reference = json.loads((FIXTURE / "c4-model.json").read_text(encoding="utf-8"))
+
+    # flow_diagrams output of the bookshop reference model, captured before
+    # _step_line was factored out of it.
+    BASELINE_FLOW_MERMAID = '---\ntitle: "Reader buys a book"\n---\nsequenceDiagram\n    actor reader as Reader\n    participant bookshop_web as Web app\n    participant web_src_api as web/src/api\n    participant bookshop_main as bookshop.main\n    participant bookshop_orders as bookshop.orders\n    participant ext_payments_example as Payment provider\n    participant db_postgresql as Orders database\n    reader->>bookshop_web: Clicks Buy on a book\n    web_src_api->>bookshop_main: POST /api/orders [JSON/HTTPS]\n    bookshop_main->>bookshop_orders: Places the order\n    bookshop_orders->>ext_payments_example: POST /v1/charges [HTTPS]\n    bookshop_orders->>db_postgresql: Inserts the order with its charge id [psycopg]\n    bookshop_main-->>web_src_api: Order id and charge id\n'
+
+    def model(self, scenarios=None):
+        model = copy.deepcopy(self.reference)
+        flow = model["flows"][0]
+        flow.pop("scenarios", None)
+        steps = [copy.deepcopy(s) for s in flow["steps"][:3]]
+        if scenarios is None:
+            scenarios = [{"id": "payment-declined", "name": "Payment declined", "steps": steps}]
+        flow["scenarios"] = scenarios
+        return model
+
+    def steps(self):
+        return [copy.deepcopy(s) for s in self.reference["flows"][0]["steps"][:3]]
+
+    def diagrams(self, model):
+        return render_c4.scenario_diagrams(model, self.facts)
+
+    def messages(self, mermaid):
+        return [l for l in mermaid.splitlines() if "->>" in l or "-)" in l or "-->>" in l]
+
+    def test_flow_diagrams_are_unchanged_by_refactor(self):
+        model = copy.deepcopy(self.reference)
+        model["flows"][0].pop("scenarios", None)
+        result = render_c4.flow_diagrams(model, self.facts)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0][2], self.BASELINE_FLOW_MERMAID)
+
+    def test_scenario_diagram_stem_and_title(self):
+        stem, flow_stem, title, mermaid, given = self.diagrams(self.model())[0]
+        self.assertEqual(stem, "c4-flow-place-order--payment-declined")
+        self.assertEqual(flow_stem, "c4-flow-place-order")
+        self.assertEqual(title, "Reader buys a book \u00b7 Payment declined")
+        self.assertEqual(given, "")
+        self.assertTrue(mermaid.startswith("---\ntitle:"))
+        self.assertIn("sequenceDiagram", mermaid)
+
+    def test_given_is_returned(self):
+        steps = self.steps()
+        model = self.model([{"id": "x", "name": "X", "given": "a stocked book", "steps": steps}])
+        self.assertEqual(self.diagrams(model)[0][4], "a stocked book")
+
+    def with_data(self, **data):
+        steps = self.steps()
+        steps[0].update(data)
+        return self.diagrams(self.model([{"id": "x", "name": "X", "steps": steps}]))[0][3]
+
+    def test_payload_line(self):
+        mermaid = self.with_data(payload={"type": "dict", "fields": ["book_id", "quantity", "card_token"]})
+        self.assertIn("<br/>dict {book_id, quantity, card_token}", self.messages(mermaid)[0])
+
+    def test_payload_type_alone_without_fields(self):
+        mermaid = self.with_data(payload={"type": "tuple"})
+        line = self.messages(mermaid)[0]
+        self.assertIn("<br/>tuple", line)
+        self.assertNotIn("{", line)
+
+    def test_fields_beyond_four_collapse(self):
+        mermaid = self.with_data(payload={"type": "T", "fields": list("abcdef")})
+        self.assertIn("{a, b, c, d, \u2026}", self.messages(mermaid)[0])
+
+    def test_store_text(self):
+        store = {"operation": "insert", "target": "orders", "kind": "table"}
+        mermaid = self.with_data(store=store)
+        self.assertIn("<br/>INSERT orders (table)", self.messages(mermaid)[0])
+        mermaid = self.with_data(store=store, payload={"type": "dict", "fields": ["a"]})
+        self.assertIn("<br/>dict {a} \u00b7 INSERT orders (table)", self.messages(mermaid)[0])
+
+    def test_store_without_operation_or_kind(self):
+        self.assertEqual(render_c4._data_text({"store": {"target": "orders"}}), "orders")
+        self.assertEqual(render_c4._data_text({}), "")
+
+    def test_payload_text_is_escaped(self):
+        mermaid = self.with_data(payload={"type": "Map<String; #Order>", "fields": ["a;b"]})
+        line = self.messages(mermaid)[0]
+        data = line.split("<br/>", 1)[1]
+        self.assertNotIn(";", data.replace("#59;", "").replace("#35;", "").replace("#lt;", "").replace("#gt;", ""))
+        self.assertNotIn("#Order", data)
+        self.assertEqual(line.count("<br/>"), 1)
+
+    def test_stem_uses_flow_name_when_id_missing(self):
+        model = self.model()
+        model["flows"][0].pop("id")
+        stem, flow_stem, *_ = self.diagrams(model)[0]
+        flow_stem_now = render_c4.flow_diagrams(model, self.facts)[0][0]
+        self.assertEqual(flow_stem, flow_stem_now)
+        self.assertTrue(stem.startswith("c4-flow-reader-buys-a-book--"), stem)
+
+    def test_colliding_scenario_slugs_get_distinct_stems(self):
+        steps = self.steps()
+        model = self.model([{"id": "card-declined", "name": "A", "steps": steps},
+                            {"name": "Card declined", "steps": copy.deepcopy(steps)}])
+        stems = [d[0] for d in self.diagrams(model)]
+        self.assertEqual(len(set(stems)), 2)
+        self.assertTrue(stems[0].endswith("--card-declined"), stems)
+        self.assertTrue(stems[1].endswith("--card-declined-2"), stems)
+
+    def test_unproven_scenario_step_gets_question_mark(self):
+        steps = self.steps()
+        for step in steps:
+            step.pop("assumption", None)
+            step["evidence"] = ["a.py:1"]
+        steps[1].pop("evidence")
+        steps[1]["assumption"] = True
+        model = self.model([{"id": "x", "name": "X", "steps": steps}])
+        lines = self.messages(self.diagrams(model)[0][3])
+        self.assertEqual([("(?)" in l) for l in lines], [False, True, False])
+
+    def test_assumption_flow_marks_scenario_steps(self):
+        steps = self.steps()
+        for step in steps:
+            step.pop("assumption", None)
+            step.pop("evidence", None)
+        model = self.model([{"id": "x", "name": "X", "steps": steps}])
+        model["flows"][0]["assumption"] = True
+        lines = self.messages(self.diagrams(model)[0][3])
+        self.assertTrue(all("(?)" in l for l in lines), lines)
+
+    def test_flows_without_scenarios_give_no_scenario_diagrams(self):
+        self.assertEqual(self.diagrams(self.model([])), [])
+
+
 if __name__ == "__main__":
     unittest.main()

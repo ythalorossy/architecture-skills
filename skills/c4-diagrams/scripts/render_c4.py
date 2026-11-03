@@ -1320,36 +1320,118 @@ def _unproven(flow, step):
     return bool(step.get("assumption") or flow.get("assumption"))
 
 
+#: Payload fields named on a scenario message before the rest collapse to an ellipsis.
+PAYLOAD_FIELDS_SHOWN = 4
+
+
+def _step_line(owner, step, safe, with_data=True):
+    """
+    The Mermaid line(s) for one step: its message and, with a note, a `Note over`.
+
+    `owner` decides whether the step is unproven (a flow, or a scenario inside
+    a flow that is not itself an assumption). A scenario step may carry a
+    payload and a data-store write; they are the message's second line. A
+    flow step's are ignored (`with_data=False`), as validation warns.
+    """
+    arrow = "-->>" if step.get("reply") else ("-)" if step.get("async") else "->>")
+    text = _seq_text(step.get("description", ""))
+    if _unproven(owner, step):
+        # Nothing in the code backs this step: say so where it is read.
+        text += " (?)"
+    if step.get("technology"):
+        text += f" [{_seq_text(step['technology'])}]"
+    data = _data_text(step) if with_data else ""
+    if data:
+        text = f"{text}<br/>{data}"
+    lines = [f"    {safe[step['from']]}{arrow}{safe[step['to']]}: {text or ' '}"]
+    if step.get("note"):
+        lines.append(f"    Note over {safe[step['to']]}: {_seq_text(step['note'])}")
+    return lines
+
+
+def _data_text(step):
+    """Second message line of a scenario step: payload type and key fields, then the store write."""
+    parts = []
+    payload = step.get("payload")
+    if isinstance(payload, dict) and payload.get("type"):
+        fields = [str(f) for f in payload.get("fields") or []]
+        text = str(payload["type"])
+        if fields:
+            shown = fields[:PAYLOAD_FIELDS_SHOWN]
+            if len(fields) > PAYLOAD_FIELDS_SHOWN:
+                shown.append("\u2026")
+            text += " {" + ", ".join(shown) + "}"
+        parts.append(_seq_text(text))
+    store = step.get("store")
+    if isinstance(store, dict) and store.get("target"):
+        text = f"{str(store['operation']).upper()} " if store.get("operation") else ""
+        text += str(store["target"])
+        if store.get("kind"):
+            text += f" ({store['kind']})"
+        parts.append(_seq_text(text))
+    return " \u00b7 ".join(parts)
+
+
+def _flow_slug(flow, index):
+    return re.sub(r"[^a-z0-9]+", "-", (flow.get("id") or flow["name"]).lower()).strip("-") or str(index)
+
+
+def _sequence_diagram(steps, owner, title, participants, with_data=True):
+    """Mermaid sequence diagram for `steps`, drawing only the participants they use."""
+    used = []
+    for step in steps:
+        for end in (step["from"], step["to"]):
+            if end not in used:
+                used.append(end)
+    alloc = _ms.IdAllocator("sequence")
+    safe = {node: alloc.id(node) for node in used}
+    lines = ["sequenceDiagram"]
+    for node in used:
+        label, kind = participants.get(node, (node, "participant"))
+        lines.append(f'    {kind} {safe[node]} as {_ms.label_text("sequence_alias", str(label))}')
+    for step in steps:
+        lines.extend(_step_line(owner, step, safe, with_data))
+    return _with_title("\n".join(lines) + "\n", title)
+
+
 def flow_diagrams(model, facts):
     """[(stem, title, mermaid, description)] for each key flow in the model, as sequence diagrams."""
     participants = _participants(model, facts)
     results = []
     for index, flow in enumerate(model.get("flows") or [], 1):
-        used = []
-        for step in flow["steps"]:
-            for end in (step["from"], step["to"]):
-                if end not in used:
-                    used.append(end)
-        alloc = _ms.IdAllocator("sequence")
-        safe = {node: alloc.id(node) for node in used}
-        lines = ["sequenceDiagram"]
-        for node in used:
-            label, kind = participants.get(node, (node, "participant"))
-            lines.append(f'    {kind} {safe[node]} as {_ms.label_text("sequence_alias", str(label))}')
-        for step in flow["steps"]:
-            arrow = "-->>" if step.get("reply") else ("-)" if step.get("async") else "->>")
-            text = _seq_text(step.get("description", ""))
-            if _unproven(flow, step):
-                # Nothing in the code backs this step: say so where it is read.
-                text += " (?)"
-            if step.get("technology"):
-                text += f" [{_seq_text(step['technology'])}]"
-            lines.append(f"    {safe[step['from']]}{arrow}{safe[step['to']]}: {text or ' '}")
-            if step.get("note"):
-                lines.append(f"    Note over {safe[step['to']]}: {_seq_text(step['note'])}")
-        slug = re.sub(r"[^a-z0-9]+", "-", (flow.get("id") or flow["name"]).lower()).strip("-") or str(index)
-        results.append((f"c4-flow-{slug}", flow["name"],
-                        _with_title("\n".join(lines) + "\n", flow["name"]), flow.get("description", "")))
+        results.append((f"c4-flow-{_flow_slug(flow, index)}", flow["name"],
+                        _sequence_diagram(flow["steps"], flow, flow["name"], participants, with_data=False),
+                        flow.get("description", "")))
+    return results
+
+
+def scenario_diagrams(model, facts):
+    """
+    [(stem, flow_stem, title, mermaid, given)] for each scenario of each flow.
+
+    The stem is the flow's stem plus `--<scenario slug>`; a slug that repeats
+    within one flow gets -2, -3, ... A scenario step is unproven by the same
+    rule the Assumptions list uses: the flow owns it when the flow is an
+    assumption, otherwise the scenario does.
+    """
+    participants = _participants(model, facts)
+    results = []
+    for index, flow in enumerate(model.get("flows") or [], 1):
+        flow_stem = f"c4-flow-{_flow_slug(flow, index)}"
+        taken = set()
+        for number, scenario in enumerate(flow.get("scenarios") or [], 1):
+            slug = re.sub(r"[^a-z0-9]+", "-", (scenario.get("id") or scenario["name"]).lower()).strip("-") \
+                or str(number)
+            stem, count = f"{flow_stem}--{slug}", 1
+            while stem in taken:
+                count += 1
+                stem = f"{flow_stem}--{slug}-{count}"
+            taken.add(stem)
+            title = f"{flow['name']} \u00b7 {scenario['name']}"
+            owner = flow if flow.get("assumption") else scenario
+            results.append((stem, flow_stem, title,
+                            _sequence_diagram(scenario["steps"], owner, title, participants),
+                            scenario.get("given") or ""))
     return results
 
 
