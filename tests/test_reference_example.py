@@ -103,6 +103,10 @@ class ReferenceExampleTest(unittest.TestCase):
             "a flow with a reply step": any(s.get("reply") is True for f in flows for s in f["steps"]),
             "a code entry": bool(model.get("code")),
             "an excluded fact with a reason": any(e.get("reason") for e in model.get("excluded") or []),
+            "a scenario with a payload and a store": any(
+                s.get("payload") and s.get("store")
+                for f in flows for sc in f.get("scenarios") or [] for s in sc["steps"]
+            ),
         }
         missing = [name for name, present in features.items() if not present]
         self.assertEqual(missing, [], "the example must show every contract feature")

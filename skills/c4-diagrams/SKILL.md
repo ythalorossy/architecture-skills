@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires python3 (3.11+, checked at startup). Node.js with @mermaid-js/mermaid-cli is optional, for SVG rendering.
 metadata:
   author: ythalorossy
-  version: "3.6.0"
+  version: "3.7.0"
 ---
 
 # Architecture Diagram Generator
@@ -25,7 +25,7 @@ Turn a repository into C4 diagrams (system context, containers, components, code
 | Key flows | 1–3 important requests traced step by step (sequence diagrams) | **you**, in `flows` |
 | Deployment, API, configuration, inventory, appendix | compose, Dockerfiles, Kubernetes, CI and hosting; HTTP routes; environment variables with defaults; frameworks and versions; every project and reference; the checks | the script |
 
-The script does the objective parts, with `file:line` evidence on everything it finds. You add the judgement: who uses the system, what each external system is for, the descriptions. `render_c4.py` checks your model against the facts and draws every level in one style.
+The script does the objective parts, with `file:line` evidence. You add the judgement: who uses the system, what each external system is for, the descriptions. `render_c4.py` checks your model against the facts and draws every level in one style.
 
 `<skill>/assets/detection-coverage.md` lists the patterns the script knows **and the blind spots they leave**. Read it before concluding something isn't there.
 
@@ -72,7 +72,7 @@ Write `c4-model.json` in the output folder, following `<skill>/assets/c4-model-r
 - data stores go in `containers` with `"type": "database"`;
 - every element has `evidence`, or `"assumption": true`;
 - describe each important component in one line, using the ids from `c4-facts.json` (module ids, and code ids such as `weather-api::controller`);
-- add 1–3 `flows`: each a named, ordered list of steps between people, containers, external systems or components. Use component ids inside a container, so the flow shows the code path;
+- add 1–3 `flows`: each a named, ordered list of steps between people, containers, external systems or components. Use component ids inside a container, so the flow shows the code path, and per flow a success and a failure `scenario` with payloads and stores (see the reference);
 - add `code`: 2–5 key components (ids from `c4-facts.json`), each with a one-line `description` and, optionally, the `types` to center the class diagram on;
 - add `summary`: an `overview` paragraph, your `findings` (each tied to a `file:line`) and `recommendations` (each backed by a finding). It becomes the report's "Architecture overview".
 
@@ -82,13 +82,13 @@ Then run:
 python3 "<skill>/scripts/render_c4.py" "<output folder>"
 ```
 
-Three tiers. `ok` draws the model as written. `drift` prints a `DRIFT:` line per uncovered fact and exits 0. `invalid` (a JSON syntax error with its line and column, a wrong-typed section with its JSON path, an unknown or duplicate id) draws facts-only and exits 1; `--strict` exits 2 on drift too. Messages suggest the likely fix (`did you mean 'bookshop-web'?`); evidence pointing at a missing file or line is a warning. It also warns once per diagram that fails to render, and rewrites the C4 section of `ArchitectureReport.md` and the `c4-*.mmd`/`.svg` files.
+Three tiers. `ok` draws the model as written. `drift` prints a `DRIFT:` line per uncovered fact and exits 0. `invalid` (a JSON syntax error with its line and column, a wrong-typed section with its JSON path, an unknown or duplicate id) draws facts-only and exits 1; `--strict` exits 2 on drift too. Messages suggest the likely fix (`did you mean 'bookshop-web'?`); evidence pointing at a missing file or line is a warning. It warns once per diagram that fails to render, and rewrites the C4 section of `ArchitectureReport.md` and the `c4-*.mmd`/`.svg` files.
 
 If `c4-model.json` already exists it was kept and may have been user-edited: update it rather than rewriting, and keep their wording.
 
 ### When Step 3 is finished
 
-Stop when `render_c4.py` reports `ok` with no `DRIFT:` line, every warning fixed or justified, and a `Coverage:` line whose `facts`, `containers described` and `components described` are complete and whose `people`, `flows` and `code` counts are all non-zero. A short number there means the model is unfinished, not that the script is fussy; an undescribed component is how "bare package names" reaches the user.
+Stop when `render_c4.py` reports `ok` with no `DRIFT:` line, every warning fixed or justified, and a `Coverage:` line whose `facts`, `containers described` and `components described` are complete and whose `people`, `flows` and `code` counts are non-zero. A short number means the model is unfinished; an undescribed component is how "bare package names" reaches the user.
 
 ## Step 4 — Report to the user
 

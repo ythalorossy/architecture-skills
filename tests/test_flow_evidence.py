@@ -138,7 +138,9 @@ class FlowEvidenceTest(unittest.TestCase):
         self.assertTrue(any("Places the order" in item for item in items), items)
 
     def test_a_proven_flow_is_not_listed(self):
-        items = render_c4._assumptions(copy.deepcopy(self.reference))
+        model = copy.deepcopy(self.reference)
+        model["flows"][0].pop("scenarios", None)
+        items = render_c4._assumptions(model)
         self.assertFalse(any("Reader buys a book" in item for item in items), items)
 
 

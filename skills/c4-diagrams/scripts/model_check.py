@@ -148,6 +148,66 @@ def _require_str_keys(item: dict, keys: Iterable[str], errors: list[str], path: 
             )
 
 
+def _check_flow_steps(steps, path: str, errors: list[str], scenario: bool = False) -> None:
+    """A list of step objects, each with string from/to. Scenario steps may also
+    carry a `payload` and a `store`."""
+    if not isinstance(steps, list):
+        errors.append(f"{path}: expected a list, got {type(steps).__name__}")
+        return
+    for index, step in enumerate(steps):
+        step_path = f"{path}[{index}]"
+        if not isinstance(step, dict):
+            errors.append(f"{step_path}: expected an object, got {type(step).__name__}")
+            continue
+        _require_str_keys(step, ("from", "to"), errors, step_path)
+        if scenario:
+            if "payload" in step:
+                _check_payload(step["payload"], f"{step_path}.payload", errors)
+            if "store" in step:
+                _check_store(step["store"], f"{step_path}.store", errors)
+
+
+def _check_id_is_string(item, path: str, errors: list[str]) -> None:
+    if "id" in item and item["id"] is not None and not isinstance(item["id"], str):
+        errors.append(f"{path}.id: expected a string, got {type(item['id']).__name__}")
+
+
+def _check_scenarios(scenarios, path: str, errors: list[str]) -> None:
+    if not _check_list_of_objects(scenarios, path, errors):
+        return
+    for index, scenario in enumerate(scenarios):
+        sub = f"{path}[{index}]"
+        _require_str_keys(scenario, ("name",), errors, sub)
+        _check_id_is_string(scenario, sub, errors)
+        _check_flow_steps(scenario.get("steps"), f"{sub}.steps", errors, scenario=True)
+
+
+def _check_payload(payload, path: str, errors: list[str]) -> None:
+    if not isinstance(payload, dict):
+        errors.append(f"{path}: expected an object, got {type(payload).__name__}")
+        return
+    _require_str_keys(payload, ("type",), errors, path)
+    fields = payload.get("fields")
+    if fields is None:
+        return
+    if not isinstance(fields, list):
+        errors.append(f"{path}.fields: expected a list, got {type(fields).__name__}")
+    elif not all(isinstance(f, str) for f in fields):
+        errors.append(f"{path}.fields: every field must be a string")
+
+
+def _check_store(store, path: str, errors: list[str]) -> None:
+    if not isinstance(store, dict):
+        errors.append(f"{path}: expected an object, got {type(store).__name__}")
+        return
+    _require_str_keys(store, ("target",), errors, path)
+    for key in ("kind", "operation"):
+        if key in store and not isinstance(store[key], str):
+            errors.append(
+                f"{path}: field {key!r} must be a string, got {type(store[key]).__name__}"
+            )
+
+
 def check_structure(model: dict) -> ValidationResult:
     """Structural pre-check: return a fresh ValidationResult with `errors`
     appended for every wrong-typed section or element.
@@ -189,20 +249,10 @@ def check_structure(model: dict) -> ValidationResult:
                     )
             elif section == "flows":
                 _require_str_keys(item, ("name",), errors, sub)
-                steps = item.get("steps")
-                step_path = f"{sub}.steps"
-                if not isinstance(steps, list):
-                    errors.append(
-                        f"{step_path}: expected a list, got {type(steps).__name__}"
-                    )
-                else:
-                    for step_index, step in enumerate(steps):
-                        if not isinstance(step, dict):
-                            errors.append(
-                                f"{step_path}[{step_index}]: expected an object, got {type(step).__name__}"
-                            )
-                            continue
-                        _require_str_keys(step, ("from", "to"), errors, f"{step_path}[{step_index}]")
+                _check_id_is_string(item, sub, errors)
+                _check_flow_steps(item.get("steps"), f"{sub}.steps", errors)
+                if "scenarios" in item:
+                    _check_scenarios(item["scenarios"], f"{sub}.scenarios", errors)
 
     components = model.get("components")
     if components is not None:

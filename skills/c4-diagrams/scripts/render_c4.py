@@ -112,8 +112,16 @@ SUMMARY_KEYS = ("overview", "findings", "recommendations")
 # The keys c4-model-reference.md documents, and the only ones anything reads.
 # Everything else is dropped on the floor, so say so.
 RELATIONSHIP_KEYS = ("from", "to", "description", "technology", "assumption")
-FLOW_KEYS = ("id", "name", "description", "steps", "evidence", "assumption")
+FLOW_KEYS = ("id", "name", "description", "steps", "evidence", "assumption", "scenarios")
 STEP_KEYS = ("from", "to", "description", "technology", "reply", "async", "note", "evidence", "assumption")
+# A scenario is one concrete run of a flow: its steps may also name the payload
+# and the data-store write. Flow steps take neither.
+SCENARIO_KEYS = ("id", "name", "given", "steps", "evidence", "assumption")
+SCENARIO_STEP_KEYS = STEP_KEYS + ("payload", "store")
+PAYLOAD_KEYS = ("type", "fields")
+STORE_KEYS = ("target", "kind", "operation")
+STORE_KINDS = ("table", "collection", "key", "topic", "queue", "bucket", "file")
+STORE_OPERATIONS = ("read", "insert", "update", "upsert", "delete", "publish", "consume")
 
 
 def _did_you_mean(value, candidates):
@@ -130,7 +138,124 @@ def _unknown_keys(item, allowed, label, warnings):
             warnings.append(f"{label}: unknown key {key!r}{_did_you_mean(key, allowed)}; it is ignored")
 
 
-def _evidence_problem(entry, repo):
+def _check_evidence_entries(entries, repo, prefix, warnings, cache=None):
+    """Warn about each evidence entry that points at nothing (needs a repo)."""
+    if repo is None or not isinstance(entries, (list, tuple)):
+        return  # a non-list is reported by the structure check
+    for entry in entries:
+        problem = _evidence_problem(entry, Path(repo), cache)
+        if problem:
+            warnings.append(f"{prefix}: evidence {entry!r} {problem}")
+
+
+def _cited_lines(file, cache):
+    """The lines of a cited file, read once per `cache`; None when unreadable."""
+    if cache is not None and file in cache:
+        return cache[file]
+    try:
+        lines = file.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        lines = None
+    if cache is not None:
+        cache[file] = lines
+    return lines
+
+
+def _parse_evidence(entry):
+    """("path", first line or None, last line or None) of "path", "path:12", "path:3-9 (note)"."""
+    reference = str(entry).split(" (")[0].strip()
+    found = re.fullmatch(r"(.+?):(\d+)(?:-(\d+))?", reference)
+    if not found:
+        return reference, None, None
+    first = int(found.group(2))
+    return found.group(1), first, int(found.group(3) or first)
+
+
+# Types that name no declaration to look for, however they are wrapped
+# (`dict[str, int]`, `[]string`, `string | null`, `Record<string, any>`).
+LITERAL_TYPES = {"dict", "object", "tuple", "list", "array", "map", "set", "string", "str", "int", "integer",
+                 "long", "short", "byte", "char", "float", "double", "decimal", "number", "bool", "boolean",
+                 "bytes", "any", "void", "unknown", "never", "null", "none", "nil", "undefined", "interface",
+                 "record", "optional", "nullable", "dictionary", "union", "iterable", "sequence"}
+
+
+WRAPPER_TYPES = {"promise", "task", "valuetask", "actionresult", "iactionresult", "responseentity", "optional",
+                 "list", "ilist", "ienumerable", "icollection", "set", "map", "dictionary", "array", "observable",
+                 "mono", "flux", "result", "response"}
+
+
+def _named_types(declared):
+    """Every name in a type expression that is not a literal, primitive or common wrapper.
+
+    Returned as (shown, checked): a dotted name `models.Order` is shown whole
+    and checked as `Order`.
+    """
+    names = []
+    for name in re.findall(r"[A-Za-z_][\w.]*", declared):
+        last = name.rstrip(".").rsplit(".", 1)[-1]
+        if last and last.lower() not in LITERAL_TYPES and last.lower() not in WRAPPER_TYPES \
+                and (name, last) not in names:
+            names.append((name, last))
+    return names
+
+
+def _cited_text(step, repo, cache):
+    """The cited lines of a step's evidence joined, or None when none of it resolves."""
+    evidence = step.get("evidence")
+    if not isinstance(evidence, (list, tuple)):
+        return None
+    root = Path(repo).resolve()
+    text, resolved = [], False
+    for entry in evidence:
+        if not isinstance(entry, str):
+            continue
+        path, first, last = _parse_evidence(entry)
+        if first is None or first < 1 or last < first:
+            continue
+        file = (root / path).resolve()
+        if not file.is_relative_to(root) or not file.is_file():
+            continue
+        lines = _cited_lines(file, cache)
+        if lines is not None:
+            resolved = True
+            text.extend(lines[first - 1:last])
+    return "\n".join(text).lower() if resolved else None
+
+
+def _check_scenario_evidence(step, repo, cache, prefix, warnings):
+    """Warn about a payload type or field, or a store target, that its cited lines do not show.
+
+    Malformed model data is skipped here; the structure checks report it.
+    """
+    if repo is None:
+        return
+    payload, store = step.get("payload"), step.get("store")
+    payload = payload if isinstance(payload, dict) else {}
+    store = store if isinstance(store, dict) else {}
+    tokens = []
+    ptype = payload.get("type")
+    names = _named_types(ptype) if isinstance(ptype, str) else []
+    for shown_name, checked in names:
+        # One named type is reported as written (`List<Order>`); several, one by one.
+        tokens.append(("payload type", ptype.strip() if len(names) == 1 else shown_name, checked))
+    fields = payload.get("fields")
+    for field in fields if isinstance(fields, (list, tuple)) else []:
+        if isinstance(field, str) and field.rstrip("[]?"):
+            tokens.append(("payload field", field, field.rstrip("[]?")))
+    target = store.get("target")
+    if isinstance(target, str) and target.strip():
+        tokens.append(("store target", target, target.strip()))
+    if not tokens:
+        return
+    shown = _cited_text(step, repo, cache)
+    if shown is None:
+        return
+    for kind, name, token in tokens:
+        if token.lower() not in shown:
+            warnings.append(f"{prefix}: {kind} {name!r} is not in its cited lines")
+
+
+def _evidence_problem(entry, repo, cache=None):
     """Why an evidence entry ("path", "path:12", "path:3-9 (note)") points at nothing, or None."""
     reference = str(entry).split(" (")[0].strip()
     path, line = reference, None
@@ -141,10 +266,10 @@ def _evidence_problem(entry, repo):
     if not file.exists():
         return "does not exist in the repository"
     if line is not None and file.is_file():
-        try:
-            count = len(file.read_text(encoding="utf-8", errors="replace").splitlines())
-        except OSError:
+        lines = _cited_lines(file, cache)
+        if lines is None:
             return None
+        count = len(lines)
         if line > count:
             return f"is past the end of the file ({count} lines)"
     return None
@@ -169,6 +294,7 @@ def validate(model, facts, result=None, repo=None):
     errors = result.errors
     drift = result.drift
     warnings = result.warnings
+    cited = {}  # cited file -> lines: each file is read once per validation
 
     def invalid(message):
         errors.append(f"c4-model.json: {message}")
@@ -291,8 +417,15 @@ def validate(model, facts, result=None, repo=None):
             warnings.append(f"{source} -> {target} is listed {times} ({listed}); they are drawn as one arrow")
 
     known = set(elements) | components
+    flow_slugs = {}
     for flow_index, flow in enumerate(model.get("flows") or []):
         _unknown_keys(flow, FLOW_KEYS, f"flows[{flow_index}]", warnings)
+        if flow.get("name") and flow.get("steps"):
+            slug = _flow_slug(flow, flow_index + 1)
+            if slug in flow_slugs:
+                warnings.append(f"flows[{flow_index}]: duplicate flow id or name {slug!r} "
+                                f"(same as flows[{flow_slugs[slug]}]); give each flow its own id")
+            flow_slugs.setdefault(slug, flow_index)
         if not flow.get("name") or not flow.get("steps"):
             invalid(
                 f"flows[{flow_index}]: every flow needs a name and steps "
@@ -306,19 +439,11 @@ def validate(model, facts, result=None, repo=None):
         proven = flow.get("evidence") or any(step.get("evidence") for step in flow["steps"])
         if not proven and not flow.get("assumption"):
             warnings.append(f"flow {label!r} ({flow['name']}): no evidence and not marked as an assumption")
-        if repo is not None:
-            for entry in flow.get("evidence") or []:
-                problem = _evidence_problem(entry, Path(repo))
-                if problem:
-                    warnings.append(f"flow {label!r}: evidence {entry!r} {problem}")
+        _check_evidence_entries(flow.get("evidence"), repo, f"flow {label!r}", warnings, cited)
 
         for number, step in enumerate(flow["steps"], 1):
             _unknown_keys(step, STEP_KEYS, f"flows[{flow_index}].steps[{number - 1}]", warnings)
-            if repo is not None:
-                for entry in step.get("evidence") or []:
-                    problem = _evidence_problem(entry, Path(repo))
-                    if problem:
-                        warnings.append(f"flow {label!r} step {number}: evidence {entry!r} {problem}")
+            _check_evidence_entries(step.get("evidence"), repo, f"flow {label!r} step {number}", warnings, cited)
             for end in ("from", "to"):
                 if step.get(end) not in known:
                     invalid(
@@ -326,6 +451,56 @@ def validate(model, facts, result=None, repo=None):
                         f"{number}: unknown {end} {step.get(end)!r}{_did_you_mean(step.get(end), known)} "
                         "(use a person, container or external system id, or a component id from c4-facts.json)"
                     )
+
+        data_stores = {e["id"] for e in model.get("containers") or []
+                       if e.get("id") and e.get("type") in ("database", "queue")}
+        scenarios = flow.get("scenarios") or []
+        seen_ids = set()
+        for j, scenario in enumerate(scenarios):
+            if not isinstance(scenario, dict) or not isinstance(scenario.get("steps"), list):
+                continue  # model_check reports the structure
+            where = f"flows[{flow_index}].scenarios[{j}]"
+            _unknown_keys(scenario, SCENARIO_KEYS, where, warnings)
+            scenario_label = _str_id(scenario) or scenario.get("name")
+            if scenario.get("id") and isinstance(scenario["id"], str):  # optional; only a given id can repeat
+                if scenario["id"] in seen_ids:
+                    warnings.append(f"flow {label!r}: duplicate scenario id {scenario['id']!r} ({where})")
+                seen_ids.add(scenario["id"])
+            steps = [st for st in scenario["steps"] if isinstance(st, dict)]
+            proven = scenario.get("evidence") or any(st.get("evidence") for st in steps)
+            if not proven and not scenario.get("assumption") and not flow.get("assumption"):
+                warnings.append(f"flow {label!r} scenario {scenario_label!r}: "
+                                "no evidence and not marked as an assumption")
+            _check_evidence_entries(scenario.get("evidence"), repo,
+                                    f"flow {label!r} scenario {scenario_label!r}", warnings, cited)
+            for number, step in enumerate(steps, 1):
+                step_where = f"{where}.steps[{number - 1}]"
+                _unknown_keys(step, SCENARIO_STEP_KEYS, step_where, warnings)
+                step_label = f"flow {label!r} scenario {scenario_label!r} step {number}"
+                _check_evidence_entries(step.get("evidence"), repo, step_label, warnings, cited)
+                _check_scenario_evidence(step, repo, cited, step_label, warnings)
+                for end in ("from", "to"):
+                    if step.get(end) not in known:
+                        invalid(
+                            f"{step_where}: flow {flow['name']!r} scenario {scenario_label!r} step "
+                            f"{number}: unknown {end} {step.get(end)!r}{_did_you_mean(step.get(end), known)} "
+                            "(use a person, container or external system id, or a component id from c4-facts.json)"
+                        )
+                payload = step.get("payload")
+                if isinstance(payload, dict):
+                    _unknown_keys(payload, PAYLOAD_KEYS, f"{step_where}.payload", warnings)
+                store = step.get("store")
+                if isinstance(store, dict):
+                    _unknown_keys(store, STORE_KEYS, f"{step_where}.store", warnings)
+                    for key, allowed in (("kind", STORE_KINDS), ("operation", STORE_OPERATIONS)):
+                        if key in store and store[key] not in allowed:
+                            warnings.append(
+                                f"{step_where}.store: unknown {key} {store[key]!r}"
+                                f"{_did_you_mean(store[key], allowed)}; use {', '.join(allowed)}")
+                    if step.get("from") not in data_stores and step.get("to") not in data_stores:
+                        warnings.append(
+                            f"{step_where}: store is set but neither end is a data store "
+                            "(a database or queue container); it is ignored")
 
     for key in (model.get("summary") or {}):
         if key not in SUMMARY_KEYS:
@@ -1261,36 +1436,142 @@ def _unproven(flow, step):
     return bool(step.get("assumption") or flow.get("assumption"))
 
 
+#: Payload fields named on a scenario message before the rest collapse to an ellipsis.
+PAYLOAD_FIELDS_SHOWN = 4
+
+
+def _step_line(owner, step, safe, with_data=True):
+    """
+    The Mermaid line(s) for one step: its message and, with a note, a `Note over`.
+
+    `owner` decides whether the step is unproven (a flow, or a scenario inside
+    a flow that is not itself an assumption). A scenario step may carry a
+    payload and a data-store write; they are the message's second line. A
+    flow step's are ignored (`with_data=False`), as validation warns.
+    """
+    arrow = "-->>" if step.get("reply") else ("-)" if step.get("async") else "->>")
+    text = _seq_text(step.get("description", ""))
+    if _unproven(owner, step):
+        # Nothing in the code backs this step: say so where it is read.
+        text += " (?)"
+    if step.get("technology"):
+        text += f" [{_seq_text(step['technology'])}]"
+    data = _data_text(step) if with_data else ""
+    if data:
+        text = f"{text}<br/>{data}"
+    lines = [f"    {safe[step['from']]}{arrow}{safe[step['to']]}: {text or ' '}"]
+    if step.get("note"):
+        lines.append(f"    Note over {safe[step['to']]}: {_seq_text(step['note'])}")
+    return lines
+
+
+def _data_part(text):
+    """
+    A payload or store part, safe beside the literal `<br/>`.
+
+    Mermaid reads sequence messages as sanitized HTML, so a raw `<String>` is
+    taken for a tag and dropped. Encoding after `_seq_text` cannot double-encode:
+    its `#35;`/`#59;` codes hold no angle brackets.
+    """
+    return _seq_text(text).replace("<", "#lt;").replace(">", "#gt;")
+
+
+def _data_text(step):
+    """Second message line of a scenario step: payload type and key fields, then the store write."""
+    parts = []
+    payload = step.get("payload")
+    if isinstance(payload, dict) and payload.get("type"):
+        fields = [str(f) for f in payload.get("fields") or []]
+        text = str(payload["type"])
+        if fields:
+            shown = fields[:PAYLOAD_FIELDS_SHOWN]
+            if len(fields) > PAYLOAD_FIELDS_SHOWN:
+                shown.append("\u2026")
+            text += " {" + ", ".join(shown) + "}"
+        parts.append(_data_part(text))
+    store = step.get("store")
+    if isinstance(store, dict) and store.get("target"):
+        text = f"{str(store['operation']).upper()} " if store.get("operation") else ""
+        text += str(store["target"])
+        if store.get("kind"):
+            text += f" ({store['kind']})"
+        parts.append(_data_part(text))
+    return " \u00b7 ".join(parts)
+
+
+def _str_id(item):
+    """The item's id when it is a non-empty string, else None (structure checks report a wrong type)."""
+    value = item.get("id")
+    return value if isinstance(value, str) and value else None
+
+
+def _flow_slug(flow, index):
+    return re.sub(r"[^a-z0-9]+", "-", (_str_id(flow) or str(flow["name"])).lower()).strip("-") or str(index)
+
+
+def _sequence_diagram(steps, owner, title, participants, with_data=True):
+    """Mermaid sequence diagram for `steps`, drawing only the participants they use."""
+    used = []
+    for step in steps:
+        for end in (step["from"], step["to"]):
+            if end not in used:
+                used.append(end)
+    alloc = _ms.IdAllocator("sequence")
+    safe = {node: alloc.id(node) for node in used}
+    lines = ["sequenceDiagram"]
+    for node in used:
+        label, kind = participants.get(node, (node, "participant"))
+        lines.append(f'    {kind} {safe[node]} as {_ms.label_text("sequence_alias", str(label))}')
+    for step in steps:
+        lines.extend(_step_line(owner, step, safe, with_data))
+    return _with_title("\n".join(lines) + "\n", title)
+
+
 def flow_diagrams(model, facts):
     """[(stem, title, mermaid, description)] for each key flow in the model, as sequence diagrams."""
     participants = _participants(model, facts)
     results = []
     for index, flow in enumerate(model.get("flows") or [], 1):
-        used = []
-        for step in flow["steps"]:
-            for end in (step["from"], step["to"]):
-                if end not in used:
-                    used.append(end)
-        alloc = _ms.IdAllocator("sequence")
-        safe = {node: alloc.id(node) for node in used}
-        lines = ["sequenceDiagram"]
-        for node in used:
-            label, kind = participants.get(node, (node, "participant"))
-            lines.append(f'    {kind} {safe[node]} as {_ms.label_text("sequence_alias", str(label))}')
-        for step in flow["steps"]:
-            arrow = "-->>" if step.get("reply") else ("-)" if step.get("async") else "->>")
-            text = _seq_text(step.get("description", ""))
-            if _unproven(flow, step):
-                # Nothing in the code backs this step: say so where it is read.
-                text += " (?)"
-            if step.get("technology"):
-                text += f" [{_seq_text(step['technology'])}]"
-            lines.append(f"    {safe[step['from']]}{arrow}{safe[step['to']]}: {text or ' '}")
-            if step.get("note"):
-                lines.append(f"    Note over {safe[step['to']]}: {_seq_text(step['note'])}")
-        slug = re.sub(r"[^a-z0-9]+", "-", (flow.get("id") or flow["name"]).lower()).strip("-") or str(index)
-        results.append((f"c4-flow-{slug}", flow["name"],
-                        _with_title("\n".join(lines) + "\n", flow["name"]), flow.get("description", "")))
+        results.append((f"c4-flow-{_flow_slug(flow, index)}", flow["name"],
+                        _sequence_diagram(flow["steps"], flow, flow["name"], participants, with_data=False),
+                        flow.get("description", "")))
+    return results
+
+
+def scenario_diagrams(model, facts):
+    """[(stem, flow_stem, title, mermaid, given)] for each scenario of each flow (see _scenario_entries)."""
+    return [entry[:5] for entry in _scenario_entries(model, facts)]
+
+
+def _scenario_entries(model, facts):
+    """
+    [(stem, flow_stem, title, mermaid, given, flow_index)] for each scenario of each flow.
+
+    `flow_index` is the flow's 1-based position in the model, the reliable way
+    to pair a scenario with its flow (two flows can share a stem). The stem is
+    the flow's stem plus `--<scenario slug>`; a stem that repeats, within a
+    flow or across flows with the same stem, gets -2, -3, ... A scenario step is unproven by the same
+    rule the Assumptions list uses: the flow owns it when the flow is an
+    assumption, otherwise the scenario does.
+    """
+    participants = _participants(model, facts)
+    results = []
+    taken = set()
+    for index, flow in enumerate(model.get("flows") or [], 1):
+        flow_stem = f"c4-flow-{_flow_slug(flow, index)}"
+        for number, scenario in enumerate(flow.get("scenarios") or [], 1):
+            slug = re.sub(r"[^a-z0-9]+", "-", (_str_id(scenario) or str(scenario["name"])).lower()).strip("-") \
+                or str(number)
+            stem, count = f"{flow_stem}--{slug}", 1
+            while stem in taken:
+                count += 1
+                stem = f"{flow_stem}--{slug}-{count}"
+            taken.add(stem)
+            title = f"{flow['name']} \u00b7 {scenario['name']}"
+            owner = flow if flow.get("assumption") else scenario
+            results.append((stem, flow_stem, title,
+                            _sequence_diagram(scenario["steps"], owner, title, participants),
+                            scenario.get("given") or "", index))
     return results
 
 
@@ -1416,6 +1697,37 @@ def _cell(text):
     return str(text).replace("|", "\\|").replace("\n", " ")
 
 
+def _code(text):
+    """`text` as a table-safe Markdown code span: `|` escaped, a backtick handled by a longer fence."""
+    text = _cell(text)
+    fence = "`" * (max((len(run) for run in re.findall(r"`+", text)), default=0) + 1)
+    pad = " " if text.startswith("`") or text.endswith("`") or fence != "`" else ""
+    return f"{fence}{pad}{text}{pad}{fence}"
+
+
+def _scenario_table(scenario):
+    """The data behind a scenario diagram, as written: type and fields, store write, evidence."""
+    rows = ["| # | From \u2192 To | Payload (type and key fields) | Stored in | Evidence |", "|---|---|---|---|---|"]
+    for number, step in enumerate(scenario["steps"], 1):
+        payload, store = step.get("payload"), step.get("store")
+        data = "\u2014"
+        if isinstance(payload, dict) and payload.get("type"):
+            fields = payload.get("fields")
+            fields = [str(f) for f in (fields if isinstance(fields, list) else [])]
+            data = _code(str(payload["type"]) + (" {" + ", ".join(fields) + "}" if fields else ""))
+        stored = "\u2014"
+        if isinstance(store, dict) and store.get("target"):
+            stored = (f"{str(store['operation']).upper()} " if store.get("operation") else "") + str(store["target"])
+            stored += f" ({store['kind']})" if store.get("kind") else ""
+            stored = _code(stored)
+        entries = step.get("evidence") or []
+        entries = [entries] if isinstance(entries, str) else entries
+        evidence = ", ".join(str(e) for e in entries) or "\u2014"
+        cells = [str(number), _cell(f"{step['from']} \u2192 {step['to']}"), data, stored, _cell(evidence)]
+        rows.append("| " + " | ".join(cells) + " |")
+    return rows
+
+
 def _assumptions(model):
     """Everything a reader should confirm with the team.
 
@@ -1440,13 +1752,26 @@ def _assumptions(model):
         steps = flow.get("steps") or []
         if flow.get("assumption"):
             items.append(f"- **{flow['name']}** (key flow): {flow.get('description') or 'no description'}")
-            continue
-        for number, step in enumerate(steps, 1):
-            if _unproven(flow, step):
-                items.append(
-                    f"- **{flow['name']}**, step {number} ({step.get('from')} → {step.get('to')}): "
-                    f"{step.get('description') or 'no description'}"
-                )
+        else:
+            for number, step in enumerate(steps, 1):
+                if _unproven(flow, step):
+                    items.append(
+                        f"- **{flow['name']}**, step {number} ({step.get('from')} → {step.get('to')}): "
+                        f"{step.get('description') or 'no description'}"
+                    )
+        for scenario in flow.get("scenarios") or []:
+            name = f"{flow['name']} · {scenario.get('name')}"
+            if scenario.get("assumption"):
+                items.append(f"- **{name}** (scenario): {scenario.get('given') or 'no starting conditions'}")
+                continue
+            # An assumption flow makes its scenarios' unbacked steps unproven too.
+            owner = flow if flow.get("assumption") else scenario
+            for number, step in enumerate(scenario.get("steps") or [], 1):
+                if _unproven(owner, step):
+                    items.append(
+                        f"- **{name}**, step {number} ({step.get('from')} → {step.get('to')}): "
+                        f"{step.get('description') or 'no description'}"
+                    )
     return items
 
 
@@ -1687,6 +2012,10 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
     flows = flow_diagrams(use_model, facts)
     for stem, _, mermaid, _ in flows:
         diagrams[stem] = mermaid
+    # Scenario diagrams are written and rendered like the rest, but kept out of
+    # `diagrams`, which also feeds the diagram key and the existing C4 files list.
+    scenarios = _scenario_entries(use_model, facts)
+    scenario_files = {entry[0]: entry[3] for entry in scenarios}
     for entry in code_entries:
         entry["mermaid"] = _with_title(entry["mermaid"], entry["title"])
         diagrams[entry["stem"]] = entry["mermaid"]
@@ -1694,7 +2023,7 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
     if deployment:
         diagrams["c4-deployment"] = deployment
 
-    for stem, mermaid in diagrams.items():
+    for stem, mermaid in {**diagrams, **scenario_files}.items():
         (output / f"{stem}.mmd").write_text(mermaid, encoding="utf-8")
 
     env_disabled = _sr.disabled_by_env()
@@ -1706,7 +2035,7 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
     # run, not a note under every diagram.
     svg_errors: dict = {}
     if svg and not env_disabled:
-        stems = [(stem, output / f"{stem}.mmd") for stem in diagrams]
+        stems = [(stem, output / f"{stem}.mmd") for stem in {**diagrams, **scenario_files}]
         render_results = _sr.render(stems, output)
         for r in render_results:
             rendered[r.stem] = r.status == "ok"
@@ -1755,9 +2084,20 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
 
     if flows:
         block += ["### Key flows", "", "How a request moves through the system, step by step.", ""]
-        for stem, title, mermaid, description in flows:
+        flow_models = use_model.get("flows") or []
+        for flow_number, (stem, title, mermaid, description) in enumerate(flows, 1):
             block.append(_section(f"#### {_prose(title)}", stem, mermaid, rendered.get(stem), intro=description,
                                   svg_error=svg_errors.get(stem)))
+            # scenario_diagrams yields one entry per scenario, in order, so within
+            # one flow the entries pair with that flow's scenario dicts.
+            flow_model = flow_models[flow_number - 1]
+            mine = [entry for entry in scenarios if entry[5] == flow_number]
+            for (s_stem, _, s_title, s_mermaid, given, _), scenario in zip(mine, flow_model.get("scenarios") or []):
+                block.append(_section(f"##### Scenario: {_prose(scenario['name'])}", s_stem, s_mermaid,
+                                      rendered.get(s_stem), intro=f"Given: {given}" if given else "",
+                                      svg_error=svg_errors.get(s_stem)))
+                if any(st.get("payload") or st.get("store") for st in scenario["steps"]):
+                    block += _scenario_table(scenario) + [""]
 
     block += _deployment_section(facts, use_model, rendered.get("c4-deployment"), deployment,
                                  svg_error=svg_errors.get("c4-deployment"))
