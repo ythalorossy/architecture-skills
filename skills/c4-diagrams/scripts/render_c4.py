@@ -140,9 +140,9 @@ def _unknown_keys(item, allowed, label, warnings):
 
 def _check_evidence_entries(entries, repo, prefix, warnings, cache=None):
     """Warn about each evidence entry that points at nothing (needs a repo)."""
-    if repo is None:
-        return
-    for entry in entries or []:
+    if repo is None or not isinstance(entries, (list, tuple)):
+        return  # a non-list is reported by the structure check
+    for entry in entries:
         problem = _evidence_problem(entry, Path(repo), cache)
         if problem:
             warnings.append(f"{prefix}: evidence {entry!r} {problem}")
@@ -171,38 +171,72 @@ def _parse_evidence(entry):
     return found.group(1), first, int(found.group(3) or first)
 
 
-# Types that name no declaration to look for.
-LITERAL_TYPES = {"dict", "object", "tuple", "list", "array", "map", "string", "str", "int", "integer",
-                 "long", "float", "double", "decimal", "number", "bool", "boolean", "bytes", "any", "void"}
+# Types that name no declaration to look for, however they are wrapped
+# (`dict[str, int]`, `[]string`, `string | null`, `Record<string, any>`).
+LITERAL_TYPES = {"dict", "object", "tuple", "list", "array", "map", "set", "string", "str", "int", "integer",
+                 "long", "short", "byte", "char", "float", "double", "decimal", "number", "bool", "boolean",
+                 "bytes", "any", "void", "unknown", "never", "null", "none", "nil", "undefined", "interface",
+                 "record", "optional", "nullable", "dictionary", "union", "iterable", "sequence"}
+
+
+def _named_type(declared):
+    """The first name in a type expression that is not a literal or primitive, or None."""
+    for name in re.findall(r"[A-Za-z_][\w.]*", declared):
+        if name.lower() not in LITERAL_TYPES:
+            return name
+    return None
+
+
+def _cited_text(step, repo, cache):
+    """The cited lines of a step's evidence joined, or None when none of it resolves."""
+    evidence = step.get("evidence")
+    if not isinstance(evidence, (list, tuple)):
+        return None
+    root = Path(repo).resolve()
+    text, resolved = [], False
+    for entry in evidence:
+        if not isinstance(entry, str):
+            continue
+        path, first, last = _parse_evidence(entry)
+        if first is None or first < 1 or last < first:
+            continue
+        file = (root / path).resolve()
+        if not file.is_relative_to(root) or not file.is_file():
+            continue
+        lines = _cited_lines(file, cache)
+        if lines is not None:
+            resolved = True
+            text.extend(lines[first - 1:last])
+    return "\n".join(text).lower() if resolved else None
 
 
 def _check_scenario_evidence(step, repo, cache, prefix, warnings):
-    """Warn about a payload type or field, or a store target, that its cited lines do not show."""
+    """Warn about a payload type or field, or a store target, that its cited lines do not show.
+
+    Malformed model data is skipped here; the structure checks report it.
+    """
+    if repo is None:
+        return
     payload, store = step.get("payload"), step.get("store")
     payload = payload if isinstance(payload, dict) else {}
     store = store if isinstance(store, dict) else {}
     tokens = []
     ptype = payload.get("type")
-    if isinstance(ptype, str) and ptype.strip().rstrip("[]?").lower() not in LITERAL_TYPES:
-        tokens.append(("payload type", ptype.strip(), re.sub(r"[\[\]?<>].*$", "", ptype.strip()) or ptype.strip()))
-    for field in payload.get("fields") or []:
-        if isinstance(field, str):
+    named = _named_type(ptype) if isinstance(ptype, str) else None
+    if named:
+        tokens.append(("payload type", ptype.strip(), named))
+    fields = payload.get("fields")
+    for field in fields if isinstance(fields, (list, tuple)) else []:
+        if isinstance(field, str) and field.rstrip("[]?"):
             tokens.append(("payload field", field, field.rstrip("[]?")))
-    if isinstance(store.get("target"), str):
-        tokens.append(("store target", store["target"], store["target"]))
-    if not tokens or repo is None:
+    target = store.get("target")
+    if isinstance(target, str) and target.strip():
+        tokens.append(("store target", target, target.strip()))
+    if not tokens:
         return
-    text, resolved = [], False
-    for entry in step.get("evidence") or []:
-        path, first, last = _parse_evidence(entry)
-        file = Path(repo) / path
-        lines = _cited_lines(file, cache) if first is not None and file.is_file() else None
-        if lines is not None:
-            resolved = True
-            text.extend(lines[first - 1:last])
-    if not resolved:
+    shown = _cited_text(step, repo, cache)
+    if shown is None:
         return
-    shown = "\n".join(text).lower()
     for kind, name, token in tokens:
         if token.lower() not in shown:
             warnings.append(f"{prefix}: {kind} {name!r} is not in its cited lines")

@@ -435,9 +435,6 @@ class ScenarioReportTest(unittest.TestCase):
         self.assertIn("![", report.split("##### Scenario: Payment declined")[1].split("###")[0])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class ScenarioEvidenceCheckTest(unittest.TestCase):
     """A payload field, a named type or a store target must appear in the cited lines."""
@@ -528,3 +525,44 @@ class ScenarioEvidenceCheckTest(unittest.TestCase):
         with mock.patch.object(Path, "read_text", counting):
             render_c4.validate(model, self.facts, repo=FIXTURE)
         self.assertEqual(reads.count("client.ts"), 1, reads)
+
+    def test_odd_type_expressions_that_name_no_declaration_do_not_warn(self):
+        for declared in ("dict[str, int]", "[]string", "string | null", "Record<string, any>",
+                         "map[string]interface{}", "Optional[str]"):
+            self.assertEqual(self.check(payload={"type": declared, "fields": ["book_id"]},
+                                        evidence=["web/src/api/client.ts:16"]), [], declared)
+
+    def test_named_generic_checks_the_named_type_not_the_container(self):
+        warnings = self.check(payload={"type": "List<Order>", "fields": ["book_id"]},
+                              evidence=["web/src/api/client.ts:16"])
+        self.assertEqual(len(warnings), 1, warnings)
+        self.assertIn("payload type 'List<Order>'", warnings[0])
+        self.assertEqual(self.check(payload={"type": "List<Order>", "fields": []},
+                                    evidence=["api/bookshop/orders/service.py:9"]), [])
+
+    def test_malformed_payload_store_and_evidence_never_crash(self):
+        cited = ["web/src/api/client.ts:16"]
+        for payload in ({"fields": 5}, {"fields": "ab"}, {"fields": [1, None]}, {"type": 5},
+                        {"type": None, "fields": None}, "text", ["x"]):
+            self.assertEqual(self.check(payload=payload, evidence=cited), [], payload)
+        for store in ({"target": 5}, {"target": ""}, "orders", ["orders"]):
+            self.assertEqual(self.check(payload={"type": "object", "fields": ["book_id"]},
+                                        store=store, evidence=cited), [], store)
+        for evidence in ("web/src/api/client.ts:16", 5, {"a": 1}, [5, None]):
+            self.assertEqual(self.check(payload={"type": "OrderDTO", "fields": ["zzz"]},
+                                        evidence=evidence), [], evidence)
+
+    def test_evidence_outside_the_repository_is_not_read(self):
+        outside = str(Path(FIXTURE).parent / "bookshop" / ".." / ".." / "fixtures.txt")
+        for entry in (outside + ":1", "../../../../etc/passwd:1", "/etc/passwd:1"):
+            self.assertEqual(self.check(payload={"type": "OrderDTO", "fields": ["zzz"]},
+                                        evidence=[entry]), [], entry)
+
+    def test_zero_or_reversed_line_range_is_skipped(self):
+        for entry in ("web/src/api/client.ts:0", "web/src/api/client.ts:10-5"):
+            self.assertEqual(self.check(payload={"type": "OrderDTO", "fields": ["zzz"]},
+                                        evidence=[entry]), [], entry)
+
+
+if __name__ == "__main__":
+    unittest.main()
