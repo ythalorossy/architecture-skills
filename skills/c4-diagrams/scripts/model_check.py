@@ -167,12 +167,18 @@ def _check_flow_steps(steps, path: str, errors: list[str], scenario: bool = Fals
                 _check_store(step["store"], f"{step_path}.store", errors)
 
 
+def _check_id_is_string(item, path: str, errors: list[str]) -> None:
+    if "id" in item and item["id"] is not None and not isinstance(item["id"], str):
+        errors.append(f"{path}.id: expected a string, got {type(item['id']).__name__}")
+
+
 def _check_scenarios(scenarios, path: str, errors: list[str]) -> None:
     if not _check_list_of_objects(scenarios, path, errors):
         return
     for index, scenario in enumerate(scenarios):
         sub = f"{path}[{index}]"
         _require_str_keys(scenario, ("name",), errors, sub)
+        _check_id_is_string(scenario, sub, errors)
         _check_flow_steps(scenario.get("steps"), f"{sub}.steps", errors, scenario=True)
 
 
@@ -243,6 +249,7 @@ def check_structure(model: dict) -> ValidationResult:
                     )
             elif section == "flows":
                 _require_str_keys(item, ("name",), errors, sub)
+                _check_id_is_string(item, sub, errors)
                 _check_flow_steps(item.get("steps"), f"{sub}.steps", errors)
                 if "scenarios" in item:
                     _check_scenarios(item["scenarios"], f"{sub}.scenarios", errors)

@@ -275,11 +275,11 @@ sequenceDiagram
 
 | # | From → To | Payload (type and key fields) | Stored in | Evidence |
 |---|---|---|---|---|
-| 1 | web/src/api → bookshop.main | object {book_id, quantity, card_token} | — | web/src/api/client.ts:16 |
-| 2 | bookshop.main → bookshop.orders | dict {book_id, quantity, card_token} | — | api/bookshop/main.py:17-18 |
-| 3 | bookshop.orders → ext-payments-example | dict {source, amount} | — | api/bookshop/payments/client.py:10 |
-| 4 | bookshop.orders → db-postgresql | tuple {book_id, quantity, charge_id} | INSERT orders (table) | api/bookshop/orders/service.py:17-18 |
-| 5 | bookshop.main → web/src/api | dict {order_id, charge_id} | — | api/bookshop/orders/service.py:33 |
+| 1 | web/src/api → bookshop.main | `object {book_id, quantity, card_token}` | — | web/src/api/client.ts:16 |
+| 2 | bookshop.main → bookshop.orders | `dict {book_id, quantity, card_token}` | — | api/bookshop/main.py:17-18 |
+| 3 | bookshop.orders → ext-payments-example | `dict {source, amount}` | — | api/bookshop/payments/client.py:10 |
+| 4 | bookshop.orders → db-postgresql | `tuple {book_id, quantity, charge_id}` | `INSERT orders (table)` | api/bookshop/orders/service.py:17-18 |
+| 5 | bookshop.main → web/src/api | `dict {order_id, charge_id}` | — | api/bookshop/orders/service.py:33 |
 
 ##### Scenario: Payment declined
 
@@ -303,9 +303,9 @@ sequenceDiagram
 
 | # | From → To | Payload (type and key fields) | Stored in | Evidence |
 |---|---|---|---|---|
-| 1 | web/src/api → bookshop.main | object {book_id, quantity, card_token} | — | web/src/api/client.ts:16 |
-| 2 | bookshop.main → bookshop.orders | dict {book_id, quantity, card_token} | — | api/bookshop/main.py:17-18 |
-| 3 | bookshop.orders → ext-payments-example | dict {source, amount} | — | api/bookshop/payments/client.py:10 |
+| 1 | web/src/api → bookshop.main | `object {book_id, quantity, card_token}` | — | web/src/api/client.ts:16 |
+| 2 | bookshop.main → bookshop.orders | `dict {book_id, quantity, card_token}` | — | api/bookshop/main.py:17-18 |
+| 3 | bookshop.orders → ext-payments-example | `dict {source, amount}` | — | api/bookshop/payments/client.py:10 |
 | 4 | ext-payments-example → bookshop.orders | — | — | api/bookshop/payments/client.py:11 (raise_for_status()) |
 | 5 | bookshop.main → web/src/api | — | — | — |
 

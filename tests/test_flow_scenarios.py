@@ -493,11 +493,11 @@ class ScenarioEvidenceCheckTest(unittest.TestCase):
         step.update({"from": "bookshop.orders", "to": "db-postgresql"})
         ok = render_c4.validate(model, self.facts, repo=FIXTURE).warnings
         self.assertFalse([w for w in ok if "store target" in w], ok)
-        step["store"] = {"target": "rate-limit bucket", "kind": "key", "operation": "update"}
+        step["store"] = {"target": "order storage", "kind": "key", "operation": "update"}
         bad = [w for w in render_c4.validate(model, self.facts, repo=FIXTURE).warnings
                if "store target" in w]
         self.assertEqual(bad, [
-            "flow 'place-order' scenario 'happy' step 1: store target 'rate-limit bucket' "
+            "flow 'place-order' scenario 'happy' step 1: store target 'order storage' "
             "is not in its cited lines"])
 
     def test_evidence_without_a_line_number_is_skipped(self):
@@ -562,6 +562,109 @@ class ScenarioEvidenceCheckTest(unittest.TestCase):
         for entry in ("web/src/api/client.ts:0", "web/src/api/client.ts:10-5"):
             self.assertEqual(self.check(payload={"type": "OrderDTO", "fields": ["zzz"]},
                                         evidence=[entry]), [], entry)
+
+
+class ScenarioReviewFixesTest(unittest.TestCase):
+    """Final-review fixes: odd ids, colliding flow stems, table escaping, evidence shape, wrapper types."""
+
+    @classmethod
+    def setUpClass(cls):
+        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()):
+            cls.facts, _ = run_analyzer(FIXTURE, tmp)
+        cls.reference = json.loads((FIXTURE / "c4-model.json").read_text(encoding="utf-8"))
+
+    def base(self):
+        model = copy.deepcopy(self.reference)
+        model["flows"][0].pop("scenarios", None)
+        return model
+
+    def scenario(self, sid="s", name="S", count=2):
+        steps = [copy.deepcopy(s) for s in self.reference["flows"][0]["steps"][:count]]
+        return {"id": sid, "name": name, "steps": steps}
+
+    def render(self, model):
+        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()):
+            run_analyzer(FIXTURE, tmp)
+            (Path(tmp) / "c4-model.json").write_text(json.dumps(model), encoding="utf-8")
+            result = render_c4.render(tmp, svg=False)
+            report = (Path(tmp) / "ArchitectureReport.md").read_text(encoding="utf-8")
+            return result, report, sorted(p.name for p in Path(tmp).iterdir())
+
+    # 1. non-string ids
+    def test_non_string_ids_are_structure_errors_and_never_crash(self):
+        for bad in (5, ["a"], {"k": "v"}):
+            for where in ("scenario", "flow"):
+                model = self.base()
+                sc = self.scenario()
+                model["flows"][0]["scenarios"] = [sc]
+                (sc if where == "scenario" else model["flows"][0])["id"] = bad
+                errors = model_check.check_structure(model).errors
+                self.assertTrue(any(".id" in e and "expected a string" in e for e in errors),
+                                (bad, where, errors))
+                render_c4.validate(model, self.facts, repo=FIXTURE)
+                render_c4.scenario_diagrams(model, self.facts)
+                result, _, _ = self.render(model)
+                self.assertNotEqual(result["status"], "ok", (bad, where))
+
+    # 2. colliding flow stems
+    def test_flows_with_colliding_stems_keep_their_own_scenarios(self):
+        model = self.base()
+        second = copy.deepcopy(model["flows"][0])
+        model["flows"][0]["id"] = "place-order"
+        second["id"] = "Place_Order"
+        model["flows"][0]["scenarios"] = [self.scenario("same", "First flow scenario")]
+        second["scenarios"] = [self.scenario("same", "Second flow scenario"),
+                               self.scenario("other", "Second extra")]
+        model["flows"].append(second)
+        warnings = render_c4.validate(model, self.facts, repo=FIXTURE).warnings
+        self.assertEqual(len([w for w in warnings if "duplicate flow" in w]), 1, warnings)
+        result, report, files = self.render(model)
+        self.assertEqual(result["status"], "ok", result)
+        first_at = report.index("Scenario: First flow scenario")
+        second_at = report.index("Scenario: Second flow scenario")
+        extra_at = report.index("Scenario: Second extra")
+        flow_headings = [m for m in range(len(report)) if report.startswith("#### Reader buys a book", m)]
+        self.assertEqual(len(flow_headings), 2)
+        self.assertTrue(flow_headings[0] < first_at < flow_headings[1] < second_at < extra_at)
+        mmd = [f for f in files if "--" in f and f.endswith(".mmd")]
+        self.assertEqual(len(mmd), 3, mmd)
+        self.assertEqual(len(set(mmd)), 3)
+
+    # 3. table escaping
+    def test_table_puts_payload_and_store_in_code_spans(self):
+        sc = self.scenario(count=3)
+        sc["steps"][0]["payload"] = {"type": "Map<String, List<Order>>", "fields": ["__init__", "a|b"]}
+        sc["steps"][2]["store"] = {"target": "or`ders", "kind": "table", "operation": "insert"}
+        row = render_c4._scenario_table(sc)
+        self.assertIn("`Map<String, List<Order>> {__init__, a\\|b}`", row[2])
+        self.assertTrue(any("`` INSERT or`ders (table) ``" in r for r in row), row)
+
+    # 5. evidence as a string
+    def test_string_evidence_is_one_entry(self):
+        sc = self.scenario()
+        sc["steps"][0]["evidence"] = "api/a.py:1"
+        sc["steps"][0]["payload"] = {"type": "dict"}
+        row = render_c4._scenario_table(sc)[2]
+        self.assertIn("api/a.py:1", row)
+        self.assertNotIn("a, p, i", row)
+
+    # 6. wrapper types
+    def warnings_for(self, ptype, evidence):
+        model = self.base()
+        sc = self.scenario(count=1)
+        sc["steps"][0]["payload"] = {"type": ptype}
+        sc["steps"][0]["evidence"] = evidence
+        model["flows"][0]["scenarios"] = [sc]
+        return [w for w in render_c4.validate(model, self.facts, repo=FIXTURE).warnings
+                if "is not in its cited lines" in w]
+
+    def test_wrapped_invented_type_is_checked(self):
+        found = self.warnings_for("Promise<InventedDTO>", ["web/src/api/client.ts:1-40"])
+        self.assertTrue(any("InventedDTO" in w for w in found), found)
+
+    def test_wrapper_with_present_type_is_quiet(self):
+        self.assertEqual(self.warnings_for("ResponseEntity<Order>", ["api/bookshop/orders/service.py:1-40"]), [])
+        self.assertEqual(self.warnings_for("models.Order", ["api/bookshop/orders/service.py:1-40"]), [])
 
 
 if __name__ == "__main__":

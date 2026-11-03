@@ -179,12 +179,24 @@ LITERAL_TYPES = {"dict", "object", "tuple", "list", "array", "map", "set", "stri
                  "record", "optional", "nullable", "dictionary", "union", "iterable", "sequence"}
 
 
-def _named_type(declared):
-    """The first name in a type expression that is not a literal or primitive, or None."""
+WRAPPER_TYPES = {"promise", "task", "valuetask", "actionresult", "iactionresult", "responseentity", "optional",
+                 "list", "ilist", "ienumerable", "icollection", "set", "map", "dictionary", "array", "observable",
+                 "mono", "flux", "result", "response"}
+
+
+def _named_types(declared):
+    """Every name in a type expression that is not a literal, primitive or common wrapper.
+
+    Returned as (shown, checked): a dotted name `models.Order` is shown whole
+    and checked as `Order`.
+    """
+    names = []
     for name in re.findall(r"[A-Za-z_][\w.]*", declared):
-        if name.lower() not in LITERAL_TYPES:
-            return name
-    return None
+        last = name.rstrip(".").rsplit(".", 1)[-1]
+        if last and last.lower() not in LITERAL_TYPES and last.lower() not in WRAPPER_TYPES \
+                and (name, last) not in names:
+            names.append((name, last))
+    return names
 
 
 def _cited_text(step, repo, cache):
@@ -222,9 +234,10 @@ def _check_scenario_evidence(step, repo, cache, prefix, warnings):
     store = store if isinstance(store, dict) else {}
     tokens = []
     ptype = payload.get("type")
-    named = _named_type(ptype) if isinstance(ptype, str) else None
-    if named:
-        tokens.append(("payload type", ptype.strip(), named))
+    names = _named_types(ptype) if isinstance(ptype, str) else []
+    for shown_name, checked in names:
+        # One named type is reported as written (`List<Order>`); several, one by one.
+        tokens.append(("payload type", ptype.strip() if len(names) == 1 else shown_name, checked))
     fields = payload.get("fields")
     for field in fields if isinstance(fields, (list, tuple)) else []:
         if isinstance(field, str) and field.rstrip("[]?"):
@@ -404,8 +417,15 @@ def validate(model, facts, result=None, repo=None):
             warnings.append(f"{source} -> {target} is listed {times} ({listed}); they are drawn as one arrow")
 
     known = set(elements) | components
+    flow_slugs = {}
     for flow_index, flow in enumerate(model.get("flows") or []):
         _unknown_keys(flow, FLOW_KEYS, f"flows[{flow_index}]", warnings)
+        if flow.get("name") and flow.get("steps"):
+            slug = _flow_slug(flow, flow_index + 1)
+            if slug in flow_slugs:
+                warnings.append(f"flows[{flow_index}]: duplicate flow id or name {slug!r} "
+                                f"(same as flows[{flow_slugs[slug]}]); give each flow its own id")
+            flow_slugs.setdefault(slug, flow_index)
         if not flow.get("name") or not flow.get("steps"):
             invalid(
                 f"flows[{flow_index}]: every flow needs a name and steps "
@@ -441,8 +461,8 @@ def validate(model, facts, result=None, repo=None):
                 continue  # model_check reports the structure
             where = f"flows[{flow_index}].scenarios[{j}]"
             _unknown_keys(scenario, SCENARIO_KEYS, where, warnings)
-            scenario_label = scenario.get("id") or scenario.get("name")
-            if scenario.get("id"):  # id is optional; only a given id can repeat
+            scenario_label = _str_id(scenario) or scenario.get("name")
+            if scenario.get("id") and isinstance(scenario["id"], str):  # optional; only a given id can repeat
                 if scenario["id"] in seen_ids:
                     warnings.append(f"flow {label!r}: duplicate scenario id {scenario['id']!r} ({where})")
                 seen_ids.add(scenario["id"])
@@ -1479,8 +1499,14 @@ def _data_text(step):
     return " \u00b7 ".join(parts)
 
 
+def _str_id(item):
+    """The item's id when it is a non-empty string, else None (structure checks report a wrong type)."""
+    value = item.get("id")
+    return value if isinstance(value, str) and value else None
+
+
 def _flow_slug(flow, index):
-    return re.sub(r"[^a-z0-9]+", "-", (flow.get("id") or flow["name"]).lower()).strip("-") or str(index)
+    return re.sub(r"[^a-z0-9]+", "-", (_str_id(flow) or str(flow["name"])).lower()).strip("-") or str(index)
 
 
 def _sequence_diagram(steps, owner, title, participants, with_data=True):
@@ -1513,21 +1539,28 @@ def flow_diagrams(model, facts):
 
 
 def scenario_diagrams(model, facts):
-    """
-    [(stem, flow_stem, title, mermaid, given)] for each scenario of each flow.
+    """[(stem, flow_stem, title, mermaid, given)] for each scenario of each flow (see _scenario_entries)."""
+    return [entry[:5] for entry in _scenario_entries(model, facts)]
 
-    The stem is the flow's stem plus `--<scenario slug>`; a slug that repeats
-    within one flow gets -2, -3, ... A scenario step is unproven by the same
+
+def _scenario_entries(model, facts):
+    """
+    [(stem, flow_stem, title, mermaid, given, flow_index)] for each scenario of each flow.
+
+    `flow_index` is the flow's 1-based position in the model, the reliable way
+    to pair a scenario with its flow (two flows can share a stem). The stem is
+    the flow's stem plus `--<scenario slug>`; a stem that repeats, within a
+    flow or across flows with the same stem, gets -2, -3, ... A scenario step is unproven by the same
     rule the Assumptions list uses: the flow owns it when the flow is an
     assumption, otherwise the scenario does.
     """
     participants = _participants(model, facts)
     results = []
+    taken = set()
     for index, flow in enumerate(model.get("flows") or [], 1):
         flow_stem = f"c4-flow-{_flow_slug(flow, index)}"
-        taken = set()
         for number, scenario in enumerate(flow.get("scenarios") or [], 1):
-            slug = re.sub(r"[^a-z0-9]+", "-", (scenario.get("id") or scenario["name"]).lower()).strip("-") \
+            slug = re.sub(r"[^a-z0-9]+", "-", (_str_id(scenario) or str(scenario["name"])).lower()).strip("-") \
                 or str(number)
             stem, count = f"{flow_stem}--{slug}", 1
             while stem in taken:
@@ -1538,7 +1571,7 @@ def scenario_diagrams(model, facts):
             owner = flow if flow.get("assumption") else scenario
             results.append((stem, flow_stem, title,
                             _sequence_diagram(scenario["steps"], owner, title, participants),
-                            scenario.get("given") or ""))
+                            scenario.get("given") or "", index))
     return results
 
 
@@ -1664,6 +1697,14 @@ def _cell(text):
     return str(text).replace("|", "\\|").replace("\n", " ")
 
 
+def _code(text):
+    """`text` as a table-safe Markdown code span: `|` escaped, a backtick handled by a longer fence."""
+    text = _cell(text)
+    fence = "`" * (max((len(run) for run in re.findall(r"`+", text)), default=0) + 1)
+    pad = " " if text.startswith("`") or text.endswith("`") or fence != "`" else ""
+    return f"{fence}{pad}{text}{pad}{fence}"
+
+
 def _scenario_table(scenario):
     """The data behind a scenario diagram, as written: type and fields, store write, evidence."""
     rows = ["| # | From \u2192 To | Payload (type and key fields) | Stored in | Evidence |", "|---|---|---|---|---|"]
@@ -1671,15 +1712,19 @@ def _scenario_table(scenario):
         payload, store = step.get("payload"), step.get("store")
         data = "\u2014"
         if isinstance(payload, dict) and payload.get("type"):
-            fields = [str(f) for f in payload.get("fields") or []]
-            data = str(payload["type"]) + (" {" + ", ".join(fields) + "}" if fields else "")
+            fields = payload.get("fields")
+            fields = [str(f) for f in (fields if isinstance(fields, list) else [])]
+            data = _code(str(payload["type"]) + (" {" + ", ".join(fields) + "}" if fields else ""))
         stored = "\u2014"
         if isinstance(store, dict) and store.get("target"):
             stored = (f"{str(store['operation']).upper()} " if store.get("operation") else "") + str(store["target"])
             stored += f" ({store['kind']})" if store.get("kind") else ""
-        evidence = ", ".join(str(e) for e in step.get("evidence") or []) or "\u2014"
-        cells = [str(number), f"{step['from']} \u2192 {step['to']}", data, stored, evidence]
-        rows.append("| " + " | ".join(_cell(c) for c in cells) + " |")
+            stored = _code(stored)
+        entries = step.get("evidence") or []
+        entries = [entries] if isinstance(entries, str) else entries
+        evidence = ", ".join(str(e) for e in entries) or "\u2014"
+        cells = [str(number), _cell(f"{step['from']} \u2192 {step['to']}"), data, stored, _cell(evidence)]
+        rows.append("| " + " | ".join(cells) + " |")
     return rows
 
 
@@ -1969,8 +2014,8 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
         diagrams[stem] = mermaid
     # Scenario diagrams are written and rendered like the rest, but kept out of
     # `diagrams`, which also feeds the diagram key and the existing C4 files list.
-    scenarios = scenario_diagrams(use_model, facts)
-    scenario_files = {stem: mermaid for stem, _, _, mermaid, _ in scenarios}
+    scenarios = _scenario_entries(use_model, facts)
+    scenario_files = {entry[0]: entry[3] for entry in scenarios}
     for entry in code_entries:
         entry["mermaid"] = _with_title(entry["mermaid"], entry["title"])
         diagrams[entry["stem"]] = entry["mermaid"]
@@ -2039,15 +2084,15 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
 
     if flows:
         block += ["### Key flows", "", "How a request moves through the system, step by step.", ""]
-        flow_models = {f"c4-flow-{_flow_slug(f, i)}": f for i, f in enumerate(use_model.get("flows") or [], 1)}
-        for stem, title, mermaid, description in flows:
+        flow_models = use_model.get("flows") or []
+        for flow_number, (stem, title, mermaid, description) in enumerate(flows, 1):
             block.append(_section(f"#### {_prose(title)}", stem, mermaid, rendered.get(stem), intro=description,
                                   svg_error=svg_errors.get(stem)))
             # scenario_diagrams yields one entry per scenario, in order, so within
             # one flow the entries pair with that flow's scenario dicts.
-            flow_model = flow_models.get(stem) or {}
-            mine = [entry for entry in scenarios if entry[1] == stem]
-            for (s_stem, _, s_title, s_mermaid, given), scenario in zip(mine, flow_model.get("scenarios") or []):
+            flow_model = flow_models[flow_number - 1]
+            mine = [entry for entry in scenarios if entry[5] == flow_number]
+            for (s_stem, _, s_title, s_mermaid, given, _), scenario in zip(mine, flow_model.get("scenarios") or []):
                 block.append(_section(f"##### Scenario: {_prose(scenario['name'])}", s_stem, s_mermaid,
                                       rendered.get(s_stem), intro=f"Given: {given}" if given else "",
                                       svg_error=svg_errors.get(s_stem)))
