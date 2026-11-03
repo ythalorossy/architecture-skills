@@ -1,0 +1,13 @@
+---
+title: "Reader buys a book · Payment declined"
+---
+sequenceDiagram
+    participant web_src_api as web/src/api
+    participant bookshop_main as bookshop.main
+    participant bookshop_orders as bookshop.orders
+    participant ext_payments_example as Payment provider
+    web_src_api->>bookshop_main: POST /api/orders [JSON/HTTPS]<br/>object {book_id, quantity, card_token}
+    bookshop_main->>bookshop_orders: Places the order<br/>dict {book_id, quantity, card_token}
+    bookshop_orders->>ext_payments_example: POST /v1/charges [HTTPS]<br/>dict {source, amount}
+    ext_payments_example-->>bookshop_orders: HTTP 4xx
+    bookshop_main-->>web_src_api: Error response (unhandled exception) (?)

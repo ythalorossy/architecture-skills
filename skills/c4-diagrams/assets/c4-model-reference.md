@@ -74,6 +74,43 @@ This is the complete model of Bookshop, a small synthetic sample system: a React
           "evidence": ["api/bookshop/orders/service.py:14-20"] },
         { "from": "bookshop.main", "to": "web/src/api", "description": "Order id and charge id", "reply": true,
           "evidence": ["api/bookshop/orders/service.py:30-33"] }
+      ],
+      "scenarios": [
+        { "id": "success", "name": "Order is paid and stored", "given": "the card is accepted",
+          "steps": [
+            { "from": "web/src/api", "to": "bookshop.main", "description": "POST /api/orders", "technology": "JSON/HTTPS",
+              "payload": { "type": "object", "fields": ["book_id", "quantity", "card_token"] },
+              "evidence": ["web/src/api/client.ts:16"] },
+            { "from": "bookshop.main", "to": "bookshop.orders", "description": "Places the order",
+              "payload": { "type": "dict", "fields": ["book_id", "quantity", "card_token"] },
+              "evidence": ["api/bookshop/main.py:17-18"] },
+            { "from": "bookshop.orders", "to": "ext-payments-example", "description": "POST /v1/charges", "technology": "HTTPS",
+              "payload": { "type": "dict", "fields": ["source", "amount"] },
+              "evidence": ["api/bookshop/payments/client.py:10"] },
+            { "from": "bookshop.orders", "to": "db-postgresql", "description": "Inserts the order with its charge id", "technology": "psycopg",
+              "payload": { "type": "tuple", "fields": ["book_id", "quantity", "charge_id"] },
+              "store": { "target": "orders", "kind": "table", "operation": "insert" },
+              "evidence": ["api/bookshop/orders/service.py:17-18"] },
+            { "from": "bookshop.main", "to": "web/src/api", "description": "Order id and charge id", "reply": true,
+              "payload": { "type": "dict", "fields": ["order_id", "charge_id"] },
+              "evidence": ["api/bookshop/orders/service.py:33"] }
+          ] },
+        { "id": "payment-declined", "name": "Payment declined", "given": "the payment provider rejects the card",
+          "steps": [
+            { "from": "web/src/api", "to": "bookshop.main", "description": "POST /api/orders", "technology": "JSON/HTTPS",
+              "payload": { "type": "object", "fields": ["book_id", "quantity", "card_token"] },
+              "evidence": ["web/src/api/client.ts:16"] },
+            { "from": "bookshop.main", "to": "bookshop.orders", "description": "Places the order",
+              "payload": { "type": "dict", "fields": ["book_id", "quantity", "card_token"] },
+              "evidence": ["api/bookshop/main.py:17-18"] },
+            { "from": "bookshop.orders", "to": "ext-payments-example", "description": "POST /v1/charges", "technology": "HTTPS",
+              "payload": { "type": "dict", "fields": ["source", "amount"] },
+              "evidence": ["api/bookshop/payments/client.py:10"] },
+            { "from": "ext-payments-example", "to": "bookshop.orders", "description": "HTTP 4xx", "reply": true,
+              "evidence": ["api/bookshop/payments/client.py:11 (raise_for_status())"] },
+            { "from": "bookshop.main", "to": "web/src/api", "description": "Error response (unhandled exception)", "reply": true,
+              "assumption": true }
+          ] }
       ]
     }
   ],
@@ -107,7 +144,7 @@ This is the complete model of Bookshop, a small synthetic sample system: a React
 - **Don't invent.** Only add elements and relationships the code, config or docs support. When you have no evidence for who calls the API, say so with one `assumption` person rather than inventing several.
 - **Relationship text** reads from → to: "Stores orders in", "Charges cards with". `technology` is the protocol or library (HTTPS, gRPC, EF Core, SQS).
 - **`components`** gives a one-line description per component, keyed by container id and then a component id from `c4-facts.json`: a module (`containers[].components.nodes`) or a package/namespace inside one (`containers[].code_components.nodes`, ids like `module::package`). Describe the important ones; the nodes and edges themselves come from the code and can't be changed in the model.
-- **`flows`** are the key request paths, drawn as sequence diagrams. Each has an `id`, a `name`, an optional `description` and ordered `steps`. A step's `from`/`to` is a person, container or external system id, or a component id (module or `module::package`) when the step happens inside a container. Optional per step: `technology`, `"reply": true` (dashed return arrow), `"async": true`, `note`, and — as for any element — `evidence` or `"assumption": true`. A flow takes both too, covering every step that carries neither. A step nothing backs is drawn with `(?)` after its text and listed under Assumptions. Trace real code paths: 1–3 flows of 4–10 steps each, starting from an endpoint, UI action, CLI command or scheduled job you can point to.
+- **`flows`** are the key request paths, drawn as sequence diagrams. Each has an `id`, a `name`, an optional `description` and ordered `steps`. A step's `from`/`to` is a person, container or external system id, or a component id (module or `module::package`) when the step happens inside a container. Optional per step: `technology`, `"reply": true` (dashed return arrow), `"async": true`, `note`, and — as for any element — `evidence` or `"assumption": true`. A flow takes both too, covering every step that carries neither. A step nothing backs is drawn with `(?)` after its text and listed under Assumptions. Trace real code paths: 1–3 flows of 4–10 steps each, starting from an endpoint, UI action, CLI command or scheduled job you can point to. The flow diagram stays as it is. Per flow, add `scenarios`: the main success case and the most important failure case, each `{id, name, given, steps}` (`given` is the condition in a short phrase; `evidence` or `"assumption": true` as for a flow; a scenario the user names is added to these, and one that fits no flow gets a new flow). A scenario step is a flow step plus optional `payload` `{type, fields}` (the data sent, named after the handler parameter, client call argument or ORM entity at the cited line) and, on a step to or from a database or queue container, `store` `{target, kind, operation}`. `kind` is one of `table`, `collection`, `key`, `topic`, `queue`, `bucket`, `file`; `operation` is one of `read`, `insert`, `update`, `upsert`, `delete`, `publish`, `consume`. For a reply read from a store, `from` is the store. Never invent a type name: with no named type in the code, `payload.type` is the literal language type (`dict`, `object`, `tuple`) and `fields` are the keys the code really uses at that line; with no readable keys, leave `payload` out. `payload` and `store` on a plain flow step are ignored with a warning. Each scenario is drawn as its own sequence diagram with a data table in the report.
 - **`code`** (Level 4) lists the 2–5 key components to draw as class diagrams. Each entry has `container` (a model container id), `component` (a module or `module::package` id from `c4-facts.json`), an optional `description`, and optional `types` to center the diagram on (they are drawn with their direct neighbours). Without `types` the most connected types are drawn, at most 12. Type names must exist in that component's code: `render_c4.py` fails and suggests close names otherwise. Pick components with behaviour, not model or DTO folders.
 - **`summary`** is your own analysis, written into `ArchitectureReport.md` as an "Architecture overview" right after the Executive Summary: an `overview` paragraph (what the system does and how it is built), `findings` (what matters for the team: risks, coupling, missing pieces, each with a `file:line`), and `recommendations` (each backed by a finding). All three are optional; leave out what you have nothing evidence-based to say about.
 - **Ids** are short kebab-case strings, unique across people, containers and external systems. Keep fact ids as they are so re-runs line up.

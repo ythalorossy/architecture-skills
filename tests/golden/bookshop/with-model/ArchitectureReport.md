@@ -252,6 +252,63 @@ sequenceDiagram
     bookshop_main-->>web_src_api: Order id and charge id
 ```
 
+##### Scenario: Order is paid and stored
+
+Given: the card is accepted
+
+```mermaid
+---
+title: "Reader buys a book · Order is paid and stored"
+---
+sequenceDiagram
+    participant web_src_api as web/src/api
+    participant bookshop_main as bookshop.main
+    participant bookshop_orders as bookshop.orders
+    participant ext_payments_example as Payment provider
+    participant db_postgresql as Orders database
+    web_src_api->>bookshop_main: POST /api/orders [JSON/HTTPS]<br/>object {book_id, quantity, card_token}
+    bookshop_main->>bookshop_orders: Places the order<br/>dict {book_id, quantity, card_token}
+    bookshop_orders->>ext_payments_example: POST /v1/charges [HTTPS]<br/>dict {source, amount}
+    bookshop_orders->>db_postgresql: Inserts the order with its charge id [psycopg]<br/>tuple {book_id, quantity, charge_id} · INSERT orders (table)
+    bookshop_main-->>web_src_api: Order id and charge id<br/>dict {order_id, charge_id}
+```
+
+| # | From → To | Payload (type and key fields) | Stored in | Evidence |
+|---|---|---|---|---|
+| 1 | web/src/api → bookshop.main | object {book_id, quantity, card_token} | — | web/src/api/client.ts:16 |
+| 2 | bookshop.main → bookshop.orders | dict {book_id, quantity, card_token} | — | api/bookshop/main.py:17-18 |
+| 3 | bookshop.orders → ext-payments-example | dict {source, amount} | — | api/bookshop/payments/client.py:10 |
+| 4 | bookshop.orders → db-postgresql | tuple {book_id, quantity, charge_id} | INSERT orders (table) | api/bookshop/orders/service.py:17-18 |
+| 5 | bookshop.main → web/src/api | dict {order_id, charge_id} | — | api/bookshop/orders/service.py:33 |
+
+##### Scenario: Payment declined
+
+Given: the payment provider rejects the card
+
+```mermaid
+---
+title: "Reader buys a book · Payment declined"
+---
+sequenceDiagram
+    participant web_src_api as web/src/api
+    participant bookshop_main as bookshop.main
+    participant bookshop_orders as bookshop.orders
+    participant ext_payments_example as Payment provider
+    web_src_api->>bookshop_main: POST /api/orders [JSON/HTTPS]<br/>object {book_id, quantity, card_token}
+    bookshop_main->>bookshop_orders: Places the order<br/>dict {book_id, quantity, card_token}
+    bookshop_orders->>ext_payments_example: POST /v1/charges [HTTPS]<br/>dict {source, amount}
+    ext_payments_example-->>bookshop_orders: HTTP 4xx
+    bookshop_main-->>web_src_api: Error response (unhandled exception) (?)
+```
+
+| # | From → To | Payload (type and key fields) | Stored in | Evidence |
+|---|---|---|---|---|
+| 1 | web/src/api → bookshop.main | object {book_id, quantity, card_token} | — | web/src/api/client.ts:16 |
+| 2 | bookshop.main → bookshop.orders | dict {book_id, quantity, card_token} | — | api/bookshop/main.py:17-18 |
+| 3 | bookshop.orders → ext-payments-example | dict {source, amount} | — | api/bookshop/payments/client.py:10 |
+| 4 | ext-payments-example → bookshop.orders | — | — | api/bookshop/payments/client.py:11 (raise_for_status()) |
+| 5 | bookshop.main → web/src/api | — | — | — |
+
 ### Deployment
 
 #### docker compose
@@ -317,6 +374,7 @@ Not backed by code evidence; confirm with the team:
 
 - **Reader**: Searches the catalogue and buys books
 - **reader → bookshop-web**: Finds and buys books using
+- **Reader buys a book · Payment declined**, step 5 (bookshop.main → web/src/api): Error response (unhandled exception)
 
 ### C4 files
 
