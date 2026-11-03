@@ -158,6 +158,16 @@ class ScenarioValidationTest(unittest.TestCase):
         warnings = [w for w in self.validate(model).warnings if "duplicate scenario id" in w]
         self.assertEqual(len(warnings), 1, warnings)
 
+    def test_scenarios_without_ids_are_not_duplicates(self):
+        model = self.model()
+        flow = model["flows"][0]
+        flow["scenarios"][0].pop("id")
+        second = copy.deepcopy(flow["scenarios"][0])
+        second["name"] = "Another path"
+        flow["scenarios"].append(second)
+        warnings = [w for w in self.validate(model).warnings if "duplicate scenario id" in w]
+        self.assertEqual(warnings, [])
+
     def test_payload_on_flow_step_warns_and_is_ignored(self):
         base = copy.deepcopy(self.reference)
         base["flows"][0].pop("scenarios", None)

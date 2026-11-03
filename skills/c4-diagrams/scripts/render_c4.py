@@ -347,9 +347,10 @@ def validate(model, facts, result=None, repo=None):
             where = f"flows[{flow_index}].scenarios[{j}]"
             _unknown_keys(scenario, SCENARIO_KEYS, where, warnings)
             scenario_label = scenario.get("id") or scenario.get("name")
-            if scenario.get("id") in seen_ids:
-                warnings.append(f"flow {label!r}: duplicate scenario id {scenario['id']!r} ({where})")
-            seen_ids.add(scenario.get("id"))
+            if scenario.get("id"):  # id is optional; only a given id can repeat
+                if scenario["id"] in seen_ids:
+                    warnings.append(f"flow {label!r}: duplicate scenario id {scenario['id']!r} ({where})")
+                seen_ids.add(scenario["id"])
             steps = [st for st in scenario["steps"] if isinstance(st, dict)]
             proven = scenario.get("evidence") or any(st.get("evidence") for st in steps)
             if not proven and not scenario.get("assumption") and not flow.get("assumption"):
