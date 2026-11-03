@@ -1568,6 +1568,25 @@ def _cell(text):
     return str(text).replace("|", "\\|").replace("\n", " ")
 
 
+def _scenario_table(scenario):
+    """The data behind a scenario diagram, as written: type and fields, store write, evidence."""
+    rows = ["| # | From \u2192 To | Payload (type and key fields) | Stored in | Evidence |", "|---|---|---|---|---|"]
+    for number, step in enumerate(scenario["steps"], 1):
+        payload, store = step.get("payload"), step.get("store")
+        data = "\u2014"
+        if isinstance(payload, dict) and payload.get("type"):
+            fields = [str(f) for f in payload.get("fields") or []]
+            data = str(payload["type"]) + (" {" + ", ".join(fields) + "}" if fields else "")
+        stored = "\u2014"
+        if isinstance(store, dict) and store.get("target"):
+            stored = (f"{str(store['operation']).upper()} " if store.get("operation") else "") + str(store["target"])
+            stored += f" ({store['kind']})" if store.get("kind") else ""
+        evidence = ", ".join(str(e) for e in step.get("evidence") or []) or "\u2014"
+        cells = [str(number), f"{step['from']} \u2192 {step['to']}", data, stored, evidence]
+        rows.append("| " + " | ".join(_cell(c) for c in cells) + " |")
+    return rows
+
+
 def _assumptions(model):
     """Everything a reader should confirm with the team.
 
@@ -1852,6 +1871,10 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
     flows = flow_diagrams(use_model, facts)
     for stem, _, mermaid, _ in flows:
         diagrams[stem] = mermaid
+    # Scenario diagrams are written and rendered like the rest, but kept out of
+    # `diagrams`, which also feeds the diagram key and the existing C4 files list.
+    scenarios = scenario_diagrams(use_model, facts)
+    scenario_files = {stem: mermaid for stem, _, _, mermaid, _ in scenarios}
     for entry in code_entries:
         entry["mermaid"] = _with_title(entry["mermaid"], entry["title"])
         diagrams[entry["stem"]] = entry["mermaid"]
@@ -1859,7 +1882,7 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
     if deployment:
         diagrams["c4-deployment"] = deployment
 
-    for stem, mermaid in diagrams.items():
+    for stem, mermaid in {**diagrams, **scenario_files}.items():
         (output / f"{stem}.mmd").write_text(mermaid, encoding="utf-8")
 
     env_disabled = _sr.disabled_by_env()
@@ -1871,7 +1894,7 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
     # run, not a note under every diagram.
     svg_errors: dict = {}
     if svg and not env_disabled:
-        stems = [(stem, output / f"{stem}.mmd") for stem in diagrams]
+        stems = [(stem, output / f"{stem}.mmd") for stem in {**diagrams, **scenario_files}]
         render_results = _sr.render(stems, output)
         for r in render_results:
             rendered[r.stem] = r.status == "ok"
@@ -1920,9 +1943,20 @@ def render(output_dir, facts_only=False, svg=True, repo_override=None, collector
 
     if flows:
         block += ["### Key flows", "", "How a request moves through the system, step by step.", ""]
+        flow_models = {f"c4-flow-{_flow_slug(f, i)}": f for i, f in enumerate(use_model.get("flows") or [], 1)}
         for stem, title, mermaid, description in flows:
             block.append(_section(f"#### {_prose(title)}", stem, mermaid, rendered.get(stem), intro=description,
                                   svg_error=svg_errors.get(stem)))
+            # scenario_diagrams yields one entry per scenario, in order, so within
+            # one flow the entries pair with that flow's scenario dicts.
+            flow_model = flow_models.get(stem) or {}
+            mine = [entry for entry in scenarios if entry[1] == stem]
+            for (s_stem, _, s_title, s_mermaid, given), scenario in zip(mine, flow_model.get("scenarios") or []):
+                block.append(_section(f"##### Scenario: {_prose(scenario['name'])}", s_stem, s_mermaid,
+                                      rendered.get(s_stem), intro=f"Given: {given}" if given else "",
+                                      svg_error=svg_errors.get(s_stem)))
+                if any(st.get("payload") or st.get("store") for st in scenario["steps"]):
+                    block += _scenario_table(scenario) + [""]
 
     block += _deployment_section(facts, use_model, rendered.get("c4-deployment"), deployment,
                                  svg_error=svg_errors.get("c4-deployment"))

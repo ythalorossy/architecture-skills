@@ -3,8 +3,10 @@ import contextlib
 import copy
 import io
 import json
+import os
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import helpers  # noqa: F401  (puts the c4 scripts on sys.path)
@@ -338,6 +340,98 @@ class ScenarioDiagramTest(unittest.TestCase):
 
     def test_flows_without_scenarios_give_no_scenario_diagrams(self):
         self.assertEqual(self.diagrams(self.model([])), [])
+
+
+class ScenarioReportTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.reference = json.loads((FIXTURE / "c4-model.json").read_text(encoding="utf-8"))
+
+    def scenarios(self):
+        steps = [copy.deepcopy(s) for s in self.reference["flows"][0]["steps"][:5]]
+        steps[0]["payload"] = {"type": "Map<String, List<Order>>", "fields": ["book_id", "a|b"]}
+        steps[4]["evidence"] = ["api/bookshop/orders/service.py:17"]
+        steps[4]["store"] = {"operation": "insert", "target": "orders", "kind": "table"}
+        steps[4]["payload"] = {"type": "dict", "fields": ["order_id", "charge_id"]}
+        return [{"id": "payment-declined", "name": "Payment declined",
+                 "given": "card is declined by the provider", "steps": steps}]
+
+    def render(self, scenarios=None, with_model_scenarios=True):
+        """(report text, output dir listing) for the bookshop model, optionally with scenarios."""
+        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()):
+            run_analyzer(FIXTURE, tmp)
+            model = copy.deepcopy(self.reference)
+            model["flows"][0].pop("scenarios", None)
+            if with_model_scenarios:
+                model["flows"][0]["scenarios"] = scenarios or self.scenarios()
+            (Path(tmp) / "c4-model.json").write_text(json.dumps(model), encoding="utf-8")
+            result = render_c4.render(tmp, svg=False)
+            self.assertEqual(result["status"], "ok", result)
+            report = (Path(tmp) / "ArchitectureReport.md").read_text(encoding="utf-8")
+            return report, sorted(p.name for p in Path(tmp).iterdir())
+
+    def test_scenario_section_follows_its_flow(self):
+        report, _ = self.render()
+        flow = report.index("#### Reader buys a book")
+        scenario = report.index("##### Scenario: Payment declined")
+        following = report.index("### Deployment")
+        self.assertLess(flow, scenario)
+        self.assertLess(scenario, following)
+
+    def test_scenario_given_and_table(self):
+        report, _ = self.render()
+        self.assertIn("Given: card is declined by the provider", report)
+        self.assertIn("| # | From \u2192 To | Payload (type and key fields) | Stored in | Evidence |", report)
+        row = next(l for l in report.splitlines() if l.startswith("|") and "INSERT orders (table)" in l)
+        self.assertIn("api/bookshop/orders/service.py:17", row)
+        self.assertIn("dict {order_id, charge_id}", row)
+
+    def test_table_shows_types_as_written(self):
+        report, _ = self.render()
+        table = [l for l in report.splitlines() if l.startswith("|") and "book_id" in l]
+        self.assertEqual(len(table), 1)
+        self.assertIn("Map<String, List<Order>> {book_id, a\\|b}", table[0])
+        self.assertNotIn("#lt;", table[0])
+
+    def test_scenario_without_data_has_no_table(self):
+        steps = [copy.deepcopy(s) for s in self.reference["flows"][0]["steps"][:3]]
+        report, _ = self.render([{"id": "x", "name": "Plain", "steps": steps}])
+        self.assertIn("##### Scenario: Plain", report)
+        self.assertNotIn("Payload (type and key fields)", report)
+
+    def test_scenario_mmd_written(self):
+        _, files = self.render()
+        self.assertIn("c4-flow-place-order--payment-declined.mmd", files)
+
+    def test_existing_sections_byte_identical_with_scenarios(self):
+        with_scenarios, _ = self.render()
+        without, _ = self.render(with_model_scenarios=False)
+        kept, skipping = [], False
+        for line in with_scenarios.split("\n"):
+            if line.startswith("##### Scenario:"):
+                skipping = True
+            elif skipping and line.startswith("#"):
+                skipping = False
+            if not skipping:
+                kept.append(line)
+        self.assertEqual("\n".join(kept), without)
+
+    @unittest.skipUnless(os.environ.get("C4_REAL_RENDER") == "1",
+                         "set C4_REAL_RENDER=1 to render with the real mermaid-cli")
+    def test_scenario_svg_renders_with_second_line(self):
+        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()), \
+                mock.patch.dict(os.environ, {"C4_SVG": "1"}):
+            run_analyzer(FIXTURE, tmp)
+            model = copy.deepcopy(self.reference)
+            model["flows"][0]["scenarios"] = self.scenarios()
+            (Path(tmp) / "c4-model.json").write_text(json.dumps(model), encoding="utf-8")
+            result = render_c4.render(tmp, svg=True)
+            self.assertEqual(result["svg_failed"], [])
+            svg = (Path(tmp) / "c4-flow-place-order--payment-declined.svg").read_text(encoding="utf-8")
+            report = (Path(tmp) / "ArchitectureReport.md").read_text(encoding="utf-8")
+        self.assertIn("order_id, charge_id", svg)
+        self.assertIn("INSERT orders (table)", svg)
+        self.assertIn("![", report.split("##### Scenario: Payment declined")[1].split("###")[0])
 
 
 if __name__ == "__main__":
